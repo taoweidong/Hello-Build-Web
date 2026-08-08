@@ -11,6 +11,8 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True,
 @app.on_event("startup")
 def startup():
     Base.metadata.create_all(bind=engine)
+    from .seed.seed import seed
+    seed()
 
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(plan.router, prefix="/api", tags=["plan"])
