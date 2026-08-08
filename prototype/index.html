@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>版本计划看板 · 静态示例</title>
+  <meta name="description" content="构建策略版本计划甘特看板静态示例：展示不同版本、分支的构建策略时间安排，支持时间编辑级联顺延与冲突告警。" />
+  <!-- 本地化的 Vue 3.5.13 生产版本，避免第三方 CDN 依赖，支持离线打开 -->
+  <script src="./vendor/vue.global.prod.js"></script>
+  <style>
+    /* ========== 设计令牌 ========== */
+    :root {
+      --bg: #0a0e17;
+      --panel: #101624;
+      --panel-2: #151d30;
+      --border: #222c45;
+      --border-soft: #1a2338;
+      --text: #e8edf8;
+      --muted: #8b96b3;
+      --faint: #5a6580;
+      --accent: #4f8cff;
+      --accent-soft: rgba(79, 140, 255, 0.12);
+      --build: #3b82f6;
+      --smoke: #8b5cf6;
+      --analysis: #f59e0b;
+      --push: #10b981;
+      --danger: #ef4444;
+      --ok: #10b981;
+      --warn: #f59e0b;
+      --radius: 12px;
+      --radius-sm: 6px;
+      --shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+      --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      --font: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      --label-w: 280px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    [v-cloak] { display: none; }
+    body {
+      background: radial-gradient(1200px 600px at 80% -10%, rgba(79, 140, 255, 0.08), transparent), var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      min-height: 100vh;
+    }
+    .container { max-width: 1440px; margin: 0 auto; padding: 0 24px 48px; }
+
+    /* ========== 顶栏 ========== */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 18px 24px; border-bottom: 1px solid var(--border-soft);
+      background: rgba(16, 22, 36, 0.7); backdrop-filter: blur(8px);
+      position: sticky; top: 0; z-index: 20;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .logo {
+      width: 34px; height: 34px; border-radius: 9px;
+      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 15px; color: #fff;
+      box-shadow: 0 4px 14px rgba(79, 140, 255, 0.4);
+    }
+    .brand h1 { font-size: 17px; font-weight: 600; letter-spacing: 0.5px; }
+    .brand .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .header-right { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--muted); }
+    .role-badge {
+      padding: 4px 12px; border-radius: 999px; font-size: 12px;
+      background: var(--accent-soft); color: var(--accent);
+      border: 1px solid rgba(79, 140, 255, 0.35);
+    }
+
+    /* ========== 提示条 ========== */
+    .notice {
+      margin-top: 20px; padding: 10px 16px; border-radius: var(--radius-sm);
+      background: var(--accent-soft); border: 1px solid rgba(79, 140, 255, 0.3);
+      color: #b8cff5; font-size: 13px;
+    }
+
+    /* ========== 统计卡片 ========== */
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 20px; }
+    .stat-card {
+      background: linear-gradient(180deg, var(--panel-2), var(--panel));
+      border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 18px 20px; transition: var(--transition);
+    }
+    .stat-card:hover { transform: translateY(-2px); border-color: rgba(79, 140, 255, 0.4); }
+    .stat-card .k { font-size: 12px; color: var(--muted); }
+    .stat-card .v { font-size: 28px; font-weight: 700; margin-top: 6px; }
+    .stat-card .v.danger { color: var(--danger); }
+    .stat-card .v.accent { color: var(--accent); }
+    .stat-card .d { font-size: 12px; color: var(--faint); margin-top: 4px; }
+
+    /* ========== 面板通用 ========== */
+    .panel {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: var(--radius); margin-top: 20px; box-shadow: var(--shadow);
+    }
+    .panel-head {
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+      padding: 16px 20px; border-bottom: 1px solid var(--border-soft);
+    }
+    .panel-title { font-size: 15px; font-weight: 600; }
+    .panel-title small { color: var(--muted); font-weight: 400; margin-left: 8px; font-size: 12px; }
+
+    /* ========== 筛选与图例 ========== */
+    .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    select {
+      background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 6px 10px; font-size: 13px; outline: none;
+      cursor: pointer; transition: var(--transition);
+    }
+    select:hover { border-color: var(--accent); }
+    .legend { display: flex; align-items: center; gap: 14px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+    .legend .item { display: flex; align-items: center; gap: 6px; }
+    .swatch { width: 14px; height: 14px; border-radius: 4px; display: inline-block; }
+    .swatch.conflict-sw {
+      background: repeating-linear-gradient(45deg, rgba(239, 68, 68, 0.6) 0 4px, rgba(239, 68, 68, 0.15) 4px 8px);
+      border: 1px solid var(--danger);
+    }
+    .swatch.nd-sw { background: transparent; border: 1.5px dashed var(--muted); }
+
+    /* ========== 甘特图 ========== */
+    .gantt-scroll { overflow-x: auto; }
+    .gantt { min-width: 1000px; padding: 8px 20px 16px; }
+    .axis { display: flex; margin-bottom: 4px; }
+    .axis-track { flex: 1; position: relative; height: 26px; margin-left: var(--label-w); }
+    .axis-tick {
+      position: absolute; top: 0; transform: translateX(-50%);
+      font-size: 11px; color: var(--faint); white-space: nowrap;
+    }
+    .now-flag {
+      position: absolute; top: -2px; transform: translateX(-50%);
+      background: var(--danger); color: #fff; font-size: 10px;
+      padding: 1px 6px; border-radius: 999px; z-index: 5; white-space: nowrap;
+    }
+    .row { display: flex; align-items: stretch; border-bottom: 1px solid var(--border-soft); }
+    .row:last-child { border-bottom: none; }
+    .row-label {
+      width: var(--label-w); flex-shrink: 0; padding: 10px 12px 10px 0;
+      display: flex; align-items: center; gap: 8px; font-size: 13px;
+    }
+    .chip {
+      font-size: 11px; padding: 2px 8px; border-radius: 999px; flex-shrink: 0;
+      border: 1px solid transparent;
+    }
+    .chip.ver { background: rgba(79, 140, 255, 0.14); color: #7fadff; border-color: rgba(79, 140, 255, 0.3); }
+    .chip.br { background: rgba(139, 92, 246, 0.14); color: #b9a3f8; border-color: rgba(139, 92, 246, 0.3); }
+    .sname { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .track {
+      flex: 1; position: relative; height: 48px;
+      background: repeating-linear-gradient(
+        to right, var(--border-soft) 0 1px, transparent 1px calc(100% / 12)
+      );
+    }
+    .block {
+      position: absolute; top: 9px; bottom: 9px; z-index: 2;
+      border-radius: 6px; cursor: pointer;
+      display: flex; align-items: center; padding: 0 8px;
+      font-size: 11px; color: rgba(255, 255, 255, 0.95); white-space: nowrap; overflow: hidden;
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), 0 2px 8px rgba(0, 0, 0, 0.3);
+      transition: var(--transition);
+    }
+    .block:hover { filter: brightness(1.18); transform: translateY(-1px); z-index: 4; }
+    .block.nd { opacity: 0.82; outline: 1.5px dashed rgba(255, 255, 255, 0.45); outline-offset: -2px; }
+    .nd-tag {
+      margin-left: 6px; font-size: 9px; padding: 0 4px; border-radius: 3px;
+      background: rgba(0, 0, 0, 0.35); flex-shrink: 0;
+    }
+    .conflict-stripe {
+      position: absolute; top: 5px; bottom: 5px; z-index: 3; pointer-events: none;
+      border-radius: 4px; border: 1px solid var(--danger);
+      background: repeating-linear-gradient(45deg, rgba(239, 68, 68, 0.5) 0 6px, rgba(239, 68, 68, 0.15) 6px 12px);
+      animation: pulse 1.6s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+    .now-line {
+      position: absolute; top: 0; bottom: 0; width: 1.5px; z-index: 5;
+      background: var(--danger); pointer-events: none;
+      box-shadow: 0 0 6px rgba(239, 68, 68, 0.8);
+    }
+
+    /* ========== 日志 ========== */
+    .tabs { display: flex; gap: 4px; }
+    .tab {
+      padding: 6px 16px; border-radius: var(--radius-sm); font-size: 13px;
+      color: var(--muted); cursor: pointer; border: 1px solid transparent;
+      transition: var(--transition); user-select: none;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active { background: var(--accent-soft); color: var(--accent); border-color: rgba(79, 140, 255, 0.35); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 11px 20px; border-bottom: 1px solid var(--border-soft); }
+    th { color: var(--faint); font-weight: 500; font-size: 12px; }
+    td { color: var(--text); }
+    tr:last-child td { border-bottom: none; }
+    tbody tr { transition: var(--transition); }
+    tbody tr:hover { background: rgba(79, 140, 255, 0.05); }
+    .badge { font-size: 11px; padding: 2px 10px; border-radius: 999px; }
+    .badge.ok { background: rgba(16, 185, 129, 0.14); color: #4ade80; }
+    .badge.fail { background: rgba(239, 68, 68, 0.14); color: #f87171; }
+    .badge.run { background: rgba(79, 140, 255, 0.14); color: #7fadff; }
+
+    /* ========== 编辑弹窗 ========== */
+    .overlay {
+      position: fixed; inset: 0; background: rgba(4, 8, 16, 0.6);
+      backdrop-filter: blur(4px); z-index: 50;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .modal {
+      width: 400px; background: var(--panel-2); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow); padding: 22px 24px;
+    }
+    .modal h3 { font-size: 15px; margin-bottom: 4px; }
+    .modal .sub { font-size: 12px; color: var(--muted); margin-bottom: 18px; }
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .field input {
+      width: 100%; background: var(--panel); color: var(--text);
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      padding: 8px 12px; font-size: 14px; outline: none; transition: var(--transition);
+    }
+    .field input:focus { border-color: var(--accent); }
+    .modal-tip {
+      font-size: 12px; color: var(--muted); background: var(--panel);
+      border-radius: var(--radius-sm); padding: 8px 12px; margin-bottom: 16px;
+      border-left: 3px solid var(--accent);
+    }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+    .btn {
+      padding: 8px 18px; border-radius: var(--radius-sm); font-size: 13px;
+      cursor: pointer; border: 1px solid var(--border); transition: var(--transition);
+      font-family: var(--font);
+    }
+    .btn.ghost { background: transparent; color: var(--muted); }
+    .btn.ghost:hover { color: var(--text); border-color: var(--muted); }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.primary:hover { filter: brightness(1.12); }
+
+    /* ========== Toast ========== */
+    .toast {
+      position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+      padding: 10px 22px; border-radius: var(--radius-sm); font-size: 13px;
+      z-index: 60; box-shadow: var(--shadow); border: 1px solid;
+      animation: rise 0.25s ease;
+    }
+    @keyframes rise { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
+    .toast.success { background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.5); color: #4ade80; }
+    .toast.warn { background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.5); color: #fbbf24; }
+    .toast.danger { background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.5); color: #f87171; }
+
+    footer { margin-top: 28px; text-align: center; color: var(--faint); font-size: 12px; }
+    #cdn-warn {
+      display: none; margin: 40px auto; max-width: 600px; padding: 20px;
+      border: 1px solid var(--warn); border-radius: var(--radius); color: #fbbf24; font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div id="cdn-warn">未能加载本地 Vue 脚本（prototype/vendor/vue.global.prod.js），请确认文件完整后刷新页面。</div>
+
+  <div id="app" v-cloak>
+    <!-- 顶栏 -->
+    <header>
+      <div class="brand">
+        <div class="logo">构</div>
+        <div>
+          <h1>版本计划看板</h1>
+          <div class="sub">构建 · 防护网 · 集成 流水线策略总览</div>
+        </div>
+      </div>
+      <div class="header-right">
+        <span>{{ todayStr }}</span>
+        <span class="role-badge">管理员</span>
+      </div>
+    </header>
+
+    <div class="container">
+      <div class="notice">
+        静态示例页面：数据为内置模拟数据（对应三套流程场景）。点击任意阶段色块可修改时间，体验「级联顺延」与「冲突告警」逻辑。
+      </div>
+
+      <!-- 统计卡片 -->
+      <div class="stats">
+        <div class="stat-card">
+          <div class="k">策略总数</div>
+          <div class="v accent">{{ strategies.length }}</div>
+          <div class="d">覆盖 {{ versionCount }} 个版本 · {{ branchCount }} 个分支</div>
+        </div>
+        <div class="stat-card">
+          <div class="k">今日已执行阶段</div>
+          <div class="v">{{ execLog.length }}</div>
+          <div class="d">含构建 / 冒烟 / 人工分析 / 推送</div>
+        </div>
+        <div class="stat-card">
+          <div class="k">时间冲突</div>
+          <div class="v" :class="{ danger: conflictPairs > 0 }">{{ conflictPairs }}</div>
+          <div class="d">同分支策略时间交错数</div>
+        </div>
+        <div class="stat-card">
+          <div class="k">跨天策略</div>
+          <div class="v">{{ crossDayCount }}</div>
+          <div class="d">执行结束时间超出当日 24:00</div>
+        </div>
+      </div>
+
+      <!-- 甘特图 -->
+      <div class="panel">
+        <div class="panel-head">
+          <div class="panel-title">构建策略时间轴<small>横轴 00:00 – 24:00，单位：分钟级</small></div>
+          <div class="toolbar">
+            <select v-model="filterVersion">
+              <option value="all">全部版本</option>
+              <option v-for="v in versions" :key="v" :value="v">{{ v }}</option>
+            </select>
+            <select v-model="filterBranch">
+              <option value="all">全部分支</option>
+              <option v-for="b in branches" :key="b" :value="b">{{ b }}</option>
+            </select>
+            <div class="legend">
+              <span class="item"><span class="swatch" style="background: var(--build)"></span>代码构建</span>
+              <span class="item"><span class="swatch" style="background: var(--smoke)"></span>冒烟验证</span>
+              <span class="item"><span class="swatch" style="background: var(--analysis)"></span>人工分析</span>
+              <span class="item"><span class="swatch" style="background: var(--push)"></span>推送集成</span>
+              <span class="item"><span class="swatch conflict-sw"></span>时间冲突</span>
+              <span class="item"><span class="swatch nd-sw"></span>次日延续</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="gantt-scroll">
+          <div class="gantt">
+            <!-- 时间轴刻度 -->
+            <div class="axis">
+              <div class="axis-track">
+                <span v-for="h in 13" :key="h" class="axis-tick" :style="{ left: ((h - 1) * 2 / 24 * 100) + '%' }">
+                  {{ pad((h - 1) * 2) }}:00
+                </span>
+                <span class="now-flag" :style="{ left: nowPct }">现在 {{ nowStr }}</span>
+              </div>
+            </div>
+
+            <!-- 策略行 -->
+            <div v-for="s in rows" :key="s.id" class="row">
+              <div class="row-label">
+                <span class="chip ver">{{ s.version }}</span>
+                <span class="chip br">{{ s.branch }}</span>
+                <span class="sname">{{ s.name }}</span>
+              </div>
+              <div class="track">
+                <template v-for="(st, i) in s.stages" :key="i">
+                  <div v-for="(sg, j) in segs(st)" :key="j"
+                       class="block" :class="{ nd: sg.d }"
+                       :style="{ left: pct(sg.s), width: pct(sg.e - sg.s), background: colors[st.type] }"
+                       :title="tipText(s, st, sg)"
+                       @click="openEdit(s, i)">
+                    <span v-if="sg.e - sg.s >= 50">{{ meta[st.type].label }}</span>
+                    <span v-if="sg.d" class="nd-tag">+1天</span>
+                  </div>
+                </template>
+                <div v-for="(c, k) in rowConflicts(s)" :key="'c' + k"
+                     class="conflict-stripe" :style="{ left: pct(c.s), width: pct(c.e - c.s) }"></div>
+                <div class="now-line" :style="{ left: nowPct }"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 日志 -->
+      <div class="panel">
+        <div class="panel-head">
+          <div class="tabs">
+            <div class="tab" :class="{ active: logTab === 'exec' }" @click="logTab = 'exec'">执行日志</div>
+            <div class="tab" :class="{ active: logTab === 'change' }" @click="logTab = 'change'">变更日志</div>
+          </div>
+          <div class="toolbar">
+            <span style="font-size: 12px; color: var(--muted)">日期：{{ todayStr }}</span>
+          </div>
+        </div>
+
+        <table v-if="logTab === 'exec'">
+          <thead>
+            <tr><th>日期</th><th>策略</th><th>阶段</th><th>实际开始</th><th>实际结束</th><th>结果</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="(l, i) in execLog" :key="i">
+              <td>{{ l.date }}</td>
+              <td>{{ l.strat }}</td>
+              <td>{{ l.stage }}</td>
+              <td>{{ l.start }}</td>
+              <td>{{ l.end }}</td>
+              <td>
+                <span class="badge" :class="l.cls">{{ l.result }}</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <table v-else>
+          <thead>
+            <tr><th>时间</th><th>操作人</th><th>策略</th><th>阶段</th><th>修改前</th><th>修改后</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="(l, i) in changeLog" :key="i">
+              <td>{{ l.at }}</td>
+              <td>{{ l.operator }}</td>
+              <td>{{ l.strat }}</td>
+              <td>{{ l.stage }}</td>
+              <td>{{ l.from }}</td>
+              <td style="color: var(--accent)">{{ l.to }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <footer>静态示例 · 后续将由 FastAPI 后端提供真实数据接口</footer>
+    </div>
+
+    <!-- 编辑弹窗 -->
+    <div v-if="editing" class="overlay" @click.self="editing = null">
+      <div class="modal">
+        <h3>编辑阶段时间</h3>
+        <div class="sub">{{ editing.stratName }} · {{ meta[editing.stageType].label }}</div>
+        <div class="field">
+          <label>开始时间</label>
+          <input type="time" v-model="editForm.start" />
+        </div>
+        <div class="field">
+          <label>耗时（分钟）</label>
+          <input type="number" v-model.number="editForm.dur" min="1" step="5" />
+        </div>
+        <div class="modal-tip">保存后，该策略内后续阶段将按「前一阶段开始时间 + 耗时」自动级联顺延，并重新检测同分支冲突。</div>
+        <div class="modal-actions">
+          <button class="btn ghost" @click="editing = null">取消</button>
+          <button class="btn primary" @click="saveEdit">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast -->
+    <div v-if="toast.show" class="toast" :class="toast.type">{{ toast.msg }}</div>
+  </div>
+
+  <script>
+    window.addEventListener('load', function () {
+      if (!window.Vue) document.getElementById('cdn-warn').style.display = 'block';
+    });
+
+    if (window.Vue) {
+      const { createApp, ref, reactive, computed } = Vue;
+
+      // 阶段元信息
+      const META = {
+        build: { label: '代码构建' },
+        smoke: { label: '冒烟验证' },
+        analysis: { label: '人工分析' },
+        push: { label: '推送集成' },
+      };
+      const COLORS = {
+        build: 'linear-gradient(180deg, #60a5fa, #3b82f6)',
+        smoke: 'linear-gradient(180deg, #a78bfa, #8b5cf6)',
+        analysis: 'linear-gradient(180deg, #fbbf24, #f59e0b)',
+        push: 'linear-gradient(180deg, #34d399, #10b981)',
+      };
+
+      const pad = n => String(n).padStart(2, '0');
+      const fmt = m => { m = ((m % 1440) + 1440) % 1440; return pad(Math.floor(m / 60)) + ':' + pad(m % 60); };
+
+      // 级联顺延：从 fromIdx 起，后一阶段开始时间 = 前一阶段开始时间 + 前一阶段耗时
+      function recalc(s, fromIdx) {
+        let t = s.stages[fromIdx].start;
+        for (let i = fromIdx; i < s.stages.length; i++) {
+          s.stages[i].start = t;
+          t += s.stages[i].dur;
+        }
+      }
+
+      // 模拟种子数据（对应三套流程场景）
+      const seed = [
+        { id: 1, version: '27A', branch: 'master', name: '流程场景1 · 夜间构建', stages: [
+          { type: 'build', start: 22 * 60, dur: 30 },
+          { type: 'smoke', start: 0, dur: 480 },      // 冒烟 8H（跨天）
+          { type: 'analysis', start: 0, dur: 120 },   // 人工分析 2H（耗时可变化）
+          { type: 'push', start: 0, dur: 20 },
+        ]},
+        { id: 2, version: '27A', branch: 'master', name: '流程场景2 · 中午构建', stages: [
+          { type: 'build', start: 12 * 60, dur: 30 },
+          { type: 'smoke', start: 0, dur: 120 },
+          { type: 'analysis', start: 0, dur: 60 },
+          { type: 'push', start: 0, dur: 20 },
+        ]},
+        { id: 3, version: '27A', branch: 'TR5', name: '流程场景3 · 16:30构建', stages: [
+          { type: 'build', start: 16 * 60 + 30, dur: 30 },
+          { type: 'smoke', start: 0, dur: 60 },
+          { type: 'analysis', start: 0, dur: 30 },
+          { type: 'push', start: 0, dur: 20 },
+        ]},
+        { id: 4, version: '27B', branch: 'TR6', name: '流程场景2 · 中午构建', stages: [
+          { type: 'build', start: 11 * 60, dur: 30 },
+          { type: 'smoke', start: 0, dur: 120 },
+          { type: 'analysis', start: 0, dur: 60 },
+          { type: 'push', start: 0, dur: 20 },
+        ]},
+        { id: 5, version: '26B', branch: 'TR6', name: '流程场景2 · 中午构建', stages: [
+          { type: 'build', start: 12 * 60, dur: 30 },
+          { type: 'smoke', start: 0, dur: 120 },
+          { type: 'analysis', start: 0, dur: 60 },
+          { type: 'push', start: 0, dur: 20 },
+        ]},
+        { id: 6, version: '26B', branch: 'TR6', name: '流程场景3 · 16:30构建', stages: [
+          // 构建开始时间与场景2冒烟重叠，用于演示冲突告警
+          { type: 'build', start: 14 * 60, dur: 30 },
+          { type: 'smoke', start: 0, dur: 60 },
+          { type: 'analysis', start: 0, dur: 30 },
+          { type: 'push', start: 0, dur: 20 },
+        ]},
+      ];
+      seed.forEach(s => recalc(s, 0));
+
+      createApp({
+        setup() {
+          const strategies = reactive(seed);
+          const filterVersion = ref('all');
+          const filterBranch = ref('all');
+          const logTab = ref('exec');
+          const editing = ref(null);
+          const editForm = reactive({ start: '12:00', dur: 30 });
+          const toast = reactive({ show: false, msg: '', type: 'success' });
+          let toastTimer = null;
+
+          const meta = META;
+          const colors = COLORS;
+
+          const now = ref(new Date());
+          setInterval(() => { now.value = new Date(); }, 30000);
+          const nowMin = computed(() => now.value.getHours() * 60 + now.value.getMinutes());
+          const nowPct = computed(() => (nowMin.value / 1440 * 100) + '%');
+          const nowStr = computed(() => fmt(nowMin.value));
+          const todayStr = computed(() => {
+            const d = now.value;
+            return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+          });
+
+          const versions = computed(() => [...new Set(strategies.map(s => s.version))]);
+          const branches = computed(() => [...new Set(strategies.map(s => s.branch))]);
+          const versionCount = computed(() => versions.value.length);
+          const branchCount = computed(() => branches.value.length);
+
+          const rows = computed(() => strategies.filter(s =>
+            (filterVersion.value === 'all' || s.version === filterVersion.value) &&
+            (filterBranch.value === 'all' || s.branch === filterBranch.value)
+          ));
+
+          // 阶段区间拆分（处理跨天：开始时间本身可能已超过 24:00）
+          function segs(st) {
+            const out = [];
+            let s = st.start, e = st.start + st.dur;
+            while (s < e) {
+              const day = Math.floor(s / 1440);
+              const segEnd = Math.min(e, (day + 1) * 1440);
+              out.push({ s: s - day * 1440, e: segEnd - day * 1440, d: day });
+              s = segEnd;
+            }
+            return out;
+          }
+          const pct = m => (m / 1440 * 100) + '%';
+
+          function tipText(s, st, sg) {
+            const dTag = sg.d ? '（次日）' : '';
+            return s.version + '/' + s.branch + ' · ' + s.name + '\n' +
+              META[st.type].label + dTag + '：' + fmt(sg.s) + ' – ' + fmt(sg.e) +
+              '（' + st.dur + ' 分钟）\n点击可编辑时间';
+          }
+
+          // 同分支不同策略的区间重叠检测（按同一日坐标比较）
+          function rowConflicts(s) {
+            const res = [];
+            const others = strategies.filter(o => o.version === s.version && o.branch === s.branch && o.id !== s.id);
+            for (const st of s.stages) {
+              for (const sg of segs(st)) {
+                for (const o of others) {
+                  for (const os of o.stages) {
+                    for (const og of segs(os)) {
+                      if (og.d !== sg.d) continue;
+                      const a = Math.max(sg.s, og.s), b = Math.min(sg.e, og.e);
+                      if (b > a) res.push({ s: a, e: b });
+                    }
+                  }
+                }
+              }
+            }
+            return res;
+          }
+          const conflictPairs = computed(() => {
+            let n = 0;
+            for (let i = 0; i < strategies.length; i++) {
+              for (let j = i + 1; j < strategies.length; j++) {
+                const a = strategies[i], b = strategies[j];
+                if (a.version !== b.version || a.branch !== b.branch) continue;
+                outer:
+                for (const sa of a.stages) for (const ga of segs(sa))
+                  for (const sb of b.stages) for (const gb of segs(sb)) {
+                    if (ga.d === gb.d && Math.min(ga.e, gb.e) > Math.max(ga.s, gb.s)) { n++; break outer; }
+                  }
+              }
+            }
+            return n;
+          });
+          const crossDayCount = computed(() =>
+            strategies.filter(s => {
+              const last = s.stages[s.stages.length - 1];
+              return last.start + last.dur > 1440;
+            }).length
+          );
+
+          function showToast(msg, type) {
+            toast.msg = msg; toast.type = type; toast.show = true;
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => { toast.show = false; }, 3500);
+          }
+
+          function openEdit(s, idx) {
+            const st = s.stages[idx];
+            editing.value = {
+              sid: s.id, idx,
+              stratName: s.version + '/' + s.branch + ' · ' + s.name,
+              stageType: st.type,
+            };
+            editForm.start = fmt(st.start);
+            editForm.dur = st.dur;
+          }
+
+          const changeLog = ref([
+            { at: todayStr.value + ' 09:12', operator: 'admin', strat: '27A/master · 流程场景2', stage: '冒烟验证', from: '12:00', to: '12:30' },
+            { at: '2026-08-04 17:40', operator: 'admin', strat: '26B/TR6 · 流程场景3', stage: '代码构建', from: '16:30', to: '14:00' },
+          ]);
+
+          const execLog = ref([
+            { date: todayStr.value, strat: '27A/master · 流程场景2', stage: '代码构建', start: '12:00', end: '12:30', result: '成功', cls: 'ok' },
+            { date: todayStr.value, strat: '27A/master · 流程场景2', stage: '冒烟验证', start: '12:30', end: '14:30', result: '成功', cls: 'ok' },
+            { date: todayStr.value, strat: '27A/master · 流程场景2', stage: '人工分析', start: '14:30', end: '15:30', result: '进行中', cls: 'run' },
+            { date: todayStr.value, strat: '27B/TR6 · 流程场景2', stage: '冒烟验证', start: '11:30', end: '13:30', result: '失败', cls: 'fail' },
+            { date: todayStr.value, strat: '26B/TR6 · 流程场景2', stage: '代码构建', start: '12:00', end: '12:30', result: '成功', cls: 'ok' },
+            { date: '2026-08-04', strat: '27A/TR5 · 流程场景3', stage: '推送集成', start: '18:30', end: '18:50', result: '成功', cls: 'ok' },
+          ]);
+
+          function saveEdit() {
+            const s = strategies.find(x => x.id === editing.value.sid);
+            const idx = editing.value.idx;
+            const st = s.stages[idx];
+            const parts = editForm.start.split(':');
+            const newStart = Number(parts[0]) * 60 + Number(parts[1]);
+            const newDur = Math.max(1, Number(editForm.dur) || st.dur);
+            const oldStart = st.start;
+            const oldDur = st.dur;
+            st.start = newStart;
+            st.dur = newDur;
+            recalc(s, idx); // 级联顺延
+
+            const stratLabel = s.version + '/' + s.branch + ' · ' + s.name;
+            const d = new Date();
+            changeLog.value.unshift({
+              at: todayStr.value + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()),
+              operator: 'admin', strat: stratLabel, stage: META[st.type].label,
+              from: fmt(oldStart) + ' / ' + oldDur + 'min',
+              to: fmt(newStart) + ' / ' + newDur + 'min',
+            });
+
+            const last = s.stages[s.stages.length - 1];
+            const endAll = last.start + last.dur;
+            const hasConflict = rowConflicts(s).length > 0;
+            editing.value = null;
+
+            if (hasConflict && endAll > 1440) {
+              showToast('已保存并级联顺延。警告：与同分支策略存在时间冲突，且执行跨天（次日 ' + fmt(endAll) + ' 结束）', 'danger');
+            } else if (hasConflict) {
+              showToast('已保存并级联顺延。警告：与同分支其他策略存在时间交错，请查看红色冲突区域', 'warn');
+            } else if (endAll > 1440) {
+              showToast('已保存并级联顺延。提示：该策略执行跨天，将于次日 ' + fmt(endAll) + ' 结束', 'warn');
+            } else {
+              showToast('已保存，后续阶段已自动级联顺延', 'success');
+            }
+          }
+
+          return {
+            strategies, meta, colors, pad,
+            filterVersion, filterBranch, versions, branches,
+            versionCount, branchCount, conflictPairs, crossDayCount,
+            rows, segs, pct, tipText, rowConflicts,
+            nowPct, nowStr, todayStr,
+            logTab, execLog, changeLog,
+            editing, editForm, openEdit, saveEdit, toast,
+          };
+        },
+      }).mount('#app');
+    }
+  </script>
+</body>
+</html>
