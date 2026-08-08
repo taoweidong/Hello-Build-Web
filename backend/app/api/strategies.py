@@ -66,8 +66,11 @@ def list_strategies(version_id: int = None, branch_id: int = None,
         q = q.join(Branch).filter(Branch.version_id == version_id)
     items = []
     for s in q.all():
+        version = db.get(Version, s.branch.version_id)
         items.append({"id": s.id, "branch_id": s.branch_id, "branch_name": s.branch.name,
-                      "version_id": s.branch.version_id, "template_id": s.template_id,
+                      "version_id": s.branch.version_id,
+                      "version_name": version.name if version else None,
+                      "template_id": s.template_id,
                       "template_name": s.template.name, "name": s.name,
                       "build_start_time": s.build_start_time, "push_mode": s.push_mode,
                       "enabled": s.enabled})

@@ -30,7 +30,9 @@ class VersionReq(BaseModel):
 @router.get("/versions")
 def list_versions(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     vs = db.query(Version).all()
-    return ok([{"id": v.id, "name": v.name, "pm_user_id": v.pm_user_id, "status": v.status,
+    return ok([{"id": v.id, "name": v.name, "pm_user_id": v.pm_user_id,
+                "pm_name": db.get(User, v.pm_user_id).display_name if v.pm_user_id else None,
+                "status": v.status,
                 "branches": [{"id": b.id, "name": b.name} for b in v.branches]} for v in vs])
 
 @router.post("/versions")

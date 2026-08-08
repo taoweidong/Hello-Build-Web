@@ -5,17 +5,13 @@ import type { FormRules } from "element-plus";
 export const REGEXP_PWD =
   /^(?![0-9]+$)(?![a-z]+$)(?![A-Z]+$)(?!([^(0-9a-zA-Z)]|[()])+$)(?!^.*[\u4E00-\u9FA5].*$)([^(0-9a-zA-Z)]|[()]|[a-z]|[A-Z]|[0-9]){8,18}$/;
 
-/** 登录校验 */
+/** 登录校验（不做强密码约束，兼容种子账号 123456；重置密码等场景仍用 REGEXP_PWD） */
 const loginRules = reactive<FormRules>({
   password: [
     {
       validator: (rule, value, callback) => {
         if (value === "") {
           callback(new Error("请输入密码"));
-        } else if (!REGEXP_PWD.test(value)) {
-          callback(
-            new Error("密码格式应为8-18位数字、字母、符号的任意两种组合")
-          );
         } else {
           callback();
         }
