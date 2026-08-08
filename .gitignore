@@ -1,0 +1,20 @@
+# 头脑风暴会话产物（可视化伴侣临时文件）
+.superpowers/
+
+# 依赖与构建产物
+node_modules/
+dist/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 数据库文件
+*.db
+*.sqlite3
+
+# 编辑器与环境
+.vscode/
+.idea/
+.env
+.env.local
