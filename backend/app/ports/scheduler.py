@@ -1,0 +1,6 @@
+from abc import ABC, abstractmethod
+
+class SchedulerPort(ABC):
+    @abstractmethod
+    def start(self) -> None: ...
+    def stop(self) -> None: ...
