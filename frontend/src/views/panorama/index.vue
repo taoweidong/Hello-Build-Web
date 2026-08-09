@@ -38,27 +38,18 @@ const branchOptions = computed(() => {
     .filter((v, i, a) => a.findIndex(x => x.id === v.id) === i);
 });
 
-// 按版本→分支分组
+// 按版本分组：每一行展示一个版本的配置/策略信息，行内卡片横向铺满
 const grouped = computed(() => {
-  const result: Array<{
-    version: string;
-    branches: Array<{ branch: string; list: StrategyItem[] }>;
-  }> = [];
-  const vMap = new Map<string, typeof result[0]>();
+  const result: Array<{ version: string; list: StrategyItem[] }> = [];
+  const vMap = new Map<string, StrategyItem[]>();
   strategies.value.forEach(s => {
-    const vName = s.version_name || `版本${s.version_id}`;
-    if (!vMap.has(vName)) {
-      const g = { version: vName, branches: [] as Array<{ branch: string; list: StrategyItem[] }> };
-      vMap.set(vName, g);
-      result.push(g);
+    const version = s.version_name || `版本${s.version_id}`;
+    if (!vMap.has(version)) {
+      const list: StrategyItem[] = [];
+      vMap.set(version, list);
+      result.push({ version, list });
     }
-    const g = vMap.get(vName)!;
-    let b = g.branches.find(x => x.branch === s.branch_name);
-    if (!b) {
-      b = { branch: s.branch_name, list: [] };
-      g.branches.push(b);
-    }
-    b.list.push(s);
+    vMap.get(version)!.push(s);
   });
   return result;
 });
@@ -180,36 +171,33 @@ onMounted(loadStrategies);
     <div class="section">
       <div class="section-title">策略配置全景</div>
       <div v-loading="loading" class="strategy-area">
-        <div v-for="(g, gi) in grouped" :key="gi" class="group-block">
-          <div class="group-version">
+        <!-- 每一行 = 一个版本：左侧版本徽章，右侧该版本各分支策略卡片横向铺满 -->
+        <div v-for="g in grouped" :key="g.version" class="version-row">
+          <div class="version-side">
             <span class="version-badge">{{ g.version }}</span>
           </div>
-          <div
-            v-for="(b, bi) in g.branches"
-            :key="bi"
-            class="branch-block"
-          >
-            <div class="branch-label">{{ b.branch }}</div>
-            <div class="card-grid">
-              <div
-                v-for="s in b.list"
-                :key="s.id"
-                class="strategy-card"
-                :class="{ active: selectedStrategy?.id === s.id }"
-                @click="selectStrategy(s)"
-              >
-                <div class="card-name">{{ s.name }}</div>
-                <div class="card-meta">模板：{{ s.template_name }}</div>
-                <div class="card-meta">构建开始：{{ s.build_start_time }}</div>
-                <div class="card-meta">
-                  推送模式：{{ s.push_mode === "sync" ? "同步推送冒烟" : "正常流程推送" }}
-                </div>
-                <div class="card-meta">
-                  状态：
-                  <el-tag :type="s.enabled ? 'success' : 'info'" size="small">
-                    {{ s.enabled ? "启用" : "停用" }}
-                  </el-tag>
-                </div>
+          <div class="version-cards">
+            <div
+              v-for="s in g.list"
+              :key="s.id"
+              class="strategy-card"
+              :class="{ active: selectedStrategy?.id === s.id }"
+              @click="selectStrategy(s)"
+            >
+              <div class="card-name">
+                {{ s.name }}
+                <span class="card-branch">{{ s.branch_name }}</span>
+              </div>
+              <div class="card-meta">模板：{{ s.template_name }}</div>
+              <div class="card-meta">构建开始：{{ s.build_start_time }}</div>
+              <div class="card-meta">
+                推送模式：{{ s.push_mode === "sync" ? "同步推送冒烟" : "正常流程推送" }}
+              </div>
+              <div class="card-meta">
+                状态：
+                <el-tag :type="s.enabled ? 'success' : 'info'" size="small">
+                  {{ s.enabled ? "启用" : "停用" }}
+                </el-tag>
               </div>
             </div>
           </div>
@@ -329,11 +317,26 @@ onMounted(loadStrategies);
   font-weight: 400;
   font-size: 13px;
 }
-.group-block {
-  margin-bottom: 16px;
+/* 策略区：每行一个版本，纵向堆叠 */
+.strategy-area {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
-.group-version {
-  margin-bottom: 8px;
+.version-row {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  background: #f5f7fa;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  padding: 12px;
+}
+.version-side {
+  flex: 0 0 64px;
+  display: flex;
+  justify-content: center;
+  padding-top: 6px;
 }
 .version-badge {
   background: #eff6ff;
@@ -344,19 +347,21 @@ onMounted(loadStrategies);
   font-size: 13px;
   font-weight: 600;
 }
-.branch-block {
-  margin-bottom: 12px;
+/* 行内策略卡片横向铺满：auto-fit 卡片少时自动拉伸，消除右侧空白 */
+.version-cards {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
 }
-.branch-label {
+.card-branch {
+  margin-left: 6px;
   color: #909399;
   font-size: 12px;
-  margin-bottom: 6px;
-  padding-left: 4px;
-}
-.card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 12px;
+  font-weight: 400;
+  background: #f2f3f5;
+  border-radius: 4px;
+  padding: 1px 6px;
 }
 .strategy-card {
   background: #fff;

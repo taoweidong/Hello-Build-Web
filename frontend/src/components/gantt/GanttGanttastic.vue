@@ -38,12 +38,12 @@ const stageLabel: Record<string, string> = {
 const chartStart = computed(() => dayjs(props.rangeStart).format("YYYY-MM-DD HH:mm"));
 const chartEnd = computed(() => dayjs(props.rangeEnd).format("YYYY-MM-DD HH:mm"));
 
-/** 浅色主题配色 */
+/** 浅色主题配色（时间轴/标签列浅灰底，与 pure-admin 示例视觉一致） */
 const colorScheme = {
-  primary: "#3b82f6",
-  secondary: "#8b5cf6",
-  ternary: "#f59e0b",
-  quartenary: "#10b981",
+  primary: "#e9edf2",
+  secondary: "#e0e5eb",
+  ternary: "#f2f4f7",
+  quartenary: "#eaeef2",
   hoverHighlight: "#eff6ff",
   markerCurrentTime: "#ef4444",
   text: "#303133",
@@ -91,7 +91,7 @@ function onBarClick({ bar }: { bar: GanttBarObject }) {
       :chart-start="chartStart"
       :chart-end="chartEnd"
       precision="hour"
-      date-format="MM-DD HH:mm"
+      date-format="YYYY-MM-DD HH:mm"
       bar-start="beginDate"
       bar-end="endDate"
       :color-scheme="colorScheme"
@@ -99,6 +99,10 @@ function onBarClick({ bar }: { bar: GanttBarObject }) {
       grid
       @click-bar="onBarClick"
     >
+      <!-- 顶部时间线：上行按天显示日期标题（同 pure-admin 示例 upper-timeunit 插槽） -->
+      <template #upper-timeunit="{ date }">
+        <span class="upper-day-label">{{ dayjs(date).format("YYYY-MM-DD") }}</span>
+      </template>
       <g-gantt-row
         v-for="g in ganttRows"
         :key="g.id"
@@ -126,6 +130,12 @@ function onBarClick({ bar }: { bar: GanttBarObject }) {
   color: #fff;
   font-size: 12px;
   font-weight: 500;
+  white-space: nowrap;
+}
+.upper-day-label {
+  color: #303133;
+  font-size: 14px;
+  font-weight: 600;
   white-space: nowrap;
 }
 </style>
