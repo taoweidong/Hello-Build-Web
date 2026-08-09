@@ -238,8 +238,8 @@ onMounted(async () => {
 
 <style scoped>
 .logs-page {
-  background: #101624;
-  border: 1px solid #1e293b;
+  background: #fff;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 16px;
 }
@@ -257,7 +257,7 @@ onMounted(async () => {
   color: #10b981;
 }
 .arrow {
-  color: #64748b;
+  color: #909399;
   margin: 0 6px;
 }
 </style>

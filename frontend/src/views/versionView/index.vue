@@ -1,39 +1,23 @@
 <script setup lang="ts">
-// 版本计划甘特看板（主视图）
-// 设计文档 8.2：跨天时间轴、版本→分支→策略纵轴、阶段色块、冲突斜纹、PM 点击跳转策略编辑
+// 版本全景页（全角色只读）
+// 需求：甘特图展示所有版本 → 分支 → 构建策略，支持按单日筛选（默认当天），点击策略联动执行历史
 import { ref, reactive, computed, watch, onMounted } from "vue";
-import { useRouter } from "vue-router";
 import { getPlan, type PlanVersion } from "@/api/plan";
-import {
-  getCurrentUser,
-  timeToMs,
-  dayjs
-} from "@/utils/business";
+import { getExecutions, type RoundItem } from "@/api/panorama";
+import { dayjs, formatTime } from "@/utils/business";
 import GanttGanttastic from "@/components/gantt/GanttGanttastic.vue";
 import {
   STAGE_COLORS,
   type GanttRow
 } from "@/components/gantt/types";
 
-defineOptions({ name: "PlanIndex" });
+defineOptions({ name: "VersionViewIndex" });
 
-const router = useRouter();
 const loading = ref(false);
 
 // ---- 筛选条件 ----
 const filter = reactive({
-  date: dayjs().format("YYYY-MM-DD"),
-  version_id: undefined as number | undefined,
-  branch_id: undefined as number | undefined
-});
-
-// 版本/分支下拉选项（来自 /plan 返回结构）
-const versionOptions = ref<Array<{ id: number; name: string; branches: Array<{ id: number; name: string }> }>>(
-  []
-);
-const branchOptions = computed(() => {
-  const v = versionOptions.value.find(item => item.id === filter.version_id);
-  return v ? v.branches : [];
+  date: dayjs().format("YYYY-MM-DD")
 });
 
 // ---- 数据 ----
@@ -41,20 +25,10 @@ const planData = ref<PlanVersion[]>([]);
 const rows = ref<GanttRow[]>([]);
 const range = reactive({ start: new Date(), end: new Date() });
 
-/** 版本选择后清空分支并重载 */
-function onVersionChange() {
-  filter.branch_id = undefined;
-  load();
-}
-function onBranchChange() {
-  load();
-}
-
-/** 把 plan 数据展开为甘特行 */
+/** 把 plan 数据展开为甘特行（版本分组行 + 策略行） */
 function buildRows(data: PlanVersion[]) {
   const result: GanttRow[] = [];
   data.forEach(v => {
-    // 版本分组行
     result.push({
       id: `v-${v.version_id}`,
       label: `${v.version_name}${v.pm_name ? ` · ${v.pm_name}` : ""}`,
@@ -63,7 +37,7 @@ function buildRows(data: PlanVersion[]) {
     });
     v.branches.forEach(b => {
       b.strategies.forEach(s => {
-        const phases: GanttPhase[] = [];
+        const phases: GanttRow["phases"] = [];
         const tl = s.timeline;
         if (tl) {
           if (tl.push) {
@@ -122,19 +96,17 @@ function computeRange(data: PlanVersion[]) {
         if (!tl) return;
         const all = [tl.push, tl.build, tl.smoke, tl.analysis].filter(Boolean);
         all.forEach(p => {
-          min = Math.min(min, timeToMs(p.start));
-          max = Math.max(max, timeToMs(p.end));
+          min = Math.min(min, new Date(p.start).getTime());
+          max = Math.max(max, new Date(p.end).getTime());
         });
       })
     )
   );
   if (min === Infinity || max === -Infinity) {
-    // 无数据：默认当日 18:00 → 次日 12:00
     const d = dayjs(filter.date).startOf("day");
     min = d.subtract(6, "hour").valueOf();
     max = d.add(12, "hour").valueOf();
   } else {
-    // 上下各留 2 小时缓冲并按小时取整
     min = Math.floor((min - 2 * 3600 * 1000) / 3600000) * 3600000;
     max = Math.ceil((max + 2 * 3600 * 1000) / 3600000) * 3600000;
   }
@@ -145,23 +117,8 @@ function computeRange(data: PlanVersion[]) {
 async function load() {
   loading.value = true;
   try {
-    const data = await getPlan({
-      date: filter.date,
-      version_id: filter.version_id,
-      branch_id: filter.branch_id
-    });
+    const data = await getPlan({ date: filter.date });
     planData.value = data;
-    // 无筛选时重建版本下拉选项；有筛选时保留
-    if (!filter.version_id) {
-      versionOptions.value = data.map(v => ({
-        id: v.version_id,
-        name: v.version_name,
-        branches: v.branches.map(b => ({
-          id: b.branch_id,
-          name: b.branch_name
-        }))
-      }));
-    }
     rows.value = buildRows(data);
     computeRange(data);
   } finally {
@@ -169,25 +126,50 @@ async function load() {
   }
 }
 
-// ---- PM 点击跳转策略编辑 ----
-const currentUser = getCurrentUser();
+// ---- 点击策略色块 → 联动执行历史 ----
+const selectedStrategyId = ref<number | null>(null);
+const selectedStrategyName = ref("");
+const executions = ref<RoundItem[]>([]);
+const execLoading = ref(false);
 
-function onRowClick(row: GanttRow) {
-  // 仅 PM 且点击本版本策略行时可跳转
-  if (currentUser?.role !== "pm") return;
+async function onRowClick(row: GanttRow) {
   if (row.type !== "strategy") return;
-  const id = row.id.replace("s-", "");
-  const strategyId = Number(id);
-  if (!strategyId) return;
-  // 校验是否为 PM 绑定版本（从 group 上一行判断）
-  const idx = rows.value.findIndex(r => r.id === row.id);
-  const group = [...rows.value.slice(0, idx)].reverse().find(r => r.type === "group");
-  if (group && group.label.includes(`${currentUser.bound_version_name}`)) {
-    router.push({ path: "/strategy/index", query: { id: strategyId } });
+  const id = Number(row.id.replace("s-", ""));
+  if (!id) return;
+  if (selectedStrategyId.value === id) {
+    selectedStrategyId.value = null;
+    selectedStrategyName.value = "";
+    executions.value = [];
+    return;
+  }
+  selectedStrategyId.value = id;
+  selectedStrategyName.value = row.label.split(" · ")[1] || row.label;
+  execLoading.value = true;
+  try {
+    executions.value = await getExecutions({
+      strategy_id: id,
+      from: filter.date,
+      to: filter.date
+    });
+  } finally {
+    execLoading.value = false;
   }
 }
 
-// 图例
+// ---- 展示辅助 ----
+const pushStatusMap: Record<string, string> = {
+  pending: "待推送",
+  running: "推送中",
+  success: "成功",
+  failed: "失败",
+  skipped: "跳过"
+};
+const conclusionMap: Record<string, string> = {
+  pending: "待录",
+  pass: "通过",
+  fail: "不通过"
+};
+
 const legend = [
   { label: "构建", color: STAGE_COLORS.build },
   { label: "冒烟", color: STAGE_COLORS.smoke },
@@ -196,15 +178,15 @@ const legend = [
 ];
 
 watch(() => filter.date, load);
-
 onMounted(load);
 </script>
 
 <template>
-  <div class="plan-page">
+  <div class="version-view-page">
     <!-- 筛选栏 -->
     <div class="filter-bar">
       <div class="filter-left">
+        <span class="filter-title">时间</span>
         <el-date-picker
           v-model="filter.date"
           type="date"
@@ -212,35 +194,6 @@ onMounted(load);
           placeholder="选择日期"
           :clearable="false"
         />
-        <el-select
-          v-model="filter.version_id"
-          placeholder="全部版本"
-          clearable
-          style="width: 160px"
-          @change="onVersionChange"
-        >
-          <el-option
-            v-for="v in versionOptions"
-            :key="v.id"
-            :label="v.name"
-            :value="v.id"
-          />
-        </el-select>
-        <el-select
-          v-model="filter.branch_id"
-          placeholder="全部分支"
-          clearable
-          :disabled="!filter.version_id"
-          style="width: 160px"
-          @change="onBranchChange"
-        >
-          <el-option
-            v-for="b in branchOptions"
-            :key="b.id"
-            :label="b.name"
-            :value="b.id"
-          />
-        </el-select>
         <el-button type="primary" :loading="loading" @click="load">查询</el-button>
       </div>
       <div class="legend">
@@ -254,16 +207,7 @@ onMounted(load);
       </div>
     </div>
 
-    <el-alert
-      v-if="currentUser?.role === 'pm'"
-      title="PM 提示：点击本版本策略色块可跳转策略编辑"
-      type="info"
-      :closable="false"
-      show-icon
-      class="pm-tip"
-    />
-
-    <!-- 甘特图 -->
+    <!-- 甘特图：所有版本 × 分支 × 策略 -->
     <div v-loading="loading" class="gantt-container">
       <GanttGanttastic
         :rows="rows"
@@ -271,13 +215,70 @@ onMounted(load);
         :range-end="range.end"
         @click-row="onRowClick"
       />
-      <el-empty v-if="!loading && rows.length === 0" description="暂无计划数据" />
+      <el-empty v-if="!loading && rows.length === 0" description="暂无版本计划数据" />
+    </div>
+
+    <!-- 执行历史联动区 -->
+    <div class="section">
+      <div class="section-title">
+        执行历史
+        <span v-if="selectedStrategyName" class="section-sub">
+          —— {{ selectedStrategyName }}
+        </span>
+      </div>
+      <el-empty
+        v-if="!selectedStrategyId"
+        description="点击上方甘特图策略色块，查看该策略当天的执行历史"
+      />
+      <el-table
+        v-else
+        v-loading="execLoading"
+        :data="executions"
+        style="width: 100%"
+      >
+        <el-table-column label="日期" width="120">
+          <template #default="{ row }">{{ row.exec_date }}</template>
+        </el-table-column>
+        <el-table-column label="构建" min-width="170">
+          <template #default="{ row }">
+            {{ formatTime(row.build_start, "MM-DD HH:mm") }} ~
+            {{ formatTime(row.build_end, "HH:mm") }}
+          </template>
+        </el-table-column>
+        <el-table-column label="冒烟" min-width="170">
+          <template #default="{ row }">
+            {{ formatTime(row.smoke_start, "MM-DD HH:mm") }} ~
+            {{ formatTime(row.smoke_end, "HH:mm") }}
+          </template>
+        </el-table-column>
+        <el-table-column label="分析" min-width="170">
+          <template #default="{ row }">
+            {{ formatTime(row.analysis_start, "MM-DD HH:mm") }} ~
+            {{ formatTime(row.analysis_end, "HH:mm") }}
+          </template>
+        </el-table-column>
+        <el-table-column label="结论" width="90">
+          <template #default="{ row }">
+            <el-tag
+              :type="row.conclusion === 'pass' ? 'success' : row.conclusion === 'fail' ? 'danger' : 'info'"
+              size="small"
+            >
+              {{ conclusionMap[row.conclusion] }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="推送" width="90">
+          <template #default="{ row }">
+            {{ pushStatusMap[row.push_status] || row.push_status }}
+          </template>
+        </el-table-column>
+      </el-table>
     </div>
   </div>
 </template>
 
 <style scoped>
-.plan-page {
+.version-view-page {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -299,15 +300,16 @@ onMounted(load);
   gap: 10px;
   flex-wrap: wrap;
 }
+.filter-title {
+  color: #909399;
+  font-size: 13px;
+}
 .legend {
   display: flex;
   align-items: center;
   gap: 12px;
   color: #909399;
   font-size: 12px;
-}
-.legend-label {
-  color: #909399;
 }
 .legend-item {
   display: inline-flex;
@@ -327,11 +329,24 @@ onMounted(load);
     rgba(127, 29, 29, 0.9) 4px 8px
   );
 }
-.pm-tip {
-  margin-bottom: 0;
-}
 .gantt-container {
   position: relative;
   min-height: 200px;
+}
+.section {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+}
+.section-title {
+  color: #303133;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.section-sub {
+  color: #909399;
+  font-weight: 400;
+  font-size: 13px;
 }
 </style>

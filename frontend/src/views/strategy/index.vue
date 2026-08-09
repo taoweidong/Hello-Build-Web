@@ -347,8 +347,8 @@ onMounted(async () => {
   gap: 12px;
 }
 .section {
-  background: #101624;
-  border: 1px solid #1e293b;
+  background: #fff;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 16px;
 }
@@ -359,30 +359,30 @@ onMounted(async () => {
   margin-bottom: 12px;
 }
 .section-title {
-  color: #e2e8f0;
+  color: #303133;
   font-weight: 600;
 }
 .form-tip {
-  color: #64748b;
+  color: #909399;
   font-size: 12px;
   margin-left: 8px;
 }
 .preview-block {
   margin-top: 8px;
-  background: #0a0e17;
-  border: 1px solid #1e293b;
+  background: #f5f7fa;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 14px;
 }
 .preview-title {
-  color: #94a3b8;
+  color: #909399;
   font-size: 13px;
   margin-bottom: 10px;
 }
 .preview-bar {
   position: relative;
   height: 40px;
-  background: #0a0e17;
+  background: #eef1f6;
   border-radius: 6px;
   overflow: hidden;
 }
@@ -403,7 +403,7 @@ onMounted(async () => {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
 .preview-empty {
-  color: #64748b;
+  color: #909399;
   font-size: 12px;
   padding: 12px 0;
 }
@@ -412,7 +412,7 @@ onMounted(async () => {
   flex-wrap: wrap;
   gap: 12px;
   margin-top: 10px;
-  color: #94a3b8;
+  color: #909399;
   font-size: 12px;
 }
 .p-legend-item {

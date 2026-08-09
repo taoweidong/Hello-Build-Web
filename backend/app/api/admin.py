@@ -170,13 +170,16 @@ def update_config(req: ConfigReq, user: User = Depends(get_current_user), db: Se
 @router.get("/logs/operations")
 def op_logs(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _require_admin(user)
-    return ok([{"id": l.id, "operator": l.operator, "action": l.action, "target_type": l.target_type,
+    return ok([{"id": l.id, "operator": db.get(User, l.operator).display_name if l.operator and db.get(User, l.operator) else str(l.operator),
+                "action": l.action, "target_type": l.target_type,
                 "target_id": l.target_id, "detail": l.detail, "at": l.at.isoformat()}
                for l in db.query(AdminOpLog).order_by(AdminOpLog.at.desc()).limit(200).all()])
 
 @router.get("/logs/security")
 def security_logs(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     _require_admin(user)
-    return ok([{"id": l.id, "user_id": l.user_id, "event": l.event, "ip": l.ip,
+    return ok([{"id": l.id, "user_id": l.user_id,
+                "username": db.get(User, l.user_id).display_name if l.user_id and db.get(User, l.user_id) else None,
+                "event": l.event, "ip": l.ip,
                 "at": l.at.isoformat()}
                for l in db.query(SecurityLog).order_by(SecurityLog.at.desc()).limit(200).all()])

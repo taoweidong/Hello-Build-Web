@@ -6,17 +6,13 @@ from ..models.version import Version
 from ..models.branch import Branch
 from ..models.strategy import StrategyTemplate, Strategy
 from ..models.execution import ExecutionRound
-from ..models.audit import ExecutionLog
+from ..models.audit import ExecutionLog, StrategyChangeLog, AdminOpLog
 from ..services.timeline import build_timeline
 from ..config import settings
 from datetime import datetime, date as date_mod, timedelta
 
-def seed():
-    Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
-    if db.query(User).count() > 0:
-        db.close(); print("seed skip (已有数据)")
-        return
+def _seed_core(db: Session):
+    """主数据：用户 / 版本 / 分支 / 模板 / 策略 / 近 7 天执行轮次"""
     # 用户（5 角色）
     pw = hash_password("123456")
     admin = User(username="admin", password_hash=pw, display_name="系统管理员", role="admin")
@@ -81,6 +77,51 @@ def seed():
             if passed:
                 db.add(ExecutionLog(round_id=r.id, stage="conclusion", event="conclusion_submit",
                                     detail="seed pass"))
+
+
+def _seed_audit_logs(db: Session):
+    """审计日志：策略变更日志 + 管理操作日志（幂等补全，仅当表为空时插入）"""
+    today = date_mod.today()
+    # 策略变更日志（模拟 PM 调整策略留痕）
+    if db.query(StrategyChangeLog).count() == 0:
+        changes = [
+            # (strategy_id, operator, field, old_value, new_value, days_ago)
+            (1, 2, "build_start_time", "21:00", "22:00", 3),
+            (1, 2, "push_mode", "normal", "sync", 2),
+            (2, 2, "name", "27A-TR5上午构建", "27A-TR5午间快速", 4),
+            (3, 3, "enabled", "False", "True", 5),
+            (3, 3, "build_start_time", "17:00", "16:30", 1),
+            (4, 4, "push_mode", "normal", "sync", 2),
+        ]
+        for sid, op, field, old, new, days in changes:
+            db.add(StrategyChangeLog(strategy_id=sid, operator=op, field=field,
+                                     old_value=old, new_value=new,
+                                     at=datetime.combine(today - timedelta(days=days), datetime.min.time())))
+    # 管理操作日志（模拟管理员操作留痕）
+    if db.query(AdminOpLog).count() == 0:
+        ops = [
+            # (action, target_type, target_id, detail, days_ago)
+            ("create_version", "version", 1, "27A", 6),
+            ("create_user", "user", 5, "builder", 6),
+            ("create_template", "template", 1, "晚间全量冒烟", 5),
+            ("add_branch", "branch", 4, "TR6", 5),
+            ("update_config", "config", None, "build_minutes=30 push_minutes=20 sync_buffer_minutes=20", 3),
+            ("create_version", "version", 3, "26B", 2),
+        ]
+        for action, target_type, target_id, detail, days in ops:
+            db.add(AdminOpLog(operator=1, action=action, target_type=target_type,
+                              target_id=target_id, detail=detail,
+                              at=datetime.combine(today - timedelta(days=days), datetime.min.time())))
+
+
+def seed():
+    Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    if db.query(User).count() == 0:
+        _seed_core(db)
+        print("seed core done")
+    # 已有数据时也补全审计日志（幂等）
+    _seed_audit_logs(db)
     db.commit()
     db.close()
     print("seed done")

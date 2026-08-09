@@ -81,6 +81,28 @@ export const asyncRoutes = [
     ]
   },
   {
+    path: "/version-view",
+    name: "VersionView",
+    component: Layout,
+    redirect: "/version-view/index",
+    meta: {
+      icon: "ep/trend-charts",
+      title: "版本全景",
+      rank: 4
+    },
+    children: [
+      {
+        path: "/version-view/index",
+        name: "VersionViewIndex",
+        component: () => import("@/views/versionView/index.vue"),
+        meta: {
+          title: "版本全景",
+          roles: ALL_ROLES
+        }
+      }
+    ]
+  },
+  {
     path: "/strategy",
     name: "Strategy",
     component: Layout,
@@ -88,7 +110,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/set-up",
       title: "策略配置",
-      rank: 4
+      rank: 5
     },
     children: [
       {
@@ -110,7 +132,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/setting",
       title: "系统管理",
-      rank: 5
+      rank: 6
     },
     children: [
       {
@@ -132,7 +154,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/document",
       title: "日志中心",
-      rank: 6
+      rank: 7
     },
     children: [
       {

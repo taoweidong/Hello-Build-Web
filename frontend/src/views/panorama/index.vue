@@ -304,28 +304,28 @@ onMounted(loadStrategies);
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  background: #101624;
-  border: 1px solid #1e293b;
+  background: #fff;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 12px 16px;
 }
 .filter-title {
-  color: #94a3b8;
+  color: #909399;
   font-size: 13px;
 }
 .section {
-  background: #101624;
-  border: 1px solid #1e293b;
+  background: #fff;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 16px;
 }
 .section-title {
-  color: #e2e8f0;
+  color: #303133;
   font-weight: 600;
   margin-bottom: 12px;
 }
 .section-sub {
-  color: #64748b;
+  color: #909399;
   font-weight: 400;
   font-size: 13px;
 }
@@ -336,9 +336,9 @@ onMounted(loadStrategies);
   margin-bottom: 8px;
 }
 .version-badge {
-  background: #0a0e17;
-  color: #e2e8f0;
-  border: 1px solid #334155;
+  background: #eff6ff;
+  color: #3b82f6;
+  border: 1px solid #bfdbfe;
   border-radius: 4px;
   padding: 2px 10px;
   font-size: 13px;
@@ -348,7 +348,7 @@ onMounted(loadStrategies);
   margin-bottom: 12px;
 }
 .branch-label {
-  color: #94a3b8;
+  color: #909399;
   font-size: 12px;
   margin-bottom: 6px;
   padding-left: 4px;
@@ -359,38 +359,38 @@ onMounted(loadStrategies);
   gap: 12px;
 }
 .strategy-card {
-  background: #0a0e17;
-  border: 1px solid #1e293b;
+  background: #fff;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 12px;
   cursor: pointer;
   transition: border-color 0.2s;
 }
 .strategy-card:hover {
-  border-color: #334155;
+  border-color: #3b82f6;
 }
 .strategy-card.active {
   border-color: #3b82f6;
   box-shadow: 0 0 0 1px #3b82f6;
 }
 .card-name {
-  color: #e2e8f0;
+  color: #303133;
   font-weight: 600;
   margin-bottom: 8px;
 }
 .card-meta {
-  color: #94a3b8;
+  color: #909399;
   font-size: 12px;
   line-height: 1.8;
 }
 .drawer-round {
-  color: #94a3b8;
+  color: #909399;
   font-size: 13px;
   line-height: 1.9;
   margin-bottom: 12px;
 }
 .log-detail {
-  color: #64748b;
+  color: #909399;
   font-size: 12px;
   margin-top: 2px;
 }

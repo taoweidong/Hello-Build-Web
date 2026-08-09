@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 甘特看板组件（可复用）
-// 深色主题：背景 #0a0e17、面板 #101624；阶段色：构建蓝/冒烟紫/分析橙/推送绿；冲突红色斜纹
+// 浅色主题：面板 #fff、表头 #f5f7fa；阶段色：构建蓝/冒烟紫/分析橙/推送绿；冲突红色斜纹
 import { ref, computed } from "vue";
 import { timeToMs, parseTime, formatTime } from "@/utils/business";
 import { STAGE_COLORS, type GanttPhase, type GanttRow } from "./types";
@@ -168,8 +168,8 @@ function hideTip() {
 <style scoped>
 .gantt-wrap {
   position: relative;
-  background: #101624;
-  border: 1px solid #1e293b;
+  background: #fff;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
   overflow: hidden;
 }
@@ -186,8 +186,8 @@ function hideTip() {
   position: sticky;
   top: 0;
   z-index: 3;
-  background: #0a0e17;
-  border-bottom: 1px solid #1e293b;
+  background: #f5f7fa;
+  border-bottom: 1px solid #e5e7eb;
 }
 .gantt-label-col {
   flex-shrink: 0;
@@ -195,16 +195,16 @@ function hideTip() {
   align-items: center;
   padding: 0 12px;
   box-sizing: border-box;
-  border-right: 1px solid #1e293b;
-  background: #0a0e17;
-  color: #94a3b8;
+  border-right: 1px solid #e5e7eb;
+  background: #f5f7fa;
+  color: #909399;
   font-size: 12px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 .gantt-phase-flag {
-  color: #64748b;
+  color: #909399;
 }
 .gantt-ruler {
   position: relative;
@@ -214,8 +214,8 @@ function hideTip() {
   position: absolute;
   top: 0;
   bottom: 0;
-  border-left: 1px solid #1e293b;
-  color: #64748b;
+  border-left: 1px solid #e5e7eb;
+  color: #909399;
   font-size: 11px;
   padding: 4px 4px 0;
   white-space: nowrap;
@@ -226,25 +226,25 @@ function hideTip() {
   right: 0;
   display: flex;
   align-items: center;
-  border-bottom: 1px solid #121a2a;
+  border-bottom: 1px solid #f0f0f0;
 }
 .gantt-row.group {
-  background: #0a0e17;
+  background: #f5f7fa;
 }
 .gantt-row.strategy {
-  background: #101624;
+  background: #fff;
 }
 .gantt-row.strategy.clickable {
   cursor: pointer;
 }
 .gantt-row.strategy.clickable:hover {
-  background: #16203a;
+  background: #eff6ff;
 }
 .gantt-label-text {
   font-weight: 500;
 }
 .group-label .gantt-label-text {
-  color: #e2e8f0;
+  color: #303133;
   font-weight: 600;
 }
 .gantt-track {
@@ -259,7 +259,7 @@ function hideTip() {
   border-radius: 4px;
   cursor: default;
   box-sizing: border-box;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(0, 0, 0, 0.08);
 }
 .phase.conflict {
   border-color: #ef4444;
@@ -267,21 +267,21 @@ function hideTip() {
 .gantt-tip {
   position: fixed;
   z-index: 9999;
-  background: #0a0e17;
-  border: 1px solid #334155;
+  background: #fff;
+  border: 1px solid #e5e7eb;
   border-radius: 6px;
   padding: 8px 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
   pointer-events: none;
   max-width: 260px;
 }
 .tip-title {
-  color: #e2e8f0;
+  color: #303133;
   font-weight: 600;
   margin-bottom: 4px;
 }
 .tip-line {
-  color: #94a3b8;
+  color: #909399;
   font-size: 12px;
   line-height: 1.6;
 }

@@ -531,8 +531,8 @@ onMounted(async () => {
 
 <style scoped>
 .admin-page {
-  background: #101624;
-  border: 1px solid #1e293b;
+  background: #fff;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 16px;
 }
@@ -543,7 +543,7 @@ onMounted(async () => {
   padding: 8px 24px;
 }
 .branch-title {
-  color: #94a3b8;
+  color: #909399;
   font-size: 13px;
   margin-bottom: 8px;
 }

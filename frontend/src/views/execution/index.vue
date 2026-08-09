@@ -259,8 +259,8 @@ const pushStatusMap: Record<string, { type: string; label: string }> = {
   gap: 12px;
 }
 .stat-card {
-  background: #101624;
-  border: 1px solid #1e293b;
+  background: #fff;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 16px;
   border-left: 4px solid var(--accent);
@@ -272,12 +272,12 @@ const pushStatusMap: Record<string, { type: string; label: string }> = {
 }
 .stat-label {
   margin-top: 4px;
-  color: #94a3b8;
+  color: #909399;
   font-size: 13px;
 }
 .table-card {
-  background: #101624;
-  border: 1px solid #1e293b;
+  background: #fff;
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 16px;
 }
@@ -288,12 +288,12 @@ const pushStatusMap: Record<string, { type: string; label: string }> = {
   margin-bottom: 12px;
 }
 .table-title {
-  color: #e2e8f0;
+  color: #303133;
   font-weight: 600;
 }
 .phase-time {
   margin-left: 8px;
-  color: #64748b;
+  color: #909399;
   font-size: 12px;
 }
 </style>
