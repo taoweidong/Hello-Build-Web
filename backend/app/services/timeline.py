@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
-from ..config import settings
+
+from app.core.config import settings
 
 def parse_build_start(date: str, hhmm: str) -> datetime:
     h, m = map(int, hhmm.split(":"))

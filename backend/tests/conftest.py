@@ -1,32 +1,50 @@
-# pytest 全局配置：使用独立临时数据库，避免污染真实开发库
 import os
 import tempfile
+from collections.abc import Generator
 
-import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
-# 在导入业务模块前，将 database 模块切换到独立测试库
-import app.database as db
-
+# 在导入业务模块前切换到独立临时数据库，避免污染真实开发库
 _tmp = tempfile.mkdtemp(prefix="build_strategy_test_")
-_TEST_DB = os.path.join(_tmp, "test.db")
-db.engine = create_engine(f"sqlite:///{_TEST_DB}", connect_args={"check_same_thread": False})
-db.SessionLocal = sessionmaker(bind=db.engine, autoflush=False, autocommit=False)
+os.environ["DATABASE_URL"] = f"sqlite:///{os.path.join(_tmp, 'test.db')}"
+
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+from sqlmodel import Session, SQLModel  # noqa: E402
+
+from app.core.db import engine, init_db  # noqa: E402
+from app.main import app  # noqa: E402
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _setup_db():
+def db() -> Generator[Session]:
     """建表并写入种子数据（每个测试会话一次）。"""
-    from app import models  # noqa: F401  触发模型注册
-    db.Base.metadata.create_all(bind=db.engine)
-    from app.seed.seed import seed
-    seed()
-    yield
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        init_db(session)
+        yield session
 
 
-@pytest.fixture(scope="session")
-def client(_setup_db):
-    from app.main import app
-    from fastapi.testclient import TestClient
-    return TestClient(app)
+@pytest.fixture(scope="module")
+def client() -> Generator[TestClient]:
+    with TestClient(app) as c:
+        yield c
+
+
+@pytest.fixture(scope="module")
+def admin_token_headers(client: TestClient) -> dict[str, str]:
+    from tests.utils.utils import get_token_headers
+
+    return get_token_headers(client=client, username="admin")
+
+
+@pytest.fixture(scope="module")
+def pm_token_headers(client: TestClient) -> dict[str, str]:
+    from tests.utils.utils import get_token_headers
+
+    return get_token_headers(client=client, username="pm27a")
+
+
+@pytest.fixture(scope="module")
+def tester_token_headers(client: TestClient) -> dict[str, str]:
+    from tests.utils.utils import get_token_headers
+
+    return get_token_headers(client=client, username="tester")
