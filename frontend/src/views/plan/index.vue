@@ -12,8 +12,11 @@ import {
 import GanttGanttastic from "@/components/gantt/GanttGanttastic.vue";
 import {
   STAGE_COLORS,
-  type GanttRow
+  type GanttRow,
+  type GanttPhase
 } from "@/components/gantt/types";
+// 点击色块时携带的 bar 信息
+import type { GanttBarObject } from "@infectoone/vue-ganttastic";
 
 defineOptions({ name: "PlanIndex" });
 
@@ -50,20 +53,13 @@ function onBranchChange() {
   load();
 }
 
-/** 把 plan 数据展开为甘特行 */
+/** 把 plan 数据展开为甘特行：每个「版本+分支」为一行，该分支下所有策略的色块绘制在同一行 */
 function buildRows(data: PlanVersion[]) {
   const result: GanttRow[] = [];
   data.forEach(v => {
-    // 版本分组行
-    result.push({
-      id: `v-${v.version_id}`,
-      label: `${v.version_name}${v.pm_name ? ` · ${v.pm_name}` : ""}`,
-      type: "group",
-      phases: []
-    });
     v.branches.forEach(b => {
+      const phases: GanttPhase[] = [];
       b.strategies.forEach(s => {
-        const phases: GanttPhase[] = [];
         const tl = s.timeline;
         if (tl) {
           if (tl.push) {
@@ -72,7 +68,8 @@ function buildRows(data: PlanVersion[]) {
               stage: "push",
               start: tl.push.start,
               end: tl.push.end,
-              conflict: !!s.conflict
+              conflict: !!s.conflict,
+              versionName: v.version_name
             });
           }
           phases.push(
@@ -81,30 +78,33 @@ function buildRows(data: PlanVersion[]) {
               stage: "build",
               start: tl.build.start,
               end: tl.build.end,
-              conflict: !!s.conflict
+              conflict: !!s.conflict,
+              versionName: v.version_name
             },
             {
               key: `${s.id}-smoke`,
               stage: "smoke",
               start: tl.smoke.start,
               end: tl.smoke.end,
-              conflict: !!s.conflict
+              conflict: !!s.conflict,
+              versionName: v.version_name
             },
             {
               key: `${s.id}-analysis`,
               stage: "analysis",
               start: tl.analysis.start,
               end: tl.analysis.end,
-              conflict: !!s.conflict
+              conflict: !!s.conflict,
+              versionName: v.version_name
             }
           );
         }
-        result.push({
-          id: `s-${s.id}`,
-          label: `${b.branch_name} · ${s.name}`,
-          type: "strategy",
-          phases
-        });
+      });
+      result.push({
+        id: `b-${b.branch_id}`,
+        label: `${v.version_name} / ${b.branch_name}`,
+        type: "strategy",
+        phases
       });
     });
   });
@@ -172,18 +172,16 @@ async function load() {
 // ---- PM 点击跳转策略编辑 ----
 const currentUser = getCurrentUser();
 
-function onRowClick(row: GanttRow) {
-  // 仅 PM 且点击本版本策略行时可跳转
+function onRowClick(_row: GanttRow, bar: GanttBarObject) {
+  // 仅 PM 且点击本版本策略色块时可跳转
   if (currentUser?.role !== "pm") return;
-  if (row.type !== "strategy") return;
-  const id = row.id.replace("s-", "");
-  const strategyId = Number(id);
-  if (!strategyId) return;
-  // 校验是否为 PM 绑定版本（从 group 上一行判断）
-  const idx = rows.value.findIndex(r => r.id === row.id);
-  const group = [...rows.value.slice(0, idx)].reverse().find(r => r.type === "group");
-  if (group && group.label.includes(`${currentUser.bound_version_name}`)) {
-    router.push({ path: "/strategy/index", query: { id: strategyId } });
+  // 从色块 key 解析策略 id（key 形如 `${strategyId}-${stage}`）
+  const id = Number((bar?.phaseKey || "").split("-")[0]);
+  if (!id) return;
+  // 校验是否为 PM 绑定版本（色块携带版本名）
+  const versionName = bar?.versionName || "";
+  if (versionName && versionName === currentUser.bound_version_name) {
+    router.push({ path: "/strategy/index", query: { id } });
   }
 }
 

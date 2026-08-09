@@ -24,7 +24,7 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-  (e: "click-row", row: GanttRow): void;
+  (e: "click-row", row: GanttRow, bar: GanttBarObject): void;
 }>();
 
 const stageLabel: Record<string, string> = {
@@ -62,6 +62,8 @@ const ganttRows = computed(() =>
       // 携带回查信息，供 click-bar 定位原行
       rowId: row.id,
       phaseKey: p.key,
+      versionName: p.versionName,
+      strategyName: p.strategyName,
       ganttBarConfig: {
         id: p.key,
         label: stageLabel[p.stage] || p.stage,
@@ -79,7 +81,7 @@ const ganttRows = computed(() =>
 
 function onBarClick({ bar }: { bar: GanttBarObject }) {
   const row = props.rows.find(r => r.id === bar.rowId);
-  if (row) emit("click-row", row);
+  if (row) emit("click-row", row, bar);
 }
 </script>
 

@@ -10,6 +10,8 @@ import {
   STAGE_COLORS,
   type GanttRow
 } from "@/components/gantt/types";
+// 点击色块时携带的 bar 信息
+import type { GanttBarObject } from "@infectoone/vue-ganttastic";
 
 defineOptions({ name: "VersionViewIndex" });
 
@@ -25,60 +27,53 @@ const planData = ref<PlanVersion[]>([]);
 const rows = ref<GanttRow[]>([]);
 const range = reactive({ start: new Date(), end: new Date() });
 
-/** 把 plan 数据展开为甘特行（版本分组行 + 策略行） */
+/** 把 plan 数据展开为甘特行：每个「版本+分支」为一行，该分支下所有策略的色块绘制在同一行 */
 function buildRows(data: PlanVersion[]) {
   const result: GanttRow[] = [];
   data.forEach(v => {
-    result.push({
-      id: `v-${v.version_id}`,
-      label: `${v.version_name}${v.pm_name ? ` · ${v.pm_name}` : ""}`,
-      type: "group",
-      phases: []
-    });
     v.branches.forEach(b => {
+      const phases: GanttRow["phases"] = [];
       b.strategies.forEach(s => {
-        const phases: GanttRow["phases"] = [];
         const tl = s.timeline;
-        if (tl) {
-          if (tl.push) {
-            phases.push({
-              key: `${s.id}-push`,
-              stage: "push",
-              start: tl.push.start,
-              end: tl.push.end,
-              conflict: !!s.conflict
-            });
-          }
-          phases.push(
-            {
-              key: `${s.id}-build`,
-              stage: "build",
-              start: tl.build.start,
-              end: tl.build.end,
-              conflict: !!s.conflict
-            },
-            {
-              key: `${s.id}-smoke`,
-              stage: "smoke",
-              start: tl.smoke.start,
-              end: tl.smoke.end,
-              conflict: !!s.conflict
-            },
-            {
-              key: `${s.id}-analysis`,
-              stage: "analysis",
-              start: tl.analysis.start,
-              end: tl.analysis.end,
-              conflict: !!s.conflict
-            }
-          );
+        if (!tl) return;
+        if (tl.push) {
+          phases.push({
+            key: `${s.id}-push`,
+            stage: "push",
+            start: tl.push.start,
+            end: tl.push.end,
+            conflict: !!s.conflict
+          });
         }
-        result.push({
-          id: `s-${s.id}`,
-          label: `${b.branch_name} · ${s.name}`,
-          type: "strategy",
-          phases
-        });
+        phases.push(
+          {
+            key: `${s.id}-build`,
+            stage: "build",
+            start: tl.build.start,
+            end: tl.build.end,
+            conflict: !!s.conflict
+          },
+          {
+            key: `${s.id}-smoke`,
+            stage: "smoke",
+            start: tl.smoke.start,
+            end: tl.smoke.end,
+            conflict: !!s.conflict
+          },
+          {
+            key: `${s.id}-analysis`,
+            stage: "analysis",
+            start: tl.analysis.start,
+            end: tl.analysis.end,
+            conflict: !!s.conflict
+          }
+        );
+      });
+      result.push({
+        id: `b-${b.branch_id}`,
+        label: `${v.version_name} / ${b.branch_name}`,
+        type: "strategy",
+        phases
       });
     });
   });
@@ -132,9 +127,9 @@ const selectedStrategyName = ref("");
 const executions = ref<RoundItem[]>([]);
 const execLoading = ref(false);
 
-async function onRowClick(row: GanttRow) {
-  if (row.type !== "strategy") return;
-  const id = Number(row.id.replace("s-", ""));
+async function onRowClick(row: GanttRow, bar: GanttBarObject) {
+  // 从色块 key 解析策略 id（key 形如 `${strategyId}-${stage}`）
+  const id = Number((bar?.phaseKey || "").split("-")[0]);
   if (!id) return;
   if (selectedStrategyId.value === id) {
     selectedStrategyId.value = null;
@@ -143,7 +138,8 @@ async function onRowClick(row: GanttRow) {
     return;
   }
   selectedStrategyId.value = id;
-  selectedStrategyName.value = row.label.split(" · ")[1] || row.label;
+  // 从行标签中提取策略名（行标签为 `版本 / 分支`，策略名需从色块回查）
+  selectedStrategyName.value = row.label;
   execLoading.value = true;
   try {
     executions.value = await getExecutions({

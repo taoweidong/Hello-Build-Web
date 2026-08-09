@@ -17,6 +17,10 @@ export interface GanttPhase {
   conflict?: boolean;
   status?: string;
   statusLabel?: string;
+  /** 所属版本名（供点击回查） */
+  versionName?: string;
+  /** 所属策略名（供点击回查） */
+  strategyName?: string;
 }
 
 /** 甘特行 */
