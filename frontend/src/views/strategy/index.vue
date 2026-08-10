@@ -106,19 +106,24 @@ async function loadMeta() {
 
 // ---- 实时预览（防抖）----
 let previewTimer: ReturnType<typeof setTimeout> | null = null;
+let previewSeq = 0;
 function schedulePreview() {
   if (!form.branch_id || !form.template_id || !form.build_start_time) return;
   if (previewTimer) clearTimeout(previewTimer);
   previewTimer = setTimeout(runPreview, 400);
 }
 async function runPreview() {
+  const cur = ++previewSeq;
   try {
-    preview.value = await previewStrategy({
+    const res = await previewStrategy({
       ...form,
       build_start_time: form.build_start_time,
       push_start_time: form.push_start_time || null
     });
+    if (cur !== previewSeq) return; // 过期响应丢弃
+    preview.value = res;
   } catch {
+    if (cur !== previewSeq) return;
     preview.value = null;
   }
 }
@@ -257,12 +262,12 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column label="启用" width="90">
           <template #default="{ row }">
-            <el-switch v-model="row.enabled" @change="onToggle(row)" />
+            <el-switch v-model="row.enabled" @change="onToggle(row as StrategyItem)" />
           </template>
         </el-table-column>
         <el-table-column label="操作" width="90">
           <template #default="{ row }">
-            <el-button type="primary" link size="small" @click="startEdit(row)">
+            <el-button type="primary" link size="small" @click="startEdit(row as StrategyItem)">
               编辑
             </el-button>
           </template>
