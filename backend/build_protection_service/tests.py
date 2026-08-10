@@ -338,3 +338,37 @@ class WeeklyApiTests(TestCase):
         resp = self.client.get("/api/weekly", {"week_start": "2026/08/10", "version_id": self.version.id})
         self.assertEqual(resp.status_code, 422)
         self.assertEqual(resp.json()["code"], 42201)
+
+
+class AdminApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin = User.objects.create_user(username="admin", password="123456", role="admin")
+        self.pm = User.objects.create_user(username="pm1", password="123456", role="pm")
+        self.token = self._login("admin")
+
+    def _login(self, username):
+        resp = self.client.post("/api/auth/login", {"username": username, "password": "123456"}, format="json")
+        return resp.json()["data"]["token"]
+
+    def _auth(self, token):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+
+    def test_create_version_and_branch(self):
+        self._auth(self.token)
+        resp = self.client.post("/api/admin/versions", {"name": "28A", "pm_user_id": self.pm.id, "status": "active"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        vid = resp.json()["data"]["id"]
+        resp2 = self.client.post(f"/api/admin/versions/{vid}/branches", {"name": "master"}, format="json")
+        self.assertEqual(resp2.status_code, 200)
+        self.assertEqual(resp2.json()["data"]["name"], "master")
+
+    def test_pm_cannot_access_admin_user_list(self):
+        self._auth(self._login("pm1"))
+        resp = self.client.get("/api/admin/users")
+        self.assertEqual(resp.status_code, 403)
+
+    def test_admin_config_update(self):
+        self._auth(self.token)
+        resp = self.client.put("/api/admin/config", {"build_minutes": 45}, format="json")
+        self.assertEqual(resp.status_code, 200)
