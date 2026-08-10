@@ -4,6 +4,7 @@ from django.db.models import OuterRef, Prefetch, Subquery
 
 from ..api import ok
 from ..models import Branch, ExecutionRound, Strategy, Version
+from ..services.config import get_config
 from ..services.timeline import build_timeline
 from . import authed_user, json_resp
 
@@ -30,6 +31,9 @@ def plan_view(request):
     }
 
     result = []
+    build_minutes = get_config("build_minutes", settings.BUILD_MINUTES)
+    push_minutes = get_config("push_minutes", settings.PUSH_MINUTES)
+    sync_buffer_minutes = get_config("sync_buffer_minutes", settings.SYNC_BUFFER_MINUTES)
     for v in versions:
         branches = []
         for b in v.branches.all():
@@ -37,7 +41,7 @@ def plan_view(request):
             for s in b.enabled_strategies:
                 tl = build_timeline(
                     ds, s.build_start_time, s.template.smoke_minutes, s.template.analysis_minutes,
-                    settings.BUILD_MINUTES, settings.PUSH_MINUTES, settings.SYNC_BUFFER_MINUTES,
+                    build_minutes, push_minutes, sync_buffer_minutes,
                     s.push_mode, push_start_time=s.push_start_time,
                 )
                 strategies.append({

@@ -6,6 +6,7 @@ from django.contrib.auth import get_user_model
 
 from ..api import err, ok
 from ..models import Branch, Strategy, StrategyChangeLog, StrategyTemplate
+from ..services.config import get_config
 from ..services.mutex import check_build_mutex
 from . import authed_user, json_resp, parse_body
 
@@ -60,7 +61,10 @@ def _validate(branch, template, build_start_time, push_start_time, push_mode="no
         if val is not None and not re.fullmatch(r"\d{2}:\d{2}", val):
             return {"code": 42201, "message": f"{field} 格式应为 HH:MM", "status": 422}, None
     version_id = branch.version_id
-    mutex_hits = check_build_mutex(version_id, build_start_time, settings.BUILD_MINUTES, exclude_id)
+    build_minutes = get_config("build_minutes", settings.BUILD_MINUTES)
+    push_minutes = get_config("push_minutes", settings.PUSH_MINUTES)
+    sync_buffer_minutes = get_config("sync_buffer_minutes", settings.SYNC_BUFFER_MINUTES)
+    mutex_hits = check_build_mutex(version_id, build_start_time, build_minutes, exclude_id)
     if mutex_hits:
         return ({"code": 40902, "message": "同一时间节点仅允许一个分支构建（资源互斥）", "status": 409},
                 {"mutex": mutex_hits})
@@ -82,8 +86,8 @@ def _validate(branch, template, build_start_time, push_start_time, push_mode="no
         "push_start_time": push_start_time,
     }]
     from ..services.conflict import detect_conflicts
-    hits = detect_conflicts("2026-08-10", cand, existing, settings.BUILD_MINUTES,
-                            settings.PUSH_MINUTES, settings.SYNC_BUFFER_MINUTES)
+    hits = detect_conflicts("2026-08-10", cand, existing, build_minutes,
+                            push_minutes, sync_buffer_minutes)
     if hits:
         return ({"code": 40901, "message": "阶段时间冲突，请调整构建时间", "status": 409},
                 {"conflicts": hits})

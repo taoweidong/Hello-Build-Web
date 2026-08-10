@@ -5,11 +5,13 @@ from django.db import IntegrityError
 
 from ..api import err, ok
 from ..models import AdminOpLog, Branch, SecurityLog, StrategyTemplate, Version
+from ..services.config import get_config, set_config
 from . import authed_user, json_resp, parse_body
 
 User = get_user_model()
 
 _VALID_ROLES = {"admin", "pm", "builder", "tester", "integrator"}
+_VALID_STATUSES = {"active", "archived"}
 
 
 def _admin_log(user, action, target_type="", target_id="", detail=""):
@@ -48,8 +50,11 @@ def create_version(user, body):
     pm = User.objects.filter(id=pm_user_id).first()
     if not pm:
         return json_resp(err(42201, "PM 用户不存在"), status=422)
+    status = body.get("status", "active")
+    if status not in _VALID_STATUSES:
+        return json_resp(err(42201, "非法状态"), status=422)
     try:
-        v = Version.objects.create(name=name, pm_user=pm, status=body.get("status", "active"))
+        v = Version.objects.create(name=name, pm_user=pm, status=status)
     except IntegrityError:
         return json_resp(err(40902, "版本号已存在"), status=409)
     _admin_log(user, "create_version", target_type="version", target_id=v.id, detail=name)
@@ -92,6 +97,8 @@ def update_version(request, vid):
             return json_resp(err(42201, "PM 用户不存在"), status=422)
         v.pm_user = pm
     if body.get("status") is not None:
+        if body["status"] not in _VALID_STATUSES:
+            return json_resp(err(42201, "非法状态"), status=422)
         v.status = body["status"]
     try:
         v.save()
@@ -182,7 +189,7 @@ def update_user(request, uid):
     if body.get("display_name") is not None:
         u.display_name = body["display_name"]
     if body.get("is_active") is not None:
-        u.is_active = bool(body["is_active"])
+        u.is_active = body["is_active"] in (True, "true", 1)
     u.save()
     _admin_log(user, "update_user", target_type="user", target_id=uid)
     return json_resp(ok({"id": u.id, "username": u.username, "role": u.role, "is_active": u.is_active}))
@@ -285,13 +292,8 @@ def template_detail_view(request, tid):
 
 # ---------- 配置 ----------
 
-# 运行时配置覆盖：避免直接改写全局 settings（会污染其他测试/请求），
-# 未覆盖的字段回退到 settings 默认值。
-_RUNTIME_CONFIG = {}
-
-
-def _config_value(key, default):
-    return _RUNTIME_CONFIG.get(key, default)
+# 运行期配置覆盖层统一在 ..services.config，admin 可改，领域逻辑经
+# get_config 读取，未覆盖时回退 settings 默认值；避免直接改写全局 settings。
 
 
 def config_view(request):
@@ -303,23 +305,23 @@ def config_view(request):
         return perr
     if request.method == "GET":
         return json_resp(ok({
-            "build_minutes": _config_value("build_minutes", settings.BUILD_MINUTES),
-            "push_minutes": _config_value("push_minutes", settings.PUSH_MINUTES),
-            "sync_buffer_minutes": _config_value("sync_buffer_minutes", settings.SYNC_BUFFER_MINUTES),
+            "build_minutes": get_config("build_minutes", settings.BUILD_MINUTES),
+            "push_minutes": get_config("push_minutes", settings.PUSH_MINUTES),
+            "sync_buffer_minutes": get_config("sync_buffer_minutes", settings.SYNC_BUFFER_MINUTES),
         }))
     if request.method == "PUT":
         body = parse_body(request)
         for key in ("build_minutes", "push_minutes", "sync_buffer_minutes"):
             if body.get(key) is not None:
                 try:
-                    _RUNTIME_CONFIG[key] = int(body[key])
+                    set_config(key, int(body[key]))
                 except (TypeError, ValueError):
                     return json_resp(err(42201, f"{key} 应为整数"), status=422)
         _admin_log(user, "update_config", target_type="config", detail=str(body))
         return json_resp(ok({
-            "build_minutes": _config_value("build_minutes", settings.BUILD_MINUTES),
-            "push_minutes": _config_value("push_minutes", settings.PUSH_MINUTES),
-            "sync_buffer_minutes": _config_value("sync_buffer_minutes", settings.SYNC_BUFFER_MINUTES),
+            "build_minutes": get_config("build_minutes", settings.BUILD_MINUTES),
+            "push_minutes": get_config("push_minutes", settings.PUSH_MINUTES),
+            "sync_buffer_minutes": get_config("sync_buffer_minutes", settings.SYNC_BUFFER_MINUTES),
         }))
     return json_resp(err(42201, "不支持的请求方法"), status=422)
 
@@ -342,6 +344,7 @@ def logs_view(request, kind):
                 "operator": log.operator.username if log.operator else "",
                 "action": log.action,
                 "target_type": log.target_type,
+                "target_id": log.target_id,
                 "detail": log.detail,
                 "created_at": log.created_at,
             })

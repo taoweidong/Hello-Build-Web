@@ -342,6 +342,8 @@ class WeeklyApiTests(TestCase):
 
 class AdminApiTests(TestCase):
     def setUp(self):
+        from .services import config as svc_config
+        svc_config.reset_config()
         self.client = APIClient()
         self.admin = User.objects.create_user(username="admin", password="123456", role="admin")
         self.pm = User.objects.create_user(username="pm1", password="123456", role="pm")

@@ -26,7 +26,12 @@ def check_build_mutex(version_id, build_start_time, build_min,
     """校验同版本其它启用策略的构建阶段是否与目标构建区间重叠。返回命中列表。"""
     from django.conf import settings
     from ..models import Strategy
+    from .config import get_config
     from .timeline import build_timeline, parse_cd, parse_hhmm
+
+    build_minutes = get_config("build_minutes", settings.BUILD_MINUTES)
+    push_minutes = get_config("push_minutes", settings.PUSH_MINUTES)
+    sync_buffer_minutes = get_config("sync_buffer_minutes", settings.SYNC_BUFFER_MINUTES)
 
     base = parse_cd("2026-08-10")
     target_start = parse_hhmm(base, build_start_time)
@@ -44,8 +49,8 @@ def check_build_mutex(version_id, build_start_time, build_min,
             tl = build_timeline(
                 "2026-08-10", s.build_start_time,
                 s.template.smoke_minutes, s.template.analysis_minutes,
-                settings.BUILD_MINUTES, settings.PUSH_MINUTES,
-                settings.SYNC_BUFFER_MINUTES, s.push_mode,
+                build_minutes, push_minutes,
+                sync_buffer_minutes, s.push_mode,
                 push_start_time=s.push_start_time,
             )
         except (ValueError, TypeError, AttributeError) as exc:
