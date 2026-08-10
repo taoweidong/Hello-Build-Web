@@ -4,16 +4,20 @@
 import { ref, reactive, computed, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { adminApi } from "@/api/admin";
+import { previewStrategy } from "@/api/strategy";
+import type { PreviewResult } from "@/api/strategy";
 import type {
   VersionItem,
   UserInfo,
   TemplateItem,
-  GlobalConfig
+  GlobalConfig,
+  StrategyItem
 } from "@/api/types";
 
 defineOptions({ name: "SystemIndex" });
 
 const activeTab = ref("versions");
+const loading = ref(false);
 
 // ============ Tab1 版本分支 ============
 const versions = ref<VersionItem[]>([]);
@@ -254,6 +258,139 @@ async function saveConfig() {
   ElMessage.success("关键配置已保存");
 }
 
+// ============ Tab5 策略配置（管理员全量 CRUD） ============
+const adminStrategies = ref<StrategyItem[]>([]);
+const adminVersionId = ref<number | undefined>(undefined);
+const adminBranchId = ref<number | undefined>(undefined);
+const adminStrategyDialog = ref(false);
+const adminStrategyForm = reactive({
+  branch_id: 0,
+  template_id: 0,
+  name: "",
+  build_start_time: "22:00",
+  push_start_time: "" as string,
+  push_mode: "normal",
+  enabled: true
+});
+const adminEditingId = ref<number | null>(null);
+const adminPreview = ref<PreviewResult | null>(null);
+
+/** 分支选项：按当前所选版本过滤 */
+const adminBranchOptions = computed(() => {
+  if (!adminVersionId.value) return [];
+  const v = versions.value.find(x => x.id === adminVersionId.value);
+  return (v?.branches || []).map(b => ({ id: b.id, name: b.name }));
+});
+
+async function loadAdminStrategies() {
+  loading.value = true;
+  try {
+    adminStrategies.value = await adminApi.getAdminStrategies({
+      version_id: adminVersionId.value,
+      branch_id: adminBranchId.value
+    });
+  } finally {
+    loading.value = false;
+  }
+}
+
+function onAdminVersionChange() {
+  adminBranchId.value = undefined;
+  loadAdminStrategies();
+}
+
+function openAdminStrategy(s?: StrategyItem) {
+  adminStrategyDialog.value = true;
+  if (s) {
+    adminEditingId.value = s.id;
+    adminStrategyForm.branch_id = s.branch_id;
+    adminStrategyForm.template_id = s.template_id;
+    adminStrategyForm.name = s.name;
+    adminStrategyForm.build_start_time = s.build_start_time;
+    adminStrategyForm.push_start_time = s.push_start_time || "";
+    adminStrategyForm.push_mode = s.push_mode;
+    adminStrategyForm.enabled = s.enabled;
+  } else {
+    adminEditingId.value = null;
+    adminStrategyForm.branch_id = 0;
+    adminStrategyForm.template_id = 0;
+    adminStrategyForm.name = "";
+    adminStrategyForm.build_start_time = "22:00";
+    adminStrategyForm.push_start_time = "";
+    adminStrategyForm.push_mode = "normal";
+    adminStrategyForm.enabled = true;
+  }
+  scheduleAdminPreview();
+}
+
+let adminPreviewTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleAdminPreview() {
+  if (adminPreviewTimer) clearTimeout(adminPreviewTimer);
+  adminPreviewTimer = setTimeout(runAdminPreview, 400);
+}
+async function runAdminPreview() {
+  if (!adminStrategyForm.branch_id || !adminStrategyForm.template_id) return;
+  try {
+    adminPreview.value = await previewStrategy({
+      branch_id: adminStrategyForm.branch_id,
+      template_id: adminStrategyForm.template_id,
+      name: adminStrategyForm.name,
+      build_start_time: adminStrategyForm.build_start_time,
+      push_start_time: adminStrategyForm.push_start_time || null,
+      push_mode: adminStrategyForm.push_mode,
+      enabled: adminStrategyForm.enabled
+    });
+  } catch {
+    adminPreview.value = null;
+  }
+}
+
+async function saveAdminStrategy() {
+  if (adminPreview.value?.conflict) {
+    ElMessageBox.alert(adminPreview.value.conflict.message || "存在时间冲突", "策略时间冲突", {
+      type: "error",
+      confirmButtonText: "知道了"
+    });
+    return;
+  }
+  const payload = {
+    branch_id: adminStrategyForm.branch_id,
+    template_id: adminStrategyForm.template_id,
+    name: adminStrategyForm.name,
+    build_start_time: adminStrategyForm.build_start_time,
+    push_start_time: adminStrategyForm.push_start_time || null,
+    push_mode: adminStrategyForm.push_mode,
+    enabled: adminStrategyForm.enabled
+  };
+  if (adminEditingId.value) {
+    await adminApi.updateAdminStrategy(adminEditingId.value, payload);
+    ElMessage.success("策略已更新");
+  } else {
+    await adminApi.createAdminStrategy(payload);
+    ElMessage.success("策略已创建");
+  }
+  adminStrategyDialog.value = false;
+  loadAdminStrategies();
+}
+
+// 注意：adminApi.toggleAdminStrategy 是无参翻转语义（后端翻转 enabled），切不可传 enabled 参数
+async function toggleAdminStrategy(s: StrategyItem) {
+  await adminApi.toggleAdminStrategy(s.id);
+  ElMessage.success(s.enabled ? "策略已启用" : "策略已停用");
+  loadAdminStrategies();
+}
+
+async function deleteAdminStrategy(s: StrategyItem) {
+  await ElMessageBox.confirm(
+    `确认删除策略「${s.name}」？将级联清理其关联执行数据。`,
+    "删除策略",
+    { type: "warning", confirmButtonText: "确认删除", cancelButtonText: "取消" }
+  );
+  await adminApi.deleteAdminStrategy(s.id);
+  ElMessage.success("策略已删除");
+  loadAdminStrategies();
+}
+
 // ============ 加载 ============
 async function loadVersions() {
   versions.value = await adminApi.getVersions();
@@ -270,7 +407,7 @@ async function loadConfig() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadVersions(), loadUsers(), loadTemplates(), loadConfig()]);
+  await Promise.all([loadVersions(), loadUsers(), loadTemplates(), loadConfig(), loadAdminStrategies()]);
 });
 </script>
 
@@ -428,7 +565,83 @@ onMounted(async () => {
           </el-form-item>
         </el-form>
       </el-tab-pane>
+
+      <!-- Tab5 策略配置（管理员全量） -->
+      <el-tab-pane label="策略配置" name="strategies">
+        <div class="toolbar">
+          <el-select v-model="adminVersionId" placeholder="全部版本" clearable style="width: 160px" @change="onAdminVersionChange">
+            <el-option v-for="v in versions" :key="v.id" :label="v.name" :value="v.id" />
+          </el-select>
+          <el-select v-model="adminBranchId" placeholder="全部分支" clearable style="width: 160px" :disabled="!adminVersionId" @change="loadAdminStrategies">
+            <el-option v-for="b in adminBranchOptions" :key="b.id" :label="b.name" :value="b.id" />
+          </el-select>
+          <el-button type="primary" size="small" @click="loadAdminStrategies">查询</el-button>
+          <el-button type="primary" size="small" @click="openAdminStrategy()">新建策略</el-button>
+        </div>
+        <el-table :data="adminStrategies" v-loading="loading" style="width: 100%">
+          <el-table-column prop="name" label="策略名称" min-width="180" />
+          <el-table-column prop="version_name" label="版本" width="90" />
+          <el-table-column prop="branch_name" label="分支" width="100" />
+          <el-table-column prop="template_name" label="模板" width="120" />
+          <el-table-column prop="build_start_time" label="构建开始" width="100" />
+          <el-table-column label="推送" width="110">
+            <template #default="{ row }"> {{ row.push_start_time || "结论后推导" }} </template>
+          </el-table-column>
+          <el-table-column label="启用" width="80">
+            <template #default="{ row }">
+              <el-switch v-model="row.enabled" @change="toggleAdminStrategy(row as StrategyItem)" />
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="140">
+            <template #default="{ row }">
+              <el-button type="primary" link size="small" @click="openAdminStrategy(row as StrategyItem)">编辑</el-button>
+              <el-button type="danger" link size="small" @click="deleteAdminStrategy(row as StrategyItem)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
     </el-tabs>
+
+    <!-- 策略编辑弹窗（管理员） -->
+    <el-dialog v-model="adminStrategyDialog" :title="adminEditingId ? '编辑策略' : '新建策略'" width="480px">
+      <el-form :model="adminStrategyForm" label-width="110px">
+        <el-form-item label="策略分支">
+          <el-select v-model="adminStrategyForm.branch_id" style="width: 100%" @change="scheduleAdminPreview">
+            <el-option v-for="b in adminBranchOptions" :key="b.id" :label="b.name" :value="b.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="策略模板">
+          <el-select v-model="adminStrategyForm.template_id" style="width: 100%" @change="scheduleAdminPreview">
+            <el-option v-for="t in templates" :key="t.id" :label="t.name" :value="t.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="策略名称">
+          <el-input v-model="adminStrategyForm.name" placeholder="策略名称" />
+        </el-form-item>
+        <el-form-item label="构建开始时间">
+          <el-time-picker v-model="adminStrategyForm.build_start_time" value-format="HH:mm" format="HH:mm" style="width: 160px" @change="scheduleAdminPreview" />
+        </el-form-item>
+        <el-form-item label="推送时间（可空）">
+          <el-time-picker v-model="adminStrategyForm.push_start_time" value-format="HH:mm" format="HH:mm" placeholder="留空=结论后推导" clearable style="width: 160px" @change="scheduleAdminPreview" />
+        </el-form-item>
+        <el-form-item label="推送模式">
+          <el-radio-group v-model="adminStrategyForm.push_mode" @change="scheduleAdminPreview">
+            <el-radio value="normal">正常流程推送</el-radio>
+            <el-radio value="sync">同步推送冒烟</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="启用">
+          <el-switch v-model="adminStrategyForm.enabled" />
+        </el-form-item>
+        <el-form-item v-if="adminPreview?.conflict" label="冲突">
+          <span class="preview-conflict"> {{ adminPreview.conflict.message || "存在时间冲突" }} </span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="adminStrategyDialog = false">取消</el-button>
+        <el-button type="primary" :disabled="!!adminPreview?.conflict" @click="saveAdminStrategy">保存</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 版本弹窗 -->
     <el-dialog
@@ -560,5 +773,9 @@ onMounted(async () => {
 }
 .config-form {
   max-width: 420px;
+}
+.preview-conflict {
+  color: #ef4444;
+  font-size: 13px;
 }
 </style>
