@@ -3,11 +3,26 @@
 // 设计文档 7.2：本周周信息 + 本月周列表 + 版本选择 + 分支×周一~周日的策略网格
 // 后端 GET /api/weekly 返回扁平结构（见 WeeklyData），策略无日期字段，表示每周每天都排布
 import { ref, computed, onMounted } from "vue";
+import { ElMessage } from "element-plus";
 import { getWeekly } from "@/api/weekly";
 import type { WeeklyData, WeeklyStrategy } from "@/api/types";
 import { dayjs } from "@/utils/business";
 
 defineOptions({ name: "WeeklyIndex" });
+
+// 请求序号：用于丢弃过期响应（快速切换周/版本时避免旧数据覆盖新数据）
+let seq = 0;
+
+// 英文星期 → 中文 映射（模块级常量，避免每次调用重建）
+const WEEKDAY_CN: Record<string, string> = {
+  Monday: "周一",
+  Tuesday: "周二",
+  Wednesday: "周三",
+  Thursday: "周四",
+  Friday: "周五",
+  Saturday: "周六",
+  Sunday: "周日"
+};
 
 const loading = ref(false);
 const data = ref<WeeklyData | null>(null);
@@ -38,16 +53,7 @@ const weekNumber = computed(() =>
 const weekDays = computed(() => data.value?.days ?? []);
 // 英文星期 → 中文
 function weekdayCN(en: string): string {
-  const map: Record<string, string> = {
-    Monday: "周一",
-    Tuesday: "周二",
-    Wednesday: "周三",
-    Thursday: "周四",
-    Friday: "周五",
-    Saturday: "周六",
-    Sunday: "周日"
-  };
-  return map[en] || en;
+  return WEEKDAY_CN[en] || en;
 }
 
 const branches = computed(() => data.value?.branches ?? []);
@@ -59,16 +65,19 @@ const weekRangeText = computed(() => {
   return `${s.format("MM月DD日")} - ${s.add(6, "day").format("MM月DD日")}`;
 });
 
-// 本月周列表：当月各周周一（最多 4 周）
+// 本月周列表：取本月第一个严格落在本月的周一作为第1周，逐周校验所属月
 const monthWeeks = computed(() => {
   const now = dayjs();
   const startOfMonth = now.startOf("month");
-  const firstMonday =
+  // 本月第一个周一（严格 ≥ 本月1号）
+  const first =
     startOfMonth.day() === 0 ? startOfMonth.add(1, "day") : startOfMonth.day(1);
+  const firstMonday =
+    first.month() === startOfMonth.month() ? first : first.add(7, "day");
   const result: Array<{ value: string; label: string }> = [];
   for (let i = 0; i < 4; i++) {
     const monday = firstMonday.add(i * 7, "day");
-    if (i > 0 && monday.month() !== startOfMonth.month()) break;
+    if (monday.month() !== startOfMonth.month()) break;
     result.push({
       value: monday.format("YYYY-MM-DD"),
       label: `第${i + 1}周（${monday.format("MM.DD")} - ${monday
@@ -88,18 +97,31 @@ const BRANCH_PALETTE = [
   "#ef4444",
   "#06b6d4"
 ];
+// 分支配色映射：一次计算，避免模板内重复 O(n) 查找
+const branchColorMap = computed(() => {
+  const map = new Map<number, string>();
+  branches.value.forEach((b, idx) => {
+    map.set(b.branch_id, BRANCH_PALETTE[(idx + 1) % BRANCH_PALETTE.length]);
+  });
+  return map;
+});
 function branchColor(branchId: number) {
-  const idx = branches.value.findIndex(b => b.branch_id === branchId);
-  return BRANCH_PALETTE[(idx + 1) % BRANCH_PALETTE.length];
+  return branchColorMap.value.get(branchId) || BRANCH_PALETTE[0];
 }
 
-// 某分支的策略（顶层 strategies 按 branch_id 过滤 + build_start_time 升序）
-function branchStrategies(branchId: number): WeeklyStrategy[] {
-  return (data.value?.strategies ?? [])
-    .filter(s => s.branch_id === branchId)
-    .slice()
-    .sort((a, c) => a.build_start_time.localeCompare(c.build_start_time));
-}
+// 策略预分组：按 branch_id 过滤 + build_start_time 升序，避免 v-for 内重复计算
+const strategyMap = computed(() => {
+  const map = new Map<number, WeeklyStrategy[]>();
+  for (const s of data.value?.strategies ?? []) {
+    const list = map.get(s.branch_id);
+    if (list) list.push(s);
+    else map.set(s.branch_id, [s]);
+  }
+  for (const list of map.values()) {
+    list.sort((a, c) => a.build_start_time.localeCompare(c.build_start_time));
+  }
+  return map;
+});
 
 // 详情抽屉
 const drawerVisible = ref(false);
@@ -112,15 +134,23 @@ function selectStrategy(s: WeeklyStrategy, bname: string) {
 }
 
 async function load() {
+  const cur = ++seq;
   loading.value = true;
+  data.value = null; // 切换查询时清空旧数据，配合 v-loading 遮罩避免感知跳变
   try {
-    data.value = await getWeekly({
+    const d = await getWeekly({
       week_start: selectedWeek.value || undefined,
       version_id: versionId.value
     });
-    if (!selectedWeek.value && data.value) selectedWeek.value = data.value.week_start;
+    if (cur !== seq) return; // 过期响应丢弃
+    data.value = d;
+    if (!selectedWeek.value && d) selectedWeek.value = d.week_start;
+  } catch (e) {
+    if (cur !== seq) return;
+    console.error("周视图加载失败", e);
+    ElMessage.error("周视图数据加载失败");
   } finally {
-    loading.value = false;
+    if (cur === seq) loading.value = false;
   }
 }
 onMounted(load);
@@ -197,7 +227,7 @@ onMounted(load);
         <div class="grid-branch">{{ b.branch_name }}</div>
         <div v-for="d in weekDays" :key="d.date" class="grid-cell">
           <div
-            v-for="s in branchStrategies(b.branch_id)"
+            v-for="s in strategyMap.get(b.branch_id) ?? []"
             :key="s.strategy_id"
             class="strategy-chip"
             :style="{ background: branchColor(b.branch_id) }"
