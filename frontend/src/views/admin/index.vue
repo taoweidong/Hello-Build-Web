@@ -1,7 +1,7 @@
 ﻿<script setup lang="ts">
 // 系统管理页（仅管理员）
-// 设计文档 8.6：版本分支 / 用户管理 / 策略模板 / 关键配置 四个 Tab
-import { ref, reactive, computed, onMounted } from "vue";
+// 设计文档 8.6：版本分支 / 用户管理 / 策略模板 / 关键配置 / 策略配置 五个 Tab（含策略配置）
+import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { adminApi } from "@/api/admin";
 import { previewStrategy } from "@/api/strategy";
@@ -274,9 +274,17 @@ const adminStrategyForm = reactive({
 });
 const adminEditingId = ref<number | null>(null);
 const adminPreview = ref<PreviewResult | null>(null);
+const adminDialogVersionId = ref<number | undefined>(undefined);
 
-/** 分支选项：按当前所选版本过滤 */
+/** 弹窗分支选项：基于弹窗内所选版本 */
 const adminBranchOptions = computed(() => {
+  if (!adminDialogVersionId.value) return [];
+  const v = versions.value.find(x => x.id === adminDialogVersionId.value);
+  return (v?.branches || []).map(b => ({ id: b.id, name: b.name }));
+});
+
+/** 工具栏分支选项：基于工具栏版本筛选 */
+const adminFilterBranchOptions = computed(() => {
   if (!adminVersionId.value) return [];
   const v = versions.value.find(x => x.id === adminVersionId.value);
   return (v?.branches || []).map(b => ({ id: b.id, name: b.name }));
@@ -289,6 +297,8 @@ async function loadAdminStrategies() {
       version_id: adminVersionId.value,
       branch_id: adminBranchId.value
     });
+  } catch {
+    ElMessage.error("策略列表加载失败");
   } finally {
     loading.value = false;
   }
@@ -301,7 +311,9 @@ function onAdminVersionChange() {
 
 function openAdminStrategy(s?: StrategyItem) {
   adminStrategyDialog.value = true;
+  adminPreview.value = null;
   if (s) {
+    adminDialogVersionId.value = s.version_id;
     adminEditingId.value = s.id;
     adminStrategyForm.branch_id = s.branch_id;
     adminStrategyForm.template_id = s.template_id;
@@ -311,6 +323,7 @@ function openAdminStrategy(s?: StrategyItem) {
     adminStrategyForm.push_mode = s.push_mode;
     adminStrategyForm.enabled = s.enabled;
   } else {
+    adminDialogVersionId.value = adminVersionId.value || undefined;
     adminEditingId.value = null;
     adminStrategyForm.branch_id = 0;
     adminStrategyForm.template_id = 0;
@@ -324,14 +337,16 @@ function openAdminStrategy(s?: StrategyItem) {
 }
 
 let adminPreviewTimer: ReturnType<typeof setTimeout> | null = null;
+let adminPreviewSeq = 0;
 function scheduleAdminPreview() {
   if (adminPreviewTimer) clearTimeout(adminPreviewTimer);
   adminPreviewTimer = setTimeout(runAdminPreview, 400);
 }
 async function runAdminPreview() {
   if (!adminStrategyForm.branch_id || !adminStrategyForm.template_id) return;
+  const cur = ++adminPreviewSeq;
   try {
-    adminPreview.value = await previewStrategy({
+    const res = await previewStrategy({
       branch_id: adminStrategyForm.branch_id,
       template_id: adminStrategyForm.template_id,
       name: adminStrategyForm.name,
@@ -340,12 +355,18 @@ async function runAdminPreview() {
       push_mode: adminStrategyForm.push_mode,
       enabled: adminStrategyForm.enabled
     });
+    if (cur !== adminPreviewSeq) return; // 过期响应丢弃
+    adminPreview.value = res;
   } catch {
+    if (cur !== adminPreviewSeq) return;
     adminPreview.value = null;
   }
 }
 
 async function saveAdminStrategy() {
+  if (!adminStrategyForm.branch_id) { ElMessage.warning("请选择策略分支"); return; }
+  if (!adminStrategyForm.template_id) { ElMessage.warning("请选择策略模板"); return; }
+  if (!adminStrategyForm.name) { ElMessage.warning("请输入策略名称"); return; }
   if (adminPreview.value?.conflict) {
     ElMessageBox.alert(adminPreview.value.conflict.message || "存在时间冲突", "策略时间冲突", {
       type: "error",
@@ -408,6 +429,10 @@ async function loadConfig() {
 
 onMounted(async () => {
   await Promise.all([loadVersions(), loadUsers(), loadTemplates(), loadConfig(), loadAdminStrategies()]);
+});
+
+onUnmounted(() => {
+  if (adminPreviewTimer) clearTimeout(adminPreviewTimer);
 });
 </script>
 
@@ -573,7 +598,7 @@ onMounted(async () => {
             <el-option v-for="v in versions" :key="v.id" :label="v.name" :value="v.id" />
           </el-select>
           <el-select v-model="adminBranchId" placeholder="全部分支" clearable style="width: 160px" :disabled="!adminVersionId" @change="loadAdminStrategies">
-            <el-option v-for="b in adminBranchOptions" :key="b.id" :label="b.name" :value="b.id" />
+            <el-option v-for="b in adminFilterBranchOptions" :key="b.id" :label="b.name" :value="b.id" />
           </el-select>
           <el-button type="primary" size="small" @click="loadAdminStrategies">查询</el-button>
           <el-button type="primary" size="small" @click="openAdminStrategy()">新建策略</el-button>
@@ -603,8 +628,13 @@ onMounted(async () => {
     </el-tabs>
 
     <!-- 策略编辑弹窗（管理员） -->
-    <el-dialog v-model="adminStrategyDialog" :title="adminEditingId ? '编辑策略' : '新建策略'" width="480px">
+    <el-dialog v-model="adminStrategyDialog" :title="adminEditingId ? '编辑策略' : '新建策略'" width="480px" @closed="adminPreview = null">
       <el-form :model="adminStrategyForm" label-width="110px">
+        <el-form-item label="策略版本">
+          <el-select v-model="adminDialogVersionId" style="width: 100%" @change="adminStrategyForm.branch_id = 0; scheduleAdminPreview()">
+            <el-option v-for="v in versions" :key="v.id" :label="v.name" :value="v.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="策略分支">
           <el-select v-model="adminStrategyForm.branch_id" style="width: 100%" @change="scheduleAdminPreview">
             <el-option v-for="b in adminBranchOptions" :key="b.id" :label="b.name" :value="b.id" />
