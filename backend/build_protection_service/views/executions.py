@@ -55,6 +55,8 @@ def round_detail(request, rid):
 
 
 def conclusion_view(request, rid):
+    if request.method != "POST":
+        return json_resp(err(42201, "不支持的请求方法"), status=422)
     user, resp = authed_user(request)
     if resp:
         return resp
@@ -64,7 +66,10 @@ def conclusion_view(request, rid):
     if user.role != "tester":
         return json_resp(err(40301, "仅测试人员可提交结论"), status=403)
     body = parse_body(request)
-    r.conclusion = body.get("conclusion")
+    conclusion = body.get("conclusion")
+    if conclusion not in ("pass", "fail"):
+        return json_resp(err(42201, "非法结论"), status=422)
+    r.conclusion = conclusion
     r.note = body.get("note", r.note or "")
     r.analysis_end_at = now()
     if r.conclusion == "pass" and r.strategy.push_mode == "normal":
@@ -72,5 +77,8 @@ def conclusion_view(request, rid):
         r.push_start_at = r.analysis_end_at
         r.push_end_at = r.analysis_end_at + timedelta(minutes=push_minutes)
         r.push_status = "pushed"
+    else:
+        r.push_start_at = r.push_end_at = None
+        r.push_status = ""
     r.save()
     return json_resp(ok(_round_payload(r)))
