@@ -37,6 +37,28 @@ export const asyncRoutes = [
     ]
   },
   {
+    path: "/weekly",
+    name: "Weekly",
+    component: Layout,
+    redirect: "/weekly/index",
+    meta: {
+      icon: "ep/date",
+      title: "周视图",
+      rank: 2
+    },
+    children: [
+      {
+        path: "/weekly/index",
+        name: "WeeklyIndex",
+        component: () => import("@/views/weekly/index.vue"),
+        meta: {
+          title: "周视图",
+          roles: ALL_ROLES
+        }
+      }
+    ]
+  },
+  {
     path: "/execution",
     name: "Execution",
     component: Layout,
@@ -44,7 +66,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/odometer",
       title: "今日执行",
-      rank: 2
+      rank: 3
     },
     children: [
       {
@@ -66,7 +88,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/grid",
       title: "策略全景",
-      rank: 3
+      rank: 4
     },
     children: [
       {
@@ -88,7 +110,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/trend-charts",
       title: "版本全景",
-      rank: 4
+      rank: 5
     },
     children: [
       {
@@ -110,7 +132,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/set-up",
       title: "策略配置",
-      rank: 5
+      rank: 6
     },
     children: [
       {
@@ -132,7 +154,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/setting",
       title: "系统管理",
-      rank: 6
+      rank: 7
     },
     children: [
       {
@@ -154,7 +176,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/document",
       title: "日志中心",
-      rank: 7
+      rank: 8
     },
     children: [
       {
