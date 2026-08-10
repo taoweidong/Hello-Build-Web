@@ -401,7 +401,7 @@ class AdminApiTests(ConfigAwareTestCase):
         resp = self.client.post("/api/admin/strategies", {
             "branch_id": b.id, "template_id": t.id, "name": "29A-master-晚间",
             "build_start_time": "22:00", "push_start_time": "20:00",
-            "push_mode": "normal", "enabled": True,
+            "push_mode": "normal", "enabled": False,
         }, format="json")
         self.assertEqual(resp.status_code, 200)
         sid = resp.json()["data"]["id"]
@@ -410,8 +410,11 @@ class AdminApiTests(ConfigAwareTestCase):
         resp = self.client.get("/api/admin/strategies", {"version_id": v.id})
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(len(resp.json()["data"]), 1)
-        # 启停
-        resp = self.client.patch(f"/api/admin/strategies/{sid}/toggle", {"enabled": False}, format="json")
+        # 启停：无参数 toggle 为翻转语义（enabled=False -> True -> False）
+        resp = self.client.patch(f"/api/admin/strategies/{sid}/toggle")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()["data"]["enabled"])
+        resp = self.client.patch(f"/api/admin/strategies/{sid}/toggle")
         self.assertEqual(resp.status_code, 200)
         self.assertFalse(resp.json()["data"]["enabled"])
         # 更新

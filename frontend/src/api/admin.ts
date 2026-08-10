@@ -76,8 +76,8 @@ export const adminApi = {
     d: import("./strategy").StrategyForm
   ): Promise<import("@/api/types").StrategyItem> =>
     http.patch(`/admin/strategies/${id}`, d),
-  toggleAdminStrategy: (id: number, enabled: boolean): Promise<import("@/api/types").StrategyItem> =>
-    http.patch(`/admin/strategies/${id}/toggle`, null, { params: { enabled } }),
+  toggleAdminStrategy: (id: number): Promise<import("@/api/types").StrategyItem> =>
+    http.patch(`/admin/strategies/${id}/toggle`),
   deleteAdminStrategy: (id: number): Promise<void> =>
     http.delete(`/admin/strategies/${id}`)
 };
