@@ -3,8 +3,7 @@ from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from ..api import err, ok
-from ..auth import JWTAuthentication
-from . import json_resp, parse_body, security_log
+from . import authed_user, json_resp, parse_body, security_log
 
 User = get_user_model()
 
@@ -41,9 +40,8 @@ def logout_view(request):
 
 
 def me_view(request):
-    # 普通 Django 视图不会自动执行 DRF JWT 认证，手动校验 Authorization header。
-    result = JWTAuthentication().authenticate(request)
-    if result is None:
-        return json_resp(err(40100, "未认证"), status=401)
-    user, _ = result
+    # 普通 Django 视图不会自动执行 DRF JWT 认证，复用共享认证助手。
+    user, resp = authed_user(request)
+    if resp:
+        return resp
     return json_resp(ok(_user_payload(user)))
