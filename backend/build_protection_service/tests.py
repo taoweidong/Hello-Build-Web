@@ -332,3 +332,9 @@ class WeeklyApiTests(TestCase):
         self.assertEqual(data["days"][0]["date"], "2026-08-10")
         self.assertGreaterEqual(len(data["branches"]), 2)
         self.assertGreaterEqual(len(data["strategies"]), 2)
+
+    def test_weekly_invalid_week_start_422(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.token}")
+        resp = self.client.get("/api/weekly", {"week_start": "2026/08/10", "version_id": self.version.id})
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["code"], 42201)

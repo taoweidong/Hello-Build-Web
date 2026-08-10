@@ -1,8 +1,10 @@
 """周视图：指定周的开始日期 + 版本 → 分支策略排布。"""
 from datetime import datetime, timedelta
 
-from ..api import ok
-from ..models import Branch, Version
+from django.db.models import Prefetch
+
+from ..api import err, ok
+from ..models import Branch, Strategy, Version
 from . import authed_user, json_resp
 
 
@@ -25,14 +27,25 @@ def weekly_view(request):
     versions = list(Version.objects.select_related("pm_user").all())
     if version_id:
         version = Version.objects.filter(id=version_id).first()
+    try:
+        days = _weekdays(week_start)
+    except ValueError:
+        return json_resp(err(42201, "week_start 格式应为 YYYY-MM-DD"), status=422)
     branches = []
     strategies = []
     if version:
-        for b in version.branches.all().order_by("name"):
-            branches.append({"branch_id": b.id, "branch_name": b.name})
-        qs = Branch.objects.filter(version=version).prefetch_related("strategies__template")
+        qs = Branch.objects.filter(version=version).order_by("name").prefetch_related(
+            Prefetch(
+                "strategies",
+                queryset=Strategy.objects.filter(enabled=True)
+                    .select_related("template")
+                    .order_by("build_start_time"),
+                to_attr="enabled_strategies",
+            )
+        )
         for b in qs:
-            for s in b.strategies.filter(enabled=True).select_related("template").order_by("build_start_time"):
+            branches.append({"branch_id": b.id, "branch_name": b.name})
+            for s in b.enabled_strategies:
                 strategies.append({
                     "strategy_id": s.id,
                     "strategy_name": s.name,
@@ -44,7 +57,7 @@ def weekly_view(request):
                 })
     return json_resp(ok({
         "week_start": week_start,
-        "days": _weekdays(week_start),
+        "days": days,
         "version": {"version_id": version.id, "version_name": version.name} if version else None,
         "versions": [{"version_id": v.id, "version_name": v.name} for v in versions],
         "branches": branches,
