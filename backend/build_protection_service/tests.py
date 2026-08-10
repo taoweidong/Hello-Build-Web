@@ -3,6 +3,7 @@ from datetime import datetime
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
 from django.test import TestCase
+from rest_framework.test import APIClient
 
 from .models import Branch, Strategy, StrategyTemplate, Version
 from .services import conflict, mutex, timeline
@@ -91,3 +92,36 @@ class ConflictTests(TestCase):
         existing = [{"build_start_time": "12:00", "template": tmpl, "push_mode": "sync", "strategy_name": "B"}]
         hits = conflict.detect_conflicts("2026-08-10", cand, existing, 30, 20, 20)
         self.assertEqual(hits, [])
+
+
+class AuthTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin = User.objects.create_user(username="admin", password="123456", role="admin")
+        self.pm = User.objects.create_user(username="pm1", password="123456", role="pm")
+
+    def test_login_returns_token_and_user(self):
+        resp = self.client.post("/api/auth/login", {"username": "pm1", "password": "123456"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json().get("data", {})
+        self.assertIn("token", data)
+        self.assertEqual(data["user"]["role"], "pm")
+
+    def test_login_wrong_password_401(self):
+        resp = self.client.post("/api/auth/login", {"username": "pm1", "password": "wrong"}, format="json")
+        self.assertEqual(resp.status_code, 401)
+        self.assertEqual(resp.json()["code"], 40101)
+
+    def test_me_requires_auth(self):
+        resp = self.client.get("/api/auth/me")
+        self.assertTrue(resp.status_code >= 400)
+
+    def test_pm_cannot_access_admin_only(self):
+        token = self._login("pm1")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+        resp = self.client.get("/api/admin/users")
+        self.assertEqual(resp.status_code, 403)
+
+    def _login(self, username):
+        resp = self.client.post("/api/auth/login", {"username": username, "password": "123456"}, format="json")
+        return resp.json()["data"]["token"]
