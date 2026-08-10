@@ -20,7 +20,10 @@ class Command(BaseCommand):
             admin.set_password(settings.FIRST_SUPERUSER_PASSWORD)
             admin.save()
 
-        if not User.objects.filter(username="pm27a").exists():
+        # 守卫锚点：Version 27A 是演示数据的根实体，它存在即代表演示数据已建立。
+        # 以根实体而非单一人名为锚，可避免"pm27a 存在但 27A 被删"时跳过补全，
+        # 以及"pm27a 被删但 27A 仍在"时对 Version 唯一约束触发 IntegrityError。
+        if not Version.objects.filter(name="27A").exists():
             pm27a = User.objects.create_user(username="pm27a", password="123456", role="pm", display_name="27A负责人")
             pm27b = User.objects.create_user(username="pm27b", password="123456", role="pm", display_name="27B负责人")
             User.objects.create_user(username="builder", password="123456", role="builder", display_name="构建人员")

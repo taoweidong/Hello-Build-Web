@@ -428,5 +428,26 @@ class SeedTests(TestCase):
         User.objects.all().delete()
         call_command("seed")
         self.assertTrue(User.objects.filter(username="admin", role="admin").exists())
-        self.assertTrue(Version.objects.filter(name="27A").exists())
-        self.assertTrue(Strategy.objects.count() >= 1)
+        # 精确断言演示数据规模，seed 变更时能暴露差异
+        self.assertEqual(Version.objects.filter(name="27A").count(), 1)
+        self.assertEqual(Version.objects.count(), 2)
+        self.assertEqual(Branch.objects.count(), 3)
+        self.assertEqual(StrategyTemplate.objects.count(), 2)
+        self.assertEqual(Strategy.objects.count(), 4)
+        self.assertEqual(
+            set(Strategy.objects.values_list("name", flat=True)),
+            {
+                "27A-master-晚间全量",
+                "27A-master-午间快速",
+                "27A-TR5-晚间全量",
+                "27B-master-晚间全量",
+            },
+        )
+
+    def test_seed_idempotent_when_run_twice(self):
+        User.objects.all().delete()
+        call_command("seed")
+        call_command("seed")
+        # 重复运行不报错、不重复
+        self.assertEqual(Version.objects.count(), 2)
+        self.assertEqual(Strategy.objects.count(), 4)
