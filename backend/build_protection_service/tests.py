@@ -143,3 +143,88 @@ class AuthTests(TestCase):
     def _login(self, username):
         resp = self.client.post("/api/auth/login", {"username": username, "password": "123456"}, format="json")
         return resp.json()["data"]["token"]
+
+
+class StrategyApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.pm = User.objects.create_user(username="pm1", password="123456", role="pm")
+        self.admin = User.objects.create_user(username="admin", password="123456", role="admin")
+        self.version = Version.objects.create(name="27A", pm_user=self.pm, status="active")
+        self.b1 = Branch.objects.create(version=self.version, name="master")
+        self.b2 = Branch.objects.create(version=self.version, name="TR5")
+        self.tmpl = StrategyTemplate.objects.create(name="晚间全量冒烟", smoke_minutes=480, analysis_minutes=120)
+        self.token = self._login("pm1")
+
+    def _login(self, username):
+        resp = self.client.post("/api/auth/login", {"username": username, "password": "123456"}, format="json")
+        return resp.json()["data"]["token"]
+
+    def _auth(self, token):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+
+    def test_create_strategy_with_push_start_time(self):
+        self._auth(self.token)
+        resp = self.client.post("/api/strategies", {
+            "branch_id": self.b1.id, "template_id": self.tmpl.id,
+            "name": "27A-master-晚间", "build_start_time": "22:00",
+            "push_start_time": "20:00", "push_mode": "normal", "enabled": True,
+        }, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["code"], 0)
+        self.assertEqual(resp.json()["data"]["push_start_time"], "20:00")
+
+    def test_mutex_conflict_40902(self):
+        Strategy.objects.create(
+            branch=self.b1, template=self.tmpl, name="existing",
+            build_start_time="22:00", push_mode="normal", created_by=self.pm,
+        )
+        self._auth(self.token)
+        resp = self.client.post("/api/strategies", {
+            "branch_id": self.b2.id, "template_id": self.tmpl.id,
+            "name": "new", "build_start_time": "22:10",
+            "push_mode": "normal", "enabled": True,
+        }, format="json")
+        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.json()["code"], 40902)
+
+    def test_stage_conflict_40901(self):
+        self._auth(self.token)
+        self.client.post("/api/strategies", {
+            "branch_id": self.b1.id, "template_id": self.tmpl.id,
+            "name": "A", "build_start_time": "22:00", "push_mode": "normal", "enabled": True,
+        }, format="json")
+        resp = self.client.post("/api/strategies", {
+            "branch_id": self.b1.id, "template_id": self.tmpl.id,
+            "name": "B", "build_start_time": "22:30", "push_mode": "normal", "enabled": True,
+        }, format="json")
+        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.json()["code"], 40901)
+
+    def test_admin_can_create_for_any_version(self):
+        self._auth(self._login("admin"))
+        resp = self.client.post("/api/strategies", {
+            "branch_id": self.b1.id, "template_id": self.tmpl.id,
+            "name": "admin-new", "build_start_time": "23:00", "push_mode": "normal", "enabled": True,
+        }, format="json")
+        self.assertEqual(resp.status_code, 200)
+
+    def test_get_strategies_includes_push_start_time(self):
+        self._auth(self.token)
+        Strategy.objects.create(
+            branch=self.b1, template=self.tmpl, name="s1", build_start_time="22:00",
+            push_start_time="20:00", push_mode="normal", created_by=self.pm,
+        )
+        resp = self.client.get("/api/strategies", {"version_id": self.version.id})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["data"][0]["push_start_time"], "20:00")
+
+    def test_delete_strategy(self):
+        self._auth(self.token)
+        s = Strategy.objects.create(
+            branch=self.b1, template=self.tmpl, name="del", build_start_time="23:00",
+            push_mode="normal", created_by=self.pm,
+        )
+        resp = self.client.delete(f"/api/strategies/{s.id}")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(Strategy.objects.filter(id=s.id).exists())
