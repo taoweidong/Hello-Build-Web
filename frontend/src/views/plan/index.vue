@@ -4,6 +4,7 @@
 import { ref, reactive, computed, watch, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { getPlan, type PlanVersion } from "@/api/plan";
+import { getExecutions } from "@/api/panorama";
 import {
   getCurrentUser,
   timeToMs,
@@ -156,6 +157,12 @@ function computeRange(data: PlanVersion[]) {
 
 async function load() {
   loading.value = true;
+  // 切换筛选时清空上次选中的策略详情，避免残留过期数据
+  selectedStrategy.value = null;
+  selectedStrategyName.value = "";
+  selectedVersionName.value = "";
+  selectedBranchName.value = "";
+  executions.value = [];
   try {
     const data = await getPlan({
       date: filter.date,
@@ -188,7 +195,6 @@ const currentUser = getCurrentUser();
 async function loadDetailExecutions(strategyId: number) {
   detailLoading.value = true;
   try {
-    const { getExecutions } = await import("@/api/panorama");
     executions.value = await getExecutions({
       strategy_id: strategyId,
       from: dayjs().subtract(6, "day").format("YYYY-MM-DD"),
@@ -213,6 +219,9 @@ async function onGanttClick(_row: GanttRow, bar: GanttBarObject) {
         selectedStrategyName.value = s.name;
         selectedBranchName.value = b.branch_name;
         selectedStrategy.value = s;
+        // 清空旧数据并复位 loading，避免连续点击时并发请求覆盖/提前复位
+        executions.value = [];
+        detailLoading.value = true;
         await loadDetailExecutions(id);
         break outer;
       }
@@ -226,6 +235,15 @@ async function onGanttClick(_row: GanttRow, bar: GanttBarObject) {
   }
 }
 
+/** 关闭详情面板 */
+function closeDetail() {
+  selectedStrategy.value = null;
+  selectedStrategyName.value = "";
+  selectedVersionName.value = "";
+  selectedBranchName.value = "";
+  executions.value = [];
+}
+
 // 图例
 const legend = [
   { label: "构建", color: STAGE_COLORS.build },
@@ -233,6 +251,13 @@ const legend = [
   { label: "人工分析", color: STAGE_COLORS.analysis },
   { label: "推送", color: STAGE_COLORS.push }
 ];
+
+/** 结论文本与 tag 类型映射（参考 panorama/versionView 的 conclusionMap） */
+const conclusionMap: Record<string, { text: string; type: "success" | "danger" | "info" }> = {
+  pass: { text: "通过", type: "success" },
+  fail: { text: "不通过", type: "danger" },
+  pending: { text: "待录", type: "info" }
+};
 
 const pushStatusMap: Record<string, string> = {
   pending: "待推送",
@@ -344,7 +369,7 @@ onMounted(load);
       <div class="detail-head">
         <span class="detail-title">策略详情：{{ selectedStrategyName }}</span>
         <span class="detail-sub">{{ selectedVersionName }} / {{ selectedBranchName }}</span>
-        <el-button size="small" text @click="selectedStrategy = null; executions = []">关闭</el-button>
+        <el-button size="small" text @click="closeDetail">关闭</el-button>
       </div>
       <el-descriptions :column="3" size="small" border class="detail-desc">
         <el-descriptions-item label="构建开始">{{ selectedStrategy.build_start_time }}</el-descriptions-item>
@@ -366,8 +391,8 @@ onMounted(load);
         <el-table-column prop="exec_date" label="日期" width="110" />
         <el-table-column label="结论" width="90">
           <template #default="{ row }">
-            <el-tag :type="row.conclusion === 'pass' ? 'success' : row.conclusion === 'fail' ? 'danger' : 'info'" size="small">
-              {{ row.conclusion === "pass" ? "通过" : row.conclusion === "fail" ? "不通过" : "待录" }}
+            <el-tag :type="(conclusionMap[row.conclusion] || conclusionMap.pending).type" size="small">
+              {{ (conclusionMap[row.conclusion] || conclusionMap.pending).text }}
             </el-tag>
           </template>
         </el-table-column>
