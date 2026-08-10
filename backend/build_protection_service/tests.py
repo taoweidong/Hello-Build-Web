@@ -2,6 +2,7 @@ import unittest
 from datetime import datetime
 
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.db import IntegrityError
 from django.test import TestCase
 from rest_framework.test import APIClient
@@ -420,3 +421,12 @@ class ExecutionApiTests(TestCase):
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self._login('pm1')}")
         resp = self.client.get("/api/logs/execution")
         self.assertEqual(resp.status_code, 200)
+
+
+class SeedTests(TestCase):
+    def test_seed_creates_admin_and_demo_data(self):
+        User.objects.all().delete()
+        call_command("seed")
+        self.assertTrue(User.objects.filter(username="admin", role="admin").exists())
+        self.assertTrue(Version.objects.filter(name="27A").exists())
+        self.assertTrue(Strategy.objects.count() >= 1)
