@@ -77,7 +77,7 @@ function buildRows(data: PlanVersion[]) {
               stage: "push",
               start: tl.push.start,
               end: tl.push.end,
-              conflict: !!s.conflict,
+              conflict: false, // 推送可重叠，不参与互斥标红
               versionName: v.version_name,
               strategyName: s.name
             });

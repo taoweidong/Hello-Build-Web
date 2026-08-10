@@ -47,6 +47,7 @@ const form = reactive<StrategyForm>({
   template_id: 0,
   name: "",
   build_start_time: "22:00",
+  push_start_time: "" as string,
   push_mode: "normal",
   enabled: true
 });
@@ -114,14 +115,15 @@ async function runPreview() {
   try {
     preview.value = await previewStrategy({
       ...form,
-      build_start_time: form.build_start_time
+      build_start_time: form.build_start_time,
+      push_start_time: form.push_start_time || null
     });
   } catch {
     preview.value = null;
   }
 }
 watch(
-  () => [form.branch_id, form.template_id, form.build_start_time, form.push_mode],
+  () => [form.branch_id, form.template_id, form.build_start_time, form.push_mode, form.push_start_time],
   schedulePreview
 );
 
@@ -132,6 +134,7 @@ function startEdit(s: StrategyItem) {
   form.template_id = s.template_id;
   form.name = s.name;
   form.build_start_time = s.build_start_time;
+  form.push_start_time = s.push_start_time || "";
   form.push_mode = s.push_mode;
   form.enabled = s.enabled;
   schedulePreview();
@@ -141,6 +144,7 @@ function startNew() {
   form.branch_id = branchOptions.value[0]?.id || 0;
   form.template_id = templateOptions.value[0]?.id || 0;
   form.build_start_time = "22:00";
+  form.push_start_time = "";
   form.push_mode = "normal";
   form.enabled = true;
   onBranchTemplateChange();
@@ -162,11 +166,15 @@ async function onSave() {
     "保存策略",
     { type: "warning", confirmButtonText: "确认保存", cancelButtonText: "取消" }
   );
+  const payload = {
+    ...form,
+    push_start_time: form.push_start_time || null
+  };
   if (isEditing.value) {
-    await updateStrategy(editingId.value as number, { ...form });
+    await updateStrategy(editingId.value as number, { ...payload });
     ElMessage.success("策略已更新");
   } else {
-    await createStrategy({ ...form });
+    await createStrategy({ ...payload });
     ElMessage.success("策略已创建");
   }
   await load();
@@ -294,6 +302,18 @@ onMounted(async () => {
             <el-radio value="normal">正常流程推送</el-radio>
             <el-radio value="sync">同步推送冒烟</el-radio>
           </el-radio-group>
+        </el-form-item>
+        <el-form-item label="推送时间（可空）">
+          <el-time-picker
+            v-model="form.push_start_time"
+            value-format="HH:mm"
+            format="HH:mm"
+            placeholder="留空=结论后推导"
+            clearable
+            style="width: 160px"
+            @change="schedulePreview"
+          />
+          <span class="form-tip">（设置后固定在该时间推送，可与其它策略重叠）</span>
         </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="form.enabled" />
