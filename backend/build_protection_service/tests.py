@@ -6,7 +6,7 @@ from django.db import IntegrityError
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from .models import Branch, Strategy, StrategyTemplate, Version
+from .models import Branch, ExecutionRound, Strategy, StrategyTemplate, Version
 from .services import config as svc_config
 from .services import conflict, mutex, timeline
 
@@ -383,4 +383,40 @@ class AdminApiTests(ConfigAwareTestCase):
     def test_admin_config_update(self):
         self._auth(self.token)
         resp = self.client.put("/api/admin/config", {"build_minutes": 45}, format="json")
+        self.assertEqual(resp.status_code, 200)
+
+
+class ExecutionApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.pm = User.objects.create_user(username="pm1", password="123456", role="pm")
+        self.tester = User.objects.create_user(username="tester", password="123456", role="tester")
+        self.version = Version.objects.create(name="27A", pm_user=self.pm, status="active")
+        self.b1 = Branch.objects.create(version=self.version, name="master")
+        self.tmpl = StrategyTemplate.objects.create(name="t", smoke_minutes=480, analysis_minutes=120)
+        self.s = Strategy.objects.create(branch=self.b1, template=self.tmpl, name="s1",
+                                         build_start_time="22:00", push_mode="normal", created_by=self.pm)
+        self.round = ExecutionRound.objects.create(strategy=self.s, exec_date="2026-08-10")
+
+    def _login(self, username):
+        resp = self.client.post("/api/auth/login", {"username": username, "password": "123456"}, format="json")
+        return resp.json()["data"]["token"]
+
+    def test_executions_list(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self._login('pm1')}")
+        resp = self.client.get("/api/executions")
+        self.assertEqual(resp.status_code, 200)
+        self.assertGreaterEqual(len(resp.json()["data"]), 1)
+
+    def test_tester_submits_conclusion(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self._login('tester')}")
+        resp = self.client.post(f"/api/executions/rounds/{self.round.id}/conclusion",
+                                {"conclusion": "pass", "note": "ok"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.round.refresh_from_db()
+        self.assertEqual(self.round.conclusion, "pass")
+
+    def test_logs_execution(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self._login('pm1')}")
+        resp = self.client.get("/api/logs/execution")
         self.assertEqual(resp.status_code, 200)

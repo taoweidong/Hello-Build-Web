@@ -1,7 +1,7 @@
 """业务 API 路由。"""
 from django.urls import path
 
-from . import login, plan, strategies, weekly
+from . import executions, login, logs, plan, strategies, weekly
 from . import admin
 
 app_name = "build_protection_service"
@@ -19,6 +19,13 @@ urlpatterns = [
     path("plan", plan.plan_view, name="plan"),
 
     path("weekly", weekly.weekly_view, name="weekly"),
+
+    path("executions", executions.executions_view, name="executions"),
+    path("executions/rounds/<int:rid>", executions.round_detail, name="round_detail"),
+    path("executions/rounds/<int:rid>/conclusion", executions.conclusion_view, name="round_conclusion"),
+
+    path("logs/execution", logs.execution_logs, name="execution_logs"),
+    path("logs/changes", logs.change_logs, name="change_logs"),
 
     path("admin/versions", admin.extra_view, name="admin_versions"),
     path("admin/versions/<int:vid>", admin.update_version, name="admin_version_update"),
