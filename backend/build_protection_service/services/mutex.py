@@ -1,5 +1,8 @@
 """互斥检测：同版本跨分支构建阶段时间重叠。"""
+import logging
 from datetime import datetime, timedelta
+
+logger = logging.getLogger(__name__)
 
 
 def find_overlaps(intervals):
@@ -45,7 +48,8 @@ def check_build_mutex(version_id, build_start_time, build_min,
                 settings.SYNC_BUFFER_MINUTES, s.push_mode,
                 push_start_time=s.push_start_time,
             )
-        except Exception:
+        except (ValueError, TypeError, AttributeError) as exc:
+            logger.warning("策略 %s 时间线推导失败，跳过互斥校验：%s", s.name, exc)
             continue
         s_start = _parse_iso(tl["build"]["start"])
         s_end = _parse_iso(tl["build"]["end"])
