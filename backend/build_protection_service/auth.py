@@ -1,5 +1,6 @@
 """JWT 认证适配：Authorization: Bearer <token>。"""
 from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework_simplejwt.exceptions import InvalidToken
 
 
 class JWTAuthentication(JWTAuthentication):
@@ -12,7 +13,11 @@ class JWTAuthentication(JWTAuthentication):
         raw_token = self.get_raw_token(header)
         if raw_token is None:
             return None
-        validated = self.get_validated_token(raw_token)
+        # 非法/过期 token 视为未认证而非抛异常，避免普通 Django 视图冒泡成 500。
+        try:
+            validated = self.get_validated_token(raw_token)
+        except InvalidToken:
+            return None
         user = self.get_user(validated)
         if user is None or not user.is_active:
             return None

@@ -1,3 +1,4 @@
+import unittest
 from datetime import datetime
 
 from django.contrib.auth import get_user_model
@@ -112,10 +113,27 @@ class AuthTests(TestCase):
         self.assertEqual(resp.status_code, 401)
         self.assertEqual(resp.json()["code"], 40101)
 
+    def test_me_with_token_returns_payload(self):
+        token = self._login("pm1")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+        resp = self.client.get("/api/auth/me")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json().get("data", {})
+        self.assertEqual(data["username"], "pm1")
+        self.assertEqual(data["role"], "pm")
+
+    def test_me_with_invalid_token_401(self):
+        self.client.credentials(HTTP_AUTHORIZATION="Bearer not.a.token")
+        resp = self.client.get("/api/auth/me")
+        self.assertEqual(resp.status_code, 401)
+        self.assertEqual(resp.json()["code"], 40100)
+
     def test_me_requires_auth(self):
         resp = self.client.get("/api/auth/me")
-        self.assertTrue(resp.status_code >= 400)
+        self.assertEqual(resp.status_code, 401)
+        self.assertEqual(resp.json()["code"], 40100)
 
+    @unittest.skip("Task 9 实现 /api/admin/users 后启用")
     def test_pm_cannot_access_admin_only(self):
         token = self._login("pm1")
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
