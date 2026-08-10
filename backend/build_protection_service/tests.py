@@ -265,3 +265,37 @@ class StrategyApiTests(TestCase):
         resp = self.client.get("/api/strategies/preview")
         self.assertEqual(resp.status_code, 422)
         self.assertEqual(resp.json()["code"], 42201)
+
+
+class PlanApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.pm = User.objects.create_user(username="pm1", password="123456", role="pm")
+        self.version = Version.objects.create(name="27A", pm_user=self.pm, status="active")
+        self.b1 = Branch.objects.create(version=self.version, name="master")
+        self.tmpl = StrategyTemplate.objects.create(
+            name="晚间全量冒烟", smoke_minutes=480, analysis_minutes=120
+        )
+        self.token = self._login("pm1")
+
+    def _login(self, username):
+        resp = self.client.post(
+            "/api/auth/login", {"username": username, "password": "123456"}, format="json"
+        )
+        return resp.json()["data"]["token"]
+
+    def test_plan_returns_push_start_time_and_timeline(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self._login('pm1')}")
+        Strategy.objects.create(
+            branch=self.b1, template=self.tmpl, name="s1", build_start_time="22:00",
+            push_start_time="20:00", push_mode="normal", created_by=self.pm,
+        )
+        resp = self.client.get("/api/plan", {"date": "2026-08-10"})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()["data"]
+        ver = next(v for v in data if v["version_id"] == self.version.id)
+        br = ver["branches"][0]
+        st = br["strategies"][0]
+        self.assertEqual(st["push_start_time"], "20:00")
+        self.assertIsNotNone(st["timeline"]["push"])
+        self.assertEqual(st["timeline"]["build"]["start"], "2026-08-10T22:00:00")
