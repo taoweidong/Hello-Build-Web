@@ -1,33 +1,23 @@
 """策略 views：列表/预览/创建/更新/启停/删除，含互斥与阶段冲突校验。"""
-import json
+import re
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
 
 from ..api import err, ok
-from ..auth import JWTAuthentication
 from ..models import Branch, Strategy, StrategyChangeLog, StrategyTemplate
 from ..services.mutex import check_build_mutex
-from . import json_resp
+from . import authed_user, json_resp, parse_body
 
 User = get_user_model()
 
 
-def _parse_body(request):
-    body = {}
-    try:
-        body = json.loads(request.body or "{}")
-    except (ValueError, TypeError):
-        body = {}
-    return body
-
-
 def _authed(request):
     """手动认证，未认证返回响应。"""
-    result = JWTAuthentication().authenticate(request)
-    if result is None:
-        return json_resp(err(40100, "未认证"), status=401)
-    request.user, _ = result
+    user, resp = authed_user(request)
+    if resp:
+        return resp
+    request.user = user
     return None
 
 
@@ -64,8 +54,11 @@ class SimpleNamespaceTpl:
         self.analysis_minutes = analysis
 
 
-def _validate(branch, template, build_start_time, push_start_time, exclude_id=None):
+def _validate(branch, template, build_start_time, push_start_time, push_mode="normal", exclude_id=None):
     """互斥 + 阶段冲突校验，返回 (err_dict_or_None, conflict_dict_or_None)。"""
+    for field, val in (("build_start_time", build_start_time), ("push_start_time", push_start_time)):
+        if val is not None and not re.fullmatch(r"\d{2}:\d{2}", val):
+            return {"code": 42201, "message": f"{field} 格式应为 HH:MM", "status": 422}, None
     version_id = branch.version_id
     mutex_hits = check_build_mutex(version_id, build_start_time, settings.BUILD_MINUTES, exclude_id)
     if mutex_hits:
@@ -84,7 +77,7 @@ def _validate(branch, template, build_start_time, push_start_time, exclude_id=No
     cand = [{
         "build_start_time": build_start_time,
         "template": SimpleNamespaceTpl(template.smoke_minutes, template.analysis_minutes),
-        "push_mode": "normal",
+        "push_mode": push_mode,
         "strategy_name": "candidate",
         "push_start_time": push_start_time,
     }]
@@ -112,17 +105,19 @@ def list_strategies(request):
 
 
 def preview_strategy(request):
+    if request.method != "POST":
+        return json_resp(err(42201, "不支持的请求方法"), status=422)
     authed = _authed(request)
     if authed:
         return authed
-    body = _parse_body(request)
+    body = parse_body(request)
     branch = Branch.objects.filter(id=body.get("branch_id")).first()
     template = StrategyTemplate.objects.filter(id=body.get("template_id")).first()
     if not branch or not template:
         return json_resp(err(42201, "分支或模板不存在"), status=422)
     err_resp, conflict_obj = _validate(
         branch, template, body.get("build_start_time", "22:00"), body.get("push_start_time"),
-        exclude_id=body.get("id"))
+        push_mode=body.get("push_mode", "normal"), exclude_id=body.get("id"))
     if err_resp:
         conflict_obj = conflict_obj or {}
         return json_resp(ok({"conflict": {**err_resp, **conflict_obj}}))
@@ -133,7 +128,7 @@ def create_strategy(request):
     authed = _authed(request)
     if authed:
         return authed
-    body = _parse_body(request)
+    body = parse_body(request)
     branch = Branch.objects.filter(id=body.get("branch_id")).first()
     template = StrategyTemplate.objects.filter(id=body.get("template_id")).first()
     if not branch or not template:
@@ -141,13 +136,17 @@ def create_strategy(request):
     perr = _check_pm_bound(request.user, branch)
     if perr:
         return json_resp(err(perr["code"], perr["message"]), status=perr["status"])
-    err_resp, _ = _validate(branch, template, body.get("build_start_time"), body.get("push_start_time"))
+    build_start_time = body.get("build_start_time", "22:00")
+    push_start_time = body.get("push_start_time")
+    err_resp, _ = _validate(
+        branch, template, build_start_time, push_start_time,
+        push_mode=body.get("push_mode", "normal"))
     if err_resp:
         return json_resp(err(err_resp["code"], err_resp["message"]), status=err_resp["status"])
     s = Strategy.objects.create(
         branch=branch, template=template, name=body.get("name"),
-        build_start_time=body.get("build_start_time", "22:00"),
-        push_start_time=body.get("push_start_time") or None,
+        build_start_time=build_start_time,
+        push_start_time=push_start_time or None,
         push_mode=body.get("push_mode", "normal"),
         enabled=body.get("enabled", True),
         created_by=request.user,
@@ -165,12 +164,13 @@ def update_strategy(request, sid):
     perr = _check_pm_bound(request.user, s.branch)
     if perr:
         return json_resp(err(perr["code"], perr["message"]), status=perr["status"])
-    body = _parse_body(request)
+    body = parse_body(request)
     branch = s.branch
     template = s.template
     build_start_time = body.get("build_start_time", s.build_start_time)
     push_start_time = body.get("push_start_time", s.push_start_time)
-    err_resp, _ = _validate(branch, template, build_start_time, push_start_time, exclude_id=s.id)
+    err_resp, _ = _validate(branch, template, build_start_time, push_start_time,
+                            push_mode=body.get("push_mode", s.push_mode), exclude_id=s.id)
     if err_resp:
         return json_resp(err(err_resp["code"], err_resp["message"]), status=err_resp["status"])
     old = _strategy_payload(s)

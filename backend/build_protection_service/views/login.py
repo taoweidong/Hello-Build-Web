@@ -1,12 +1,10 @@
 """登录/登出/当前用户。"""
-import json
-
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from ..api import err, ok
 from ..auth import JWTAuthentication
-from . import json_resp, security_log
+from . import json_resp, parse_body, security_log
 
 User = get_user_model()
 
@@ -22,18 +20,8 @@ def _user_payload(user):
     }
 
 
-def _parse_body(request):
-    """普通 Django 视图无 request.data，手动解析 JSON body。"""
-    body = {}
-    try:
-        body = json.loads(request.body or "{}")
-    except (ValueError, TypeError):
-        body = {}
-    return body
-
-
 def login_view(request):
-    body = _parse_body(request)
+    body = parse_body(request)
     username = body.get("username", "")
     password = body.get("password", "")
     user = User.objects.filter(username=username).first()
