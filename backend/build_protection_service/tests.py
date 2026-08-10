@@ -7,9 +7,17 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from .models import Branch, Strategy, StrategyTemplate, Version
+from .services import config as svc_config
 from .services import conflict, mutex, timeline
 
 User = get_user_model()
+
+
+class ConfigAwareTestCase(TestCase):
+    """共享基类：重置运行期配置覆盖层，避免残留值污染其他用例。"""
+
+    def setUp(self):
+        svc_config.reset_config()
 
 
 class ModelTests(TestCase):
@@ -145,8 +153,9 @@ class AuthTests(TestCase):
         return resp.json()["data"]["token"]
 
 
-class StrategyApiTests(TestCase):
+class StrategyApiTests(ConfigAwareTestCase):
     def setUp(self):
+        super().setUp()
         self.client = APIClient()
         self.pm = User.objects.create_user(username="pm1", password="123456", role="pm")
         self.admin = User.objects.create_user(username="admin", password="123456", role="admin")
@@ -267,8 +276,9 @@ class StrategyApiTests(TestCase):
         self.assertEqual(resp.json()["code"], 42201)
 
 
-class PlanApiTests(TestCase):
+class PlanApiTests(ConfigAwareTestCase):
     def setUp(self):
+        super().setUp()
         self.client = APIClient()
         self.pm = User.objects.create_user(username="pm1", password="123456", role="pm")
         self.version = Version.objects.create(name="27A", pm_user=self.pm, status="active")
@@ -301,8 +311,9 @@ class PlanApiTests(TestCase):
         self.assertEqual(st["timeline"]["build"]["start"], "2026-08-10T22:00:00")
 
 
-class WeeklyApiTests(TestCase):
+class WeeklyApiTests(ConfigAwareTestCase):
     def setUp(self):
+        super().setUp()
         self.client = APIClient()
         self.pm = User.objects.create_user(username="pm1", password="123456", role="pm")
         self.version = Version.objects.create(name="27A", pm_user=self.pm, status="active")
@@ -340,10 +351,9 @@ class WeeklyApiTests(TestCase):
         self.assertEqual(resp.json()["code"], 42201)
 
 
-class AdminApiTests(TestCase):
+class AdminApiTests(ConfigAwareTestCase):
     def setUp(self):
-        from .services import config as svc_config
-        svc_config.reset_config()
+        super().setUp()
         self.client = APIClient()
         self.admin = User.objects.create_user(username="admin", password="123456", role="admin")
         self.pm = User.objects.create_user(username="pm1", password="123456", role="pm")
