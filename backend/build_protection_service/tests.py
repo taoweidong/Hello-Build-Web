@@ -285,7 +285,7 @@ class PlanApiTests(TestCase):
         return resp.json()["data"]["token"]
 
     def test_plan_returns_push_start_time_and_timeline(self):
-        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self._login('pm1')}")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.token}")
         Strategy.objects.create(
             branch=self.b1, template=self.tmpl, name="s1", build_start_time="22:00",
             push_start_time="20:00", push_mode="normal", created_by=self.pm,
