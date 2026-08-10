@@ -299,3 +299,36 @@ class PlanApiTests(TestCase):
         self.assertEqual(st["push_start_time"], "20:00")
         self.assertIsNotNone(st["timeline"]["push"])
         self.assertEqual(st["timeline"]["build"]["start"], "2026-08-10T22:00:00")
+
+
+class WeeklyApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.pm = User.objects.create_user(username="pm1", password="123456", role="pm")
+        self.version = Version.objects.create(name="27A", pm_user=self.pm, status="active")
+        self.b1 = Branch.objects.create(version=self.version, name="master")
+        self.b2 = Branch.objects.create(version=self.version, name="TR5")
+        self.tmpl = StrategyTemplate.objects.create(name="晚间全量冒烟", smoke_minutes=480, analysis_minutes=120)
+        self.token = self._login()
+
+    def _login(self):
+        resp = self.client.post("/api/auth/login", {"username": "pm1", "password": "123456"}, format="json")
+        return resp.json()["data"]["token"]
+
+    def test_weekly_returns_week_info_and_days(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.token}")
+        Strategy.objects.create(
+            branch=self.b1, template=self.tmpl, name="27A-master-晚间",
+            build_start_time="22:00", push_mode="normal", created_by=self.pm,
+        )
+        Strategy.objects.create(
+            branch=self.b2, template=self.tmpl, name="27A-TR5-晚间",
+            build_start_time="23:00", push_mode="normal", created_by=self.pm,
+        )
+        resp = self.client.get("/api/weekly", {"week_start": "2026-08-10", "version_id": self.version.id})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()["data"]
+        self.assertEqual(len(data["days"]), 7)
+        self.assertEqual(data["days"][0]["date"], "2026-08-10")
+        self.assertGreaterEqual(len(data["branches"]), 2)
+        self.assertGreaterEqual(len(data["strategies"]), 2)
