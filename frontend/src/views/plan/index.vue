@@ -7,7 +7,8 @@ import { getPlan, type PlanVersion } from "@/api/plan";
 import {
   getCurrentUser,
   timeToMs,
-  dayjs
+  dayjs,
+  formatTime
 } from "@/utils/business";
 import GanttGanttastic from "@/components/gantt/GanttGanttastic.vue";
 import {
@@ -43,6 +44,13 @@ const branchOptions = computed(() => {
 const planData = ref<PlanVersion[]>([]);
 const rows = ref<GanttRow[]>([]);
 const range = reactive({ start: new Date(), end: new Date() });
+// 点击选中的策略详情（点击色块展示）
+const selectedStrategy = ref<import("@/api/plan").PlanStrategy | null>(null);
+const selectedStrategyName = ref("");
+const selectedVersionName = ref("");
+const selectedBranchName = ref("");
+const executions = ref<import("@/api/types").RoundItem[]>([]);
+const detailLoading = ref(false);
 
 /** 版本选择后清空分支并重载 */
 function onVersionChange() {
@@ -69,7 +77,8 @@ function buildRows(data: PlanVersion[]) {
               start: tl.push.start,
               end: tl.push.end,
               conflict: !!s.conflict,
-              versionName: v.version_name
+              versionName: v.version_name,
+              strategyName: s.name
             });
           }
           phases.push(
@@ -79,7 +88,8 @@ function buildRows(data: PlanVersion[]) {
               start: tl.build.start,
               end: tl.build.end,
               conflict: !!s.conflict,
-              versionName: v.version_name
+              versionName: v.version_name,
+              strategyName: s.name
             },
             {
               key: `${s.id}-smoke`,
@@ -87,7 +97,8 @@ function buildRows(data: PlanVersion[]) {
               start: tl.smoke.start,
               end: tl.smoke.end,
               conflict: !!s.conflict,
-              versionName: v.version_name
+              versionName: v.version_name,
+              strategyName: s.name
             },
             {
               key: `${s.id}-analysis`,
@@ -95,7 +106,8 @@ function buildRows(data: PlanVersion[]) {
               start: tl.analysis.start,
               end: tl.analysis.end,
               conflict: !!s.conflict,
-              versionName: v.version_name
+              versionName: v.version_name,
+              strategyName: s.name
             }
           );
         }
@@ -169,16 +181,45 @@ async function load() {
   }
 }
 
-// ---- PM 点击跳转策略编辑 ----
+// ---- 点击色块：展示详情 + PM 跳转策略编辑 ----
 const currentUser = getCurrentUser();
 
-function onRowClick(_row: GanttRow, bar: GanttBarObject) {
-  // 仅 PM 且点击本版本策略色块时可跳转
-  if (currentUser?.role !== "pm") return;
+/** 加载选中策略近 7 天执行历史 */
+async function loadDetailExecutions(strategyId: number) {
+  detailLoading.value = true;
+  try {
+    const { getExecutions } = await import("@/api/panorama");
+    executions.value = await getExecutions({
+      strategy_id: strategyId,
+      from: dayjs().subtract(6, "day").format("YYYY-MM-DD"),
+      to: dayjs().format("YYYY-MM-DD")
+    });
+  } finally {
+    detailLoading.value = false;
+  }
+}
+
+/** 点击任意色块：展示策略详情（配置 + 时间线 + 执行历史），并按 PM 权限跳转策略编辑 */
+async function onGanttClick(_row: GanttRow, bar: GanttBarObject) {
   // 从色块 key 解析策略 id（key 形如 `${strategyId}-${stage}`）
   const id = Number((bar?.phaseKey || "").split("-")[0]);
   if (!id) return;
-  // 校验是否为 PM 绑定版本（色块携带版本名）
+  // 从 planData 定位该策略，记录详情所需信息
+  outer: for (const v of planData.value) {
+    for (const b of v.branches) {
+      const s = b.strategies.find(x => x.id === id);
+      if (s) {
+        selectedVersionName.value = v.version_name;
+        selectedStrategyName.value = s.name;
+        selectedBranchName.value = b.branch_name;
+        selectedStrategy.value = s;
+        await loadDetailExecutions(id);
+        break outer;
+      }
+    }
+  }
+  // 仅 PM 且点击本版本策略色块时可跳转
+  if (currentUser?.role !== "pm") return;
   const versionName = bar?.versionName || "";
   if (versionName && versionName === currentUser.bound_version_name) {
     router.push({ path: "/strategy/index", query: { id } });
@@ -192,6 +233,32 @@ const legend = [
   { label: "人工分析", color: STAGE_COLORS.analysis },
   { label: "推送", color: STAGE_COLORS.push }
 ];
+
+const pushStatusMap: Record<string, string> = {
+  pending: "待推送",
+  running: "推送中",
+  success: "成功",
+  failed: "失败",
+  skipped: "跳过"
+};
+
+/** 详情面板时间线（对空 push 容错） */
+const detailPhases = computed(() => {
+  const tl = selectedStrategy.value?.timeline;
+  if (!tl) return [];
+  const list = [
+    { stage: "push", label: "推送", t: tl.push },
+    { stage: "build", label: "构建", t: tl.build },
+    { stage: "smoke", label: "冒烟", t: tl.smoke },
+    { stage: "analysis", label: "分析", t: tl.analysis }
+  ].filter(x => x.t);
+  return list.map(x => ({
+    stage: x.stage,
+    label: x.label,
+    text: `${formatTime(x.t.start)} ~ ${formatTime(x.t.end, "HH:mm")}`,
+    color: STAGE_COLORS[x.stage]
+  }));
+});
 
 watch(() => filter.date, load);
 
@@ -267,9 +334,50 @@ onMounted(load);
         :rows="rows"
         :range-start="range.start"
         :range-end="range.end"
-        @click-row="onRowClick"
+        @click-row="onGanttClick"
       />
       <el-empty v-if="!loading && rows.length === 0" description="暂无计划数据" />
+    </div>
+
+    <!-- 策略详情面板 -->
+    <div v-if="selectedStrategy" class="detail-panel">
+      <div class="detail-head">
+        <span class="detail-title">策略详情：{{ selectedStrategyName }}</span>
+        <span class="detail-sub">{{ selectedVersionName }} / {{ selectedBranchName }}</span>
+        <el-button size="small" text @click="selectedStrategy = null; executions = []">关闭</el-button>
+      </div>
+      <el-descriptions :column="3" size="small" border class="detail-desc">
+        <el-descriptions-item label="构建开始">{{ selectedStrategy.build_start_time }}</el-descriptions-item>
+        <el-descriptions-item label="推送时间">{{ selectedStrategy.push_start_time || "结论后推导" }}</el-descriptions-item>
+        <el-descriptions-item label="推送模式">
+          {{ selectedStrategy.push_mode === "sync" ? "同步推送冒烟" : "正常流程推送" }}
+        </el-descriptions-item>
+      </el-descriptions>
+      <div class="detail-sec-title">时间线</div>
+      <div v-if="selectedStrategy.timeline" class="detail-timeline">
+        <span v-for="p in detailPhases" :key="p.stage" class="dt-item">
+          <i class="dt-dot" :style="{ background: p.color }"></i>
+          {{ p.label }}：{{ p.text }}
+        </span>
+      </div>
+      <div v-else class="detail-empty">暂无时间线数据</div>
+      <div class="detail-sec-title">执行历史（近 7 天）</div>
+      <el-table :data="executions" v-loading="detailLoading" size="small" style="width: 100%">
+        <el-table-column prop="exec_date" label="日期" width="110" />
+        <el-table-column label="结论" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.conclusion === 'pass' ? 'success' : row.conclusion === 'fail' ? 'danger' : 'info'" size="small">
+              {{ row.conclusion === "pass" ? "通过" : row.conclusion === "fail" ? "不通过" : "待录" }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="推送" width="90">
+          <template #default="{ row }">{{ pushStatusMap[row.push_status] || row.push_status }}</template>
+        </el-table-column>
+        <el-table-column prop="conclusion_note" label="备注" min-width="140">
+          <template #default="{ row }">{{ row.conclusion_note || "-" }}</template>
+        </el-table-column>
+      </el-table>
     </div>
   </div>
 </template>
@@ -331,5 +439,61 @@ onMounted(load);
 .gantt-container {
   position: relative;
   min-height: 200px;
+}
+
+/* ---- 策略详情面板 ---- */
+.detail-panel {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+}
+.detail-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.detail-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+}
+.detail-sub {
+  color: #909399;
+  font-size: 13px;
+}
+.detail-desc {
+  margin-bottom: 12px;
+}
+.detail-sec-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  margin: 12px 0 8px;
+}
+.detail-timeline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 8px 0;
+}
+.dt-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #303133;
+}
+.dt-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.detail-empty {
+  color: #909399;
+  font-size: 13px;
+  padding: 8px 0;
 }
 </style>
