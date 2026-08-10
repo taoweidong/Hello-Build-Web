@@ -228,3 +228,40 @@ class StrategyApiTests(TestCase):
         resp = self.client.delete(f"/api/strategies/{s.id}")
         self.assertEqual(resp.status_code, 200)
         self.assertFalse(Strategy.objects.filter(id=s.id).exists())
+
+    def test_create_without_build_start_time_defaults_to_2200(self):
+        # 客户端省略 build_start_time 应回落 22:00 而非抛 500
+        self._auth(self.token)
+        resp = self.client.post("/api/strategies", {
+            "branch_id": self.b1.id, "template_id": self.tmpl.id,
+            "name": "default-2200", "push_mode": "normal", "enabled": True,
+        }, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["code"], 0)
+        self.assertEqual(resp.json()["data"]["build_start_time"], "22:00")
+
+    def test_create_invalid_build_start_time_422(self):
+        self._auth(self.token)
+        resp = self.client.post("/api/strategies", {
+            "branch_id": self.b1.id, "template_id": self.tmpl.id,
+            "name": "bad-time", "build_start_time": "abc",
+            "push_mode": "normal", "enabled": True,
+        }, format="json")
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["code"], 42201)
+
+    def test_create_invalid_push_start_time_422(self):
+        self._auth(self.token)
+        resp = self.client.post("/api/strategies", {
+            "branch_id": self.b1.id, "template_id": self.tmpl.id,
+            "name": "bad-push", "build_start_time": "22:00",
+            "push_start_time": "not-a-time", "push_mode": "normal", "enabled": True,
+        }, format="json")
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["code"], 42201)
+
+    def test_preview_rejects_non_post(self):
+        self._auth(self.token)
+        resp = self.client.get("/api/strategies/preview")
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["code"], 42201)
