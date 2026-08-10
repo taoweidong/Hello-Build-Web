@@ -10,6 +10,7 @@ export interface PlanStrategy {
   name: string;
   push_mode: string;
   build_start_time: string;
+  push_start_time?: string | null;
   enabled: boolean;
   timeline: Timeline;
   /** 是否冲突（红色斜纹高亮） */

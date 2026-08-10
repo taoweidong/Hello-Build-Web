@@ -54,6 +54,7 @@ export interface StrategyItem {
   name: string;
   build_start_time: string;
   push_mode: string;
+  push_start_time?: string | null; // 推送固定时间 HH:MM（可空，空则结论后动态推导）
   enabled: boolean;
   /** 时间线计算结果（preview / strategies 返回） */
   timeline?: Timeline;
@@ -167,4 +168,37 @@ export interface SecurityLogItem {
   event: string;
   ip?: string;
   at: string;
+}
+
+/** 周视图单日 */
+export interface WeeklyDay {
+  date: string; // "YYYY-MM-DD"
+  weekday: string; // 后端返回英文星期名（"%A"，如 "Monday"）
+}
+
+/** 周视图策略条目（后端扁平结构） */
+export interface WeeklyStrategy {
+  strategy_id: number;
+  strategy_name: string;
+  branch_id: number;
+  branch_name: string;
+  build_start_time: string; // "HH:mm"
+  push_start_time?: string | null;
+  template_name: string;
+}
+
+/** 周视图分支分组（仅 id/name，策略在顶层的 strategies 列表） */
+export interface WeeklyBranch {
+  branch_id: number;
+  branch_name: string;
+}
+
+/** 周视图数据 */
+export interface WeeklyData {
+  week_start: string; // "YYYY-MM-DD"（周一）
+  days: WeeklyDay[]; // 7 天
+  version: { version_id: number; version_name: string } | null;
+  versions: { version_id: number; version_name: string }[];
+  branches: WeeklyBranch[];
+  strategies: WeeklyStrategy[];
 }

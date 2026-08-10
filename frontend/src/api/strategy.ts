@@ -10,6 +10,7 @@ export interface StrategyForm {
   name: string;
   build_start_time: string;
   push_mode: string;
+  push_start_time?: string | null;
   enabled: boolean;
 }
 

@@ -386,6 +386,43 @@ class AdminApiTests(ConfigAwareTestCase):
         resp = self.client.put("/api/admin/config", {"build_minutes": 45}, format="json")
         self.assertEqual(resp.status_code, 200)
 
+    def test_admin_strategy_crud(self):
+        # 管理员创建/查询/启停/更新/删除策略，且拒绝非 admin
+        self._auth(self.token)
+        v = Version.objects.create(name="29A", pm_user=self.pm, status="active")
+        b = Branch.objects.create(version=v, name="master")
+        t = StrategyTemplate.objects.create(name="晚间全量", smoke_minutes=480, analysis_minutes=120)
+        # 非 admin 禁止访问
+        self._auth(self._login("pm1"))
+        resp = self.client.get("/api/admin/strategies")
+        self.assertEqual(resp.status_code, 403)
+        # admin 创建
+        self._auth(self.token)
+        resp = self.client.post("/api/admin/strategies", {
+            "branch_id": b.id, "template_id": t.id, "name": "29A-master-晚间",
+            "build_start_time": "22:00", "push_start_time": "20:00",
+            "push_mode": "normal", "enabled": True,
+        }, format="json")
+        self.assertEqual(resp.status_code, 200)
+        sid = resp.json()["data"]["id"]
+        self.assertEqual(resp.json()["data"]["push_start_time"], "20:00")
+        # 列表
+        resp = self.client.get("/api/admin/strategies", {"version_id": v.id})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(resp.json()["data"]), 1)
+        # 启停
+        resp = self.client.patch(f"/api/admin/strategies/{sid}/toggle", {"enabled": False}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.json()["data"]["enabled"])
+        # 更新
+        resp = self.client.patch(f"/api/admin/strategies/{sid}", {"name": "renamed"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["data"]["name"], "renamed")
+        # 删除
+        resp = self.client.delete(f"/api/admin/strategies/{sid}")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(Strategy.objects.filter(id=sid).exists())
+
 
 class ExecutionApiTests(TestCase):
     def setUp(self):

@@ -4,9 +4,10 @@ from django.contrib.auth import get_user_model
 from django.db import IntegrityError
 
 from ..api import err, ok
-from ..models import AdminOpLog, Branch, SecurityLog, StrategyTemplate, Version
+from ..models import AdminOpLog, Branch, SecurityLog, Strategy, StrategyTemplate, Version
 from ..services.config import get_config, set_config
 from . import authed_user, json_resp, parse_body
+from . import strategies as strategy_views
 
 User = get_user_model()
 
@@ -360,3 +361,123 @@ def logs_view(request, kind):
                 "created_at": log.created_at,
             })
     return json_resp(ok(items))
+
+
+# ---------- 策略管理（管理员全量 CRUD，写入管理操作日志） ----------
+# 复用 strategies 视图的校验与序列化逻辑，仅 admin 可调用，admin 可跨版本操作。
+
+def _list_admin_strategies(request):
+    qs = Strategy.objects.select_related("branch", "branch__version", "template").all()
+    version_id = request.GET.get("version_id")
+    branch_id = request.GET.get("branch_id")
+    if version_id:
+        qs = qs.filter(branch__version_id=version_id)
+    if branch_id:
+        qs = qs.filter(branch_id=branch_id)
+    return json_resp(ok([strategy_views._strategy_payload(s) for s in qs]))
+
+
+def _create_admin_strategy(request, user):
+    body = parse_body(request)
+    branch = Branch.objects.filter(id=body.get("branch_id")).first()
+    template = StrategyTemplate.objects.filter(id=body.get("template_id")).first()
+    if not branch or not template:
+        return json_resp(err(42201, "分支或模板不存在"), status=422)
+    build_start_time = body.get("build_start_time", "22:00")
+    push_start_time = body.get("push_start_time")
+    err_resp, _ = strategy_views._validate(
+        branch, template, build_start_time, push_start_time,
+        push_mode=body.get("push_mode", "normal"))
+    if err_resp:
+        return json_resp(err(err_resp["code"], err_resp["message"]), status=err_resp["status"])
+    s = Strategy.objects.create(
+        branch=branch, template=template, name=body.get("name"),
+        build_start_time=build_start_time,
+        push_start_time=push_start_time or None,
+        push_mode=body.get("push_mode", "normal"),
+        enabled=body.get("enabled", True),
+        created_by=user,
+    )
+    _admin_log(user, "create_strategy", target_type="strategy", target_id=s.id, detail=s.name)
+    return json_resp(ok(strategy_views._strategy_payload(s)))
+
+
+def admin_strategies_view(request):
+    user, resp = authed_user(request)
+    if resp:
+        return resp
+    perr = _require_admin(user)
+    if perr:
+        return perr
+    if request.method == "GET":
+        return _list_admin_strategies(request)
+    if request.method == "POST":
+        return _create_admin_strategy(request, user)
+    return json_resp(err(42201, "不支持的请求方法"), status=422)
+
+
+def _update_admin_strategy(request, user, sid):
+    s = Strategy.objects.select_related("branch", "template").filter(id=sid).first()
+    if not s:
+        return json_resp(err(40401, "策略不存在"), status=404)
+    body = parse_body(request)
+    build_start_time = body.get("build_start_time", s.build_start_time)
+    push_start_time = body.get("push_start_time", s.push_start_time)
+    err_resp, _ = strategy_views._validate(
+        s.branch, s.template, build_start_time, push_start_time,
+        push_mode=body.get("push_mode", s.push_mode), exclude_id=s.id)
+    if err_resp:
+        return json_resp(err(err_resp["code"], err_resp["message"]), status=err_resp["status"])
+    s.name = body.get("name", s.name)
+    s.build_start_time = build_start_time
+    s.push_start_time = push_start_time or None
+    s.push_mode = body.get("push_mode", s.push_mode)
+    s.enabled = body.get("enabled", s.enabled)
+    s.save()
+    _admin_log(user, "update_strategy", target_type="strategy", target_id=sid, detail=s.name)
+    return json_resp(ok(strategy_views._strategy_payload(s)))
+
+
+def _toggle_admin_strategy(request, user, sid):
+    s = Strategy.objects.filter(id=sid).first()
+    if not s:
+        return json_resp(err(40401, "策略不存在"), status=404)
+    s.enabled = not s.enabled
+    s.save()
+    _admin_log(user, "toggle_strategy", target_type="strategy", target_id=sid)
+    return json_resp(ok(strategy_views._strategy_payload(s)))
+
+
+def _delete_admin_strategy(request, user, sid):
+    s = Strategy.objects.filter(id=sid).first()
+    if not s:
+        return json_resp(err(40401, "策略不存在"), status=404)
+    s.delete()
+    _admin_log(user, "delete_strategy", target_type="strategy", target_id=sid)
+    return json_resp(ok())
+
+
+def admin_strategy_detail_view(request, sid):
+    user, resp = authed_user(request)
+    if resp:
+        return resp
+    perr = _require_admin(user)
+    if perr:
+        return perr
+    if request.method == "PATCH":
+        return _update_admin_strategy(request, user, sid)
+    if request.method == "DELETE":
+        return _delete_admin_strategy(request, user, sid)
+    return json_resp(err(42201, "不支持的请求方法"), status=422)
+
+
+def admin_strategy_toggle_view(request, sid):
+    user, resp = authed_user(request)
+    if resp:
+        return resp
+    perr = _require_admin(user)
+    if perr:
+        return perr
+    if request.method != "PATCH":
+        return json_resp(err(42201, "不支持的请求方法"), status=422)
+    return _toggle_admin_strategy(request, user, sid)

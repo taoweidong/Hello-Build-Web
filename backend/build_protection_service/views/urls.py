@@ -34,6 +34,9 @@ urlpatterns = [
     path("admin/users/<int:uid>", admin.update_user, name="admin_user_update"),
     path("admin/templates", admin.templates_view, name="admin_templates"),
     path("admin/templates/<int:tid>", admin.template_detail_view, name="admin_template_detail"),
+    path("admin/strategies", admin.admin_strategies_view, name="admin_strategies"),
+    path("admin/strategies/<int:sid>", admin.admin_strategy_detail_view, name="admin_strategy_detail"),
+    path("admin/strategies/<int:sid>/toggle", admin.admin_strategy_toggle_view, name="admin_strategy_toggle"),
     path("admin/config", admin.config_view, name="admin_config"),
     path("admin/logs/<str:kind>", admin.logs_view, name="admin_logs"),
 ]

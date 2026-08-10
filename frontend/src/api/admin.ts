@@ -61,5 +61,23 @@ export const adminApi = {
   // ---- 关键配置 ----
   getConfig: (): Promise<GlobalConfig> => http.get("/admin/config"),
   updateConfig: (d: GlobalConfig): Promise<GlobalConfig> =>
-    http.put("/admin/config", d)
+    http.put("/admin/config", d),
+
+  // ---- 策略管理（管理员全量 CRUD，写入管理操作日志） ----
+  getAdminStrategies: (params?: {
+    version_id?: number;
+    branch_id?: number;
+  }): Promise<import("@/api/types").StrategyItem[]> =>
+    http.get("/admin/strategies", { params }),
+  createAdminStrategy: (d: import("./strategy").StrategyForm): Promise<import("@/api/types").StrategyItem> =>
+    http.post("/admin/strategies", d),
+  updateAdminStrategy: (
+    id: number,
+    d: import("./strategy").StrategyForm
+  ): Promise<import("@/api/types").StrategyItem> =>
+    http.patch(`/admin/strategies/${id}`, d),
+  toggleAdminStrategy: (id: number, enabled: boolean): Promise<import("@/api/types").StrategyItem> =>
+    http.patch(`/admin/strategies/${id}/toggle`, null, { params: { enabled } }),
+  deleteAdminStrategy: (id: number): Promise<void> =>
+    http.delete(`/admin/strategies/${id}`)
 };
