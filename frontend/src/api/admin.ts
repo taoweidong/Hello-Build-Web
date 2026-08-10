@@ -16,9 +16,7 @@ export const adminApi = {
   updateVersion: (id: number, d: { name?: string; pm_user_id?: number | null; status?: string }): Promise<VersionItem> =>
     http.patch(`/admin/versions/${id}`, d),
   addBranch: (vid: number, branchName: string): Promise<void> =>
-    http.post(`/admin/versions/${vid}/branches`, null, {
-      params: { branch_name: branchName }
-    }),
+    http.post(`/admin/versions/${vid}/branches`, { name: branchName }),
 
   // ---- 用户管理 ----
   getUsers: (): Promise<UserInfo[]> => http.get("/admin/users"),

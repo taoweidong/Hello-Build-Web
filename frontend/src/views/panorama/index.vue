@@ -228,13 +228,13 @@ onMounted(loadStrategies);
           <template #default="{ row }">{{ row.exec_date }}</template>
         </el-table-column>
         <el-table-column label="构建" min-width="170">
-          <template #default="{ row }">{{ phaseShort(row, "build") }}</template>
+          <template #default="{ row }">{{ phaseShort(row as RoundItem, "build") }}</template>
         </el-table-column>
         <el-table-column label="冒烟" min-width="170">
-          <template #default="{ row }">{{ phaseShort(row, "smoke") }}</template>
+          <template #default="{ row }">{{ phaseShort(row as RoundItem, "smoke") }}</template>
         </el-table-column>
         <el-table-column label="分析" min-width="170">
-          <template #default="{ row }">{{ phaseShort(row, "analysis") }}</template>
+          <template #default="{ row }">{{ phaseShort(row as RoundItem, "analysis") }}</template>
         </el-table-column>
         <el-table-column label="结论" width="90">
           <template #default="{ row }">

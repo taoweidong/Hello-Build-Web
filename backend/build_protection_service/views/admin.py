@@ -35,9 +35,10 @@ def _require_admin(user):
 # ---------- 版本 ----------
 
 def list_versions(user):
-    qs = Version.objects.select_related("pm_user").all()
+    qs = Version.objects.select_related("pm_user").prefetch_related("branches").all()
     return json_resp(ok([{
         "id": v.id, "name": v.name, "pm_user_id": v.pm_user_id, "status": v.status,
+        "branches": [{"id": b.id, "name": b.name} for b in v.branches.all()],
     } for v in qs]))
 
 

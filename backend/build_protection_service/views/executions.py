@@ -25,7 +25,7 @@ def _round_payload(r):
         "smoke_start_at": _fmt(r.smoke_start_at),
         "smoke_end_at": _fmt(r.smoke_end_at),
         "conclusion": r.conclusion,
-        "note": r.note,
+        "conclusion_note": r.note,
         "push_status": r.push_status,
     }
 
@@ -37,6 +37,19 @@ def executions_view(request):
     qs = ExecutionRound.objects.select_related("strategy", "strategy__branch").order_by("-id")
     if user.role == "pm":
         qs = qs.filter(strategy__branch__version__pm_user=user)
+    # 前端按策略/日期范围过滤（详情面板近 7 天历史、执行看板按日）
+    strategy_id = request.GET.get("strategy_id")
+    if strategy_id:
+        qs = qs.filter(strategy_id=strategy_id)
+    date_ = request.GET.get("date")
+    if date_:
+        qs = qs.filter(exec_date=date_)
+    from_date = request.GET.get("from")
+    to_date = request.GET.get("to")
+    if from_date:
+        qs = qs.filter(exec_date__gte=from_date)
+    if to_date:
+        qs = qs.filter(exec_date__lte=to_date)
     return json_resp(ok([_round_payload(r) for r in qs[:200]]))
 
 
@@ -69,6 +82,9 @@ def conclusion_view(request, rid):
     conclusion = body.get("conclusion")
     if conclusion not in ("pass", "fail"):
         return json_resp(err(42201, "非法结论"), status=422)
+    # 防重：已有结论的轮次不可重复提交（初始 conclusion 为 None，对应前端 40902「结论已录入」处理）
+    if r.conclusion is not None:
+        return json_resp(err(40902, "结论已录入，不可重复提交"), status=409)
     r.conclusion = conclusion
     r.note = body.get("note", r.note or "")
     r.analysis_end_at = now()

@@ -8,6 +8,7 @@ from ..api import err, ok
 from ..models import Branch, Strategy, StrategyChangeLog, StrategyTemplate
 from ..services.config import get_config
 from ..services.mutex import check_build_mutex
+from ..services.timeline import build_timeline
 from . import authed_user, json_resp, parse_body
 
 User = get_user_model()
@@ -105,6 +106,10 @@ def list_strategies(request):
         qs = qs.filter(branch__version_id=version_id)
     if branch_id:
         qs = qs.filter(branch_id=branch_id)
+    # PM 仅可见其绑定版本策略（管理员可见全部）
+    bound_version_id = getattr(request.user, "bound_version_id", None)
+    if request.user.role == "pm" and bound_version_id:
+        qs = qs.filter(branch__version_id=bound_version_id)
     return json_resp(ok([_strategy_payload(s) for s in qs]))
 
 
@@ -119,13 +124,23 @@ def preview_strategy(request):
     template = StrategyTemplate.objects.filter(id=body.get("template_id")).first()
     if not branch or not template:
         return json_resp(err(42201, "分支或模板不存在"), status=422)
+    build_start_time = body.get("build_start_time", "22:00")
+    push_start_time = body.get("push_start_time")
+    push_mode = body.get("push_mode", "normal")
     err_resp, conflict_obj = _validate(
-        branch, template, body.get("build_start_time", "22:00"), body.get("push_start_time"),
-        push_mode=body.get("push_mode", "normal"), exclude_id=body.get("id"))
+        branch, template, build_start_time, push_start_time,
+        push_mode=push_mode, exclude_id=body.get("id"))
     if err_resp:
         conflict_obj = conflict_obj or {}
         return json_resp(ok({"conflict": {**err_resp, **conflict_obj}}))
-    return json_resp(ok({"conflict": None}))
+    # 计算时间线供前端实时预览（与 _validate 同一基准日期）
+    build_minutes = get_config("build_minutes", settings.BUILD_MINUTES)
+    push_minutes = get_config("push_minutes", settings.PUSH_MINUTES)
+    sync_buffer_minutes = get_config("sync_buffer_minutes", settings.SYNC_BUFFER_MINUTES)
+    timeline = build_timeline(
+        "2026-08-10", build_start_time, template.smoke_minutes, template.analysis_minutes,
+        build_minutes, push_minutes, sync_buffer_minutes, push_mode, push_start_time)
+    return json_resp(ok({"conflict": None, "timeline": timeline}))
 
 
 def create_strategy(request):

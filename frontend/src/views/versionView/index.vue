@@ -3,7 +3,8 @@
 // 需求：甘特图展示所有版本 → 分支 → 构建策略，支持按单日筛选（默认当天），点击策略联动执行历史
 import { ref, reactive, computed, watch, onMounted } from "vue";
 import { getPlan, type PlanVersion } from "@/api/plan";
-import { getExecutions, type RoundItem } from "@/api/panorama";
+import { getExecutions } from "@/api/panorama";
+import type { RoundItem } from "@/api/types";
 import { dayjs, formatTime } from "@/utils/business";
 import GanttGanttastic from "@/components/gantt/GanttGanttastic.vue";
 import {

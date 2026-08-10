@@ -16,6 +16,8 @@ export interface UserInfo {
   display_name: string;
   /** 角色：admin / pm / builder / tester / integrator */
   role: string;
+  /** 是否启用（停用后不可登录） */
+  is_active?: boolean;
   /** PM 绑定版本（仅 PM 角色存在） */
   bound_version_id?: number;
   bound_version_name?: string;

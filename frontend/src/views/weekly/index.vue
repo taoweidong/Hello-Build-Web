@@ -75,7 +75,8 @@ const monthWeeks = computed(() => {
   const firstMonday =
     first.month() === startOfMonth.month() ? first : first.add(7, "day");
   const result: Array<{ value: string; label: string }> = [];
-  for (let i = 0; i < 4; i++) {
+  // 月份最多含 5 个周一（跨月时首周过滤后仍可能 5 个），配合 break 逐周校验所属月
+  for (let i = 0; i < 6; i++) {
     const monday = firstMonday.add(i * 7, "day");
     if (monday.month() !== startOfMonth.month()) break;
     result.push({

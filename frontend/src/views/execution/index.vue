@@ -18,7 +18,7 @@ const now = ref(Date.now());
 function stageStatus(phase: {
   start: string;
   end: string;
-}): { type: string; label: string } {
+}): { type: "info" | "primary" | "success"; label: string } {
   const start = timeToMs(phase.start);
   const end = timeToMs(phase.end);
   const t = now.value;
@@ -126,13 +126,13 @@ function phaseRange(r: RoundItem, key: "build" | "smoke" | "analysis") {
   return `${formatTime(s, "HH:mm")}-${formatTime(e, "HH:mm")}`;
 }
 
-function conclusionTag(r: RoundItem): { type: string; label: string } {
+function conclusionTag(r: RoundItem): { type: "success" | "danger" | "info"; label: string } {
   if (r.conclusion === "pass") return { type: "success", label: "通过" };
   if (r.conclusion === "fail") return { type: "danger", label: "不通过" };
   return { type: "info", label: "待录" };
 }
 
-const pushStatusMap: Record<string, { type: string; label: string }> = {
+const pushStatusMap: Record<string, { type: "primary" | "success" | "warning" | "info" | "danger"; label: string }> = {
   pending: { type: "info", label: "待推送" },
   running: { type: "primary", label: "推送中" },
   success: { type: "success", label: "推送成功" },
@@ -169,7 +169,7 @@ const pushStatusMap: Record<string, { type: string; label: string }> = {
             <el-tag :type="stageStatus({ start: row.build_start, end: row.build_end }).type" size="small">
               {{ stageStatus({ start: row.build_start, end: row.build_end }).label }}
             </el-tag>
-            <span class="phase-time">{{ phaseRange(row, "build") }}</span>
+            <span class="phase-time">{{ phaseRange(row as RoundItem, "build") }}</span>
           </template>
         </el-table-column>
         <el-table-column label="冒烟" min-width="150">
@@ -177,7 +177,7 @@ const pushStatusMap: Record<string, { type: string; label: string }> = {
             <el-tag :type="stageStatus({ start: row.smoke_start, end: row.smoke_end }).type" size="small">
               {{ stageStatus({ start: row.smoke_start, end: row.smoke_end }).label }}
             </el-tag>
-            <span class="phase-time">{{ phaseRange(row, "smoke") }}</span>
+            <span class="phase-time">{{ phaseRange(row as RoundItem, "smoke") }}</span>
           </template>
         </el-table-column>
         <el-table-column label="人工分析" min-width="150">
@@ -185,7 +185,7 @@ const pushStatusMap: Record<string, { type: string; label: string }> = {
             <el-tag :type="stageStatus({ start: row.analysis_start, end: row.analysis_end }).type" size="small">
               {{ stageStatus({ start: row.analysis_start, end: row.analysis_end }).label }}
             </el-tag>
-            <span class="phase-time">{{ phaseRange(row, "analysis") }}</span>
+            <span class="phase-time">{{ phaseRange(row as RoundItem, "analysis") }}</span>
           </template>
         </el-table-column>
         <el-table-column label="结论" min-width="140">
@@ -194,12 +194,12 @@ const pushStatusMap: Record<string, { type: string; label: string }> = {
               v-if="row.conclusion === 'pending' && currentUser?.role === 'tester'"
               type="primary"
               size="small"
-              @click="openConclusion(row)"
+              @click="openConclusion(row as RoundItem)"
             >
               录入结论
             </el-button>
-            <el-tag v-else :type="conclusionTag(row).type" size="small">
-              {{ conclusionTag(row).label }}
+            <el-tag v-else :type="conclusionTag(row as RoundItem).type" size="small">
+              {{ conclusionTag(row as RoundItem).label }}
             </el-tag>
           </template>
         </el-table-column>

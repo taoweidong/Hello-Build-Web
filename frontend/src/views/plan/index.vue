@@ -191,17 +191,21 @@ async function load() {
 // ---- 点击色块：展示详情 + PM 跳转策略编辑 ----
 const currentUser = getCurrentUser();
 
-/** 加载选中策略近 7 天执行历史 */
+/** 加载选中策略近 7 天执行历史（带请求序号守卫，避免快速连点被旧响应覆盖） */
+let detailSeq = 0;
 async function loadDetailExecutions(strategyId: number) {
+  const cur = ++detailSeq;
   detailLoading.value = true;
   try {
-    executions.value = await getExecutions({
+    const res = await getExecutions({
       strategy_id: strategyId,
       from: dayjs().subtract(6, "day").format("YYYY-MM-DD"),
       to: dayjs().format("YYYY-MM-DD")
     });
+    if (cur !== detailSeq) return; // 过期响应丢弃
+    executions.value = res;
   } finally {
-    detailLoading.value = false;
+    if (cur === detailSeq) detailLoading.value = false;
   }
 }
 

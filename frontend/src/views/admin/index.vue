@@ -508,7 +508,7 @@ onUnmounted(() => {
           </el-table-column>
           <el-table-column label="操作" width="90">
             <template #default="{ row }">
-              <el-button type="primary" link size="small" @click="openVersionDialog(row)">
+              <el-button type="primary" link size="small" @click="openVersionDialog(row as VersionItem)">
                 编辑
               </el-button>
             </template>
@@ -538,9 +538,9 @@ onUnmounted(() => {
           </el-table-column>
           <el-table-column label="操作" width="220">
             <template #default="{ row }">
-              <el-button type="primary" link size="small" @click="openUserDialog(row)">编辑</el-button>
-              <el-button size="small" link @click="resetPassword(row)">重置密码</el-button>
-              <el-button size="small" link @click="toggleUser(row)">
+              <el-button type="primary" link size="small" @click="openUserDialog(row as UserInfo)">编辑</el-button>
+              <el-button size="small" link @click="resetPassword(row as UserInfo)">重置密码</el-button>
+              <el-button size="small" link @click="toggleUser(row as UserInfo)">
                 {{ row.is_active === false ? "启用" : "停用" }}
               </el-button>
             </template>
@@ -566,8 +566,8 @@ onUnmounted(() => {
           <el-table-column prop="description" label="描述" min-width="180" />
           <el-table-column label="操作" width="140">
             <template #default="{ row }">
-              <el-button type="primary" link size="small" @click="openTemplateDialog(row)">编辑</el-button>
-              <el-button type="danger" link size="small" @click="deleteTemplate(row)">删除</el-button>
+              <el-button type="primary" link size="small" @click="openTemplateDialog(row as TemplateItem)">编辑</el-button>
+              <el-button type="danger" link size="small" @click="deleteTemplate(row as TemplateItem)">删除</el-button>
             </template>
           </el-table-column>
         </el-table>
