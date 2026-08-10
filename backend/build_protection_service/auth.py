@@ -5,7 +5,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 class JWTAuthentication(JWTAuthentication):
     def authenticate(self, request):
         # 复用父类 get_header + get_raw_token 解析 Authorization header，
-        # 正确处理大小写、缺失 header 及空 token 等边界情况。
+        # 处理缺失 header 及空 token 等边界情况。
         header = self.get_header(request)
         if header is None:
             return None
