@@ -491,3 +491,219 @@ class SeedTests(TestCase):
         # 重复运行不报错、不重复
         self.assertEqual(Version.objects.count(), 2)
         self.assertEqual(Strategy.objects.count(), 4)
+
+
+class ReportApiTests(ConfigAwareTestCase):
+    """验证报告 API：tester/builder 可写，仅作者可改/发，发布为模拟推送。"""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.pm = User.objects.create_user(username="pm1", password="123456", role="pm")
+        self.admin = User.objects.create_user(username="admin", password="123456", role="admin")
+        self.tester = User.objects.create_user(username="tester1", password="123456", role="tester")
+        self.tester2 = User.objects.create_user(username="tester2", password="123456", role="tester")
+        self.builder = User.objects.create_user(username="builder1", password="123456", role="builder")
+        self.integrator = User.objects.create_user(username="intg1", password="123456", role="integrator")
+        self.version = Version.objects.create(name="27A", pm_user=self.pm, status="active")
+        self.branch = Branch.objects.create(version=self.version, name="master")
+        self.tmpl = StrategyTemplate.objects.create(name="晚间全量冒烟", smoke_minutes=480, analysis_minutes=120)
+        self.strategy = Strategy.objects.create(
+            branch=self.branch, template=self.tmpl, name="27A-master-晚间",
+            build_start_time="22:00", push_mode="normal", created_by=self.pm,
+        )
+        self.token = self._login("tester1")
+
+    def _login(self, username):
+        resp = self.client.post("/api/auth/login", {"username": username, "password": "123456"}, format="json")
+        return resp.json()["data"]["token"]
+
+    def _auth(self, token):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+
+    def _valid(self, **overrides):
+        payload = {
+            "title": "27A 冒烟验证报告",
+            "version_id": self.version.id,
+            "strategy_id": self.strategy.id,
+            "conclusion": "pass",
+            "environment": "测试环境",
+            "summary": "冒烟用例全部通过，无阻塞问题。",
+            "risks": "",
+            "remark": "",
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_writer_roles_can_create_report(self):
+        # tester 与 builder 均可新建（草稿态）
+        self._auth(self.token)
+        resp = self.client.post("/api/reports", self._valid(), format="json")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()["data"]
+        self.assertEqual(data["status"], "draft")
+        self.assertEqual(data["conclusion"], "pass")
+        self.assertEqual(data["version_name"], "27A")
+        self.assertEqual(data["strategy_name"], "27A-master-晚间")
+        self.assertEqual(data["created_by_id"], self.tester.id)
+        self._auth(self._login("builder1"))
+        resp = self.client.post("/api/reports", self._valid(title="builder 报告"), format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["data"]["title"], "builder 报告")
+
+    def test_non_writer_cannot_create_report(self):
+        for username in ("pm1", "admin", "intg1"):
+            self._auth(self._login(username))
+            resp = self.client.post("/api/reports", self._valid(), format="json")
+            self.assertEqual(resp.status_code, 403)
+            self.assertEqual(resp.json()["code"], 40301)
+
+    def test_create_validation_422(self):
+        self._auth(self.token)
+        cases = [
+            (self._valid(title=""), "标题不能为空"),
+            (self._valid(conclusion=""), "结论必须为"),
+            (self._valid(conclusion="blocker"), "结论必须为"),
+            (self._valid(summary=""), "验证内容不能为空"),
+        ]
+        for payload, expect in cases:
+            resp = self.client.post("/api/reports", payload, format="json")
+            self.assertEqual(resp.status_code, 422)
+            self.assertEqual(resp.json()["code"], 42201)
+            self.assertIn(expect, resp.json()["message"])
+
+    def test_version_strategy_must_be_paired(self):
+        self._auth(self.token)
+        # 只选版本不选策略
+        resp = self.client.post("/api/reports", self._valid(strategy_id=None), format="json")
+        self.assertEqual(resp.status_code, 422)
+        # 只选策略不选版本
+        resp = self.client.post("/api/reports", self._valid(version_id=None), format="json")
+        self.assertEqual(resp.status_code, 422)
+        # 策略不属于所选版本
+        pm27b = User.objects.create_user(username="pm27b", password="123456", role="pm")
+        v2 = Version.objects.create(name="27B", pm_user=pm27b, status="active")
+        b2 = Branch.objects.create(version=v2, name="master")
+        s2 = Strategy.objects.create(branch=b2, template=self.tmpl, name="27B-master-晚间",
+                                     build_start_time="23:00", push_mode="normal", created_by=self.pm)
+        resp = self.client.post("/api/reports", self._valid(strategy_id=s2.id), format="json")
+        self.assertEqual(resp.status_code, 422)
+
+    def test_list_and_detail(self):
+        self._auth(self.token)
+        r1 = self.client.post("/api/reports", self._valid(), format="json").json()["data"]
+        self.client.post("/api/reports", self._valid(title="第二份", conclusion="risk"), format="json")
+        resp = self.client.get("/api/reports")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(resp.json()["data"]), 2)
+        resp = self.client.get(f"/api/reports/{r1['id']}")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["data"]["title"], "27A 冒烟验证报告")
+
+    def test_list_filters(self):
+        self._auth(self.token)
+        r = self.client.post("/api/reports", self._valid(), format="json").json()["data"]
+        self.client.post("/api/reports", self._valid(title="27B 回归报告", conclusion="fail"), format="json")
+        # keyword 命中标题
+        resp = self.client.get("/api/reports", {"keyword": "27B"})
+        self.assertEqual(len(resp.json()["data"]), 1)
+        self.assertEqual(resp.json()["data"][0]["title"], "27B 回归报告")
+        # keyword 命中 ID（字符串）
+        resp = self.client.get("/api/reports", {"keyword": str(r["id"])})
+        self.assertEqual(len(resp.json()["data"]), 1)
+        # status / version_id / 未命中
+        resp = self.client.get("/api/reports", {"status": "draft"})
+        self.assertEqual(len(resp.json()["data"]), 2)
+        resp = self.client.get("/api/reports", {"version_id": self.version.id})
+        self.assertEqual(len(resp.json()["data"]), 2)
+        resp = self.client.get("/api/reports", {"keyword": "不存在的关键词"})
+        self.assertEqual(len(resp.json()["data"]), 0)
+
+    def test_update_only_by_author(self):
+        self._auth(self.token)
+        r = self.client.post("/api/reports", self._valid(), format="json").json()["data"]
+        # 非作者 tester2 修改被拒
+        self._auth(self._login("tester2"))
+        resp = self.client.put(f"/api/reports/{r['id']}", self._valid(title="篡改"), format="json")
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.json()["code"], 40301)
+        # pm 修改被拒
+        self._auth(self._login("pm1"))
+        resp = self.client.put(f"/api/reports/{r['id']}", self._valid(title="pm 篡改"), format="json")
+        self.assertEqual(resp.status_code, 403)
+        # 作者修改成功
+        self._auth(self.token)
+        resp = self.client.put(f"/api/reports/{r['id']}", self._valid(title="修订后标题", conclusion="risk"), format="json")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()["data"]
+        self.assertEqual(data["title"], "修订后标题")
+        self.assertEqual(data["conclusion"], "risk")
+        self.assertEqual(data["status"], "draft")
+
+    def test_detail_not_found_404(self):
+        self._auth(self.token)
+        resp = self.client.get("/api/reports/99999")
+        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(resp.json()["code"], 40401)
+
+    def test_publish_flow(self):
+        self._auth(self.token)
+        r = self.client.post("/api/reports", self._valid(), format="json").json()["data"]
+        resp = self.client.post(
+            f"/api/reports/{r['id']}/publish",
+            {"screenshot": "data:image/png;base64," + "A" * 100},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()["data"]
+        self.assertEqual(data["push_status"], "pushed")
+        self.assertEqual(data["push_target"], "构建通知群")
+        self.assertIn("27A 冒烟验证报告", data["message"])
+        self.assertIn("通过", data["message"])
+        # 报告状态已更新
+        resp = self.client.get(f"/api/reports/{r['id']}")
+        rep = resp.json()["data"]
+        self.assertEqual(rep["status"], "published")
+        self.assertEqual(rep["publish_count"], 1)
+        self.assertIsNotNone(rep["published_at"])
+
+    def test_publish_requires_author_and_screenshot(self):
+        self._auth(self.token)
+        r = self.client.post("/api/reports", self._valid(), format="json").json()["data"]
+        # 非作者发布被拒
+        self._auth(self._login("builder1"))
+        resp = self.client.post(f"/api/reports/{r['id']}/publish", {"screenshot": "x"}, format="json")
+        self.assertEqual(resp.status_code, 403)
+        # pm 发布被拒
+        self._auth(self._login("pm1"))
+        resp = self.client.post(f"/api/reports/{r['id']}/publish", {"screenshot": "x"}, format="json")
+        self.assertEqual(resp.status_code, 403)
+        # 缺少截图
+        self._auth(self.token)
+        resp = self.client.post(f"/api/reports/{r['id']}/publish", {}, format="json")
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["code"], 42201)
+        # 截图超 2MB
+        huge = "A" * (2 * 1024 * 1024 + 1)
+        resp = self.client.post(f"/api/reports/{r['id']}/publish", {"screenshot": huge}, format="json")
+        self.assertEqual(resp.status_code, 422)
+
+    def test_republish_appends_record(self):
+        self._auth(self.token)
+        r = self.client.post("/api/reports", self._valid(), format="json").json()["data"]
+        img = "data:image/png;base64,AAAA"
+        self.client.post(f"/api/reports/{r['id']}/publish", {"screenshot": img}, format="json")
+        self.client.post(f"/api/reports/{r['id']}/publish", {"screenshot": img}, format="json")
+        resp = self.client.get(f"/api/reports/{r['id']}/publishes")
+        records = resp.json()["data"]
+        self.assertEqual(len(records), 2)
+        self.assertEqual(records[0]["publisher_name"], "tester1")
+        # 倒序：最新在前
+        self.assertGreater(records[0]["id"], records[1]["id"])
+        # 报告累计发布 2 次
+        self.assertEqual(self.client.get(f"/api/reports/{r['id']}").json()["data"]["publish_count"], 2)
+
+    def test_reports_requires_auth(self):
+        resp = self.client.get("/api/reports")
+        self.assertEqual(resp.status_code, 401)
+        self.assertEqual(resp.json()["code"], 40100)
