@@ -204,3 +204,41 @@ export interface WeeklyData {
   branches: WeeklyBranch[];
   strategies: WeeklyStrategy[];
 }
+
+// ============ 验证报告 ============
+
+/** 验证报告条目 */
+export interface ReportItem {
+  id: number;
+  title: string;
+  version_id?: number | null;
+  version_name?: string | null;
+  strategy_id?: number | null;
+  strategy_name?: string | null;
+  /** 结论：pass / fail / risk */
+  conclusion: string;
+  environment: string;
+  summary: string;
+  risks: string;
+  remark: string;
+  /** 状态：draft / published */
+  status: string;
+  created_by_id: number;
+  created_by_name: string;
+  published_at?: string | null;
+  publish_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** 发布暨推送记录（含截图 base64） */
+export interface ReportPublishItem {
+  id: number;
+  publisher_name: string;
+  push_status: string;
+  push_target: string;
+  message: string;
+  screenshot: string;
+  created_at: string;
+}
+
