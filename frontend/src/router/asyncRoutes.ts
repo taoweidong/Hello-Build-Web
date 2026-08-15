@@ -147,6 +147,38 @@ export const asyncRoutes = [
     ]
   },
   {
+    path: "/report",
+    name: "Report",
+    component: Layout,
+    redirect: "/report/index",
+    meta: {
+      icon: "ep/notebook",
+      title: "验证报告",
+      rank: 7
+    },
+    children: [
+      {
+        path: "/report/index",
+        name: "ReportIndex",
+        component: () => import("@/views/report/index.vue"),
+        meta: {
+          title: "验证报告",
+          roles: ALL_ROLES
+        }
+      },
+      {
+        path: "/report/detail/:id",
+        name: "ReportDetail",
+        component: () => import("@/views/report/detail.vue"),
+        meta: {
+          title: "报告详情",
+          showLink: false,
+          roles: ALL_ROLES
+        }
+      }
+    ]
+  },
+  {
     path: "/system",
     name: "System",
     component: Layout,
@@ -154,7 +186,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/setting",
       title: "系统管理",
-      rank: 7
+      rank: 8
     },
     children: [
       {
@@ -176,7 +208,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/document",
       title: "日志中心",
-      rank: 8
+      rank: 9
     },
     children: [
       {
