@@ -128,3 +128,40 @@ class SecurityLog(models.Model):
     action = models.CharField(max_length=100)
     detail = models.CharField(max_length=255, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class VerificationReport(models.Model):
+    """验证报告：独立实体，可选关联版本/策略。"""
+    CONCLUSION_CHOICES = (("pass", "通过"), ("fail", "不通过"), ("risk", "有风险"))
+    STATUS_CHOICES = (("draft", "草稿"), ("published", "已发布"))
+    title = models.CharField("标题", max_length=200)
+    version = models.ForeignKey(Version, on_delete=models.SET_NULL, null=True, blank=True, related_name="reports")
+    strategy = models.ForeignKey(Strategy, on_delete=models.SET_NULL, null=True, blank=True, related_name="reports")
+    conclusion = models.CharField("结论", max_length=20, choices=CONCLUSION_CHOICES)
+    environment = models.CharField("验证环境", max_length=255, blank=True, default="")
+    summary = models.TextField("验证内容")
+    risks = models.TextField("问题与风险", blank=True, default="")
+    remark = models.TextField("备注", blank=True, default="")
+    status = models.CharField("状态", max_length=20, choices=STATUS_CHOICES, default="draft")
+    created_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name="created_reports")
+    published_at = models.DateTimeField(null=True, blank=True)
+    publish_count = models.PositiveIntegerField("发布次数", default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.title
+
+
+class ReportPublishRecord(models.Model):
+    """发布暨推送记录：每次发布追加一条，含截图与模拟推送摘要。"""
+    report = models.ForeignKey(VerificationReport, on_delete=models.CASCADE, related_name="publish_records")
+    publisher = models.ForeignKey(User, on_delete=models.PROTECT, related_name="report_publishes")
+    screenshot = models.TextField("页面截图 base64")
+    push_status = models.CharField("推送状态", max_length=20, default="pushed")
+    push_target = models.CharField("模拟接收人", max_length=100, default="构建通知群")
+    message = models.CharField("推送摘要", max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.report.title} 发布于 {self.created_at:%m-%d %H:%M}"
