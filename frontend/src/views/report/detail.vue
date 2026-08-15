@@ -4,7 +4,7 @@
 import { ref, reactive, computed, onMounted, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
-import html2canvas from "html2canvas";
+import html2canvas from "html2canvas-pro";
 import {
   getReport,
   createReport,
@@ -237,8 +237,8 @@ async function saveDraft(): Promise<ReportItem | null> {
     if (isNew.value) {
       const saved = await createReport(toPayload());
       report.value = saved;
-      await router.replace(`/report/detail/${saved.id}`);
-      editing.value = true; // 保存后仍留在编辑态，便于继续完善后再发布
+      // 带 ?edit=1 跳转，重建后 loadReport 会恢复编辑态
+      await router.replace(`/report/detail/${saved.id}?edit=1`);
       ElMessage.success("报告已创建，可继续编辑或直接发布");
       await loadPublishes();
       return saved;
@@ -284,24 +284,46 @@ async function onPublish() {
     return; // 用户取消
   }
   publishing.value = true;
+  let savedReportId: number | null = null;
   try {
-    const saved = await saveDraft();
-    if (!saved) return;
-    // 等路由替换与卡片重渲染完成再截图
+    if (isNew.value) {
+      // 新建态：先建报告但不跳转，截图发布成功后再切路由，避免路由重建打断发布链路
+      const saved = await createReport(toPayload());
+      report.value = saved;
+      savedReportId = saved.id;
+    } else {
+      if (!report.value) return;
+      await updateReport(report.value.id, toPayload());
+      savedReportId = report.value.id;
+    }
+    // 等卡片重渲染完成再截图
     await nextTick();
     await new Promise(resolve => setTimeout(resolve, 100));
     const screenshot = await captureCard();
     if (base64Bytes(screenshot) > MAX_SCREENSHOT_BYTES) {
       ElMessage.error("截图超过 2MB，请精简报告内容后重试");
+      if (isNew.value && savedReportId) {
+        await router.replace(`/report/detail/${savedReportId}?edit=1`);
+      }
       return;
     }
-    await publishReport(saved.id, screenshot);
+    await publishReport(savedReportId, screenshot);
     ElMessage.success("发布成功，已模拟推送至构建通知群");
-    await loadReport();
-    await loadPublishes();
-    if (isNew.value) editing.value = false; // 新建发布完成后转为只读展示
-  } catch {
-    // http.ts 已统一按错误码提示
+    if (isNew.value && savedReportId) {
+      // 发布完成后跳转详情并转为只读展示，路由重建后由 loadReport 加载已发布状态
+      await router.replace(`/report/detail/${savedReportId}`);
+    } else {
+      await loadReport();
+      await loadPublishes();
+      editing.value = false; // 编辑态发布完成后转为只读展示
+    }
+  } catch (e) {
+    // 发布失败保留编辑态，允许重试；新建的草稿已落库，跳转编辑态继续
+    console.error("[report-publish] 发布失败：", e);
+    ElMessage.error("发布失败，请重试");
+    if (isNew.value && savedReportId) {
+      await router.replace(`/report/detail/${savedReportId}?edit=1`);
+    }
   } finally {
     publishing.value = false;
   }
