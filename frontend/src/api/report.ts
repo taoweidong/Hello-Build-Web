@@ -1,6 +1,6 @@
 // 验证报告 API 模块
 import http from "@/api/http";
-import type { ReportItem, ReportPublishItem } from "@/api/types";
+import type { ReportItem } from "@/api/types";
 
 /** 报告表单 */
 export interface ReportForm {
@@ -34,9 +34,9 @@ export function createReport(data: ReportForm): Promise<ReportItem> {
 export function updateReport(id: number, data: ReportForm): Promise<ReportItem> {
   return http.put(`/reports/${id}`, data);
 }
-export function publishReport(id: number, screenshot: string): Promise<ReportPublishItem> {
+export function publishReport(id: number, screenshot: string): Promise<ReportItem> {
   return http.post(`/reports/${id}/publish`, { screenshot });
 }
-export function getReportPublishes(id: number): Promise<ReportPublishItem[]> {
-  return http.get(`/reports/${id}/publishes`);
+export function deprecateReport(id: number, reason: string): Promise<ReportItem> {
+  return http.post(`/reports/${id}/deprecate`, { reason });
 }

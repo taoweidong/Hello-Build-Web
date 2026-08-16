@@ -1,11 +1,11 @@
-"""验证报告视图：列表/详情/发布暨模拟推送/发布历史。"""
+"""验证报告视图：列表/详情/发布暨模拟推送（报告信息独立单表存储）。"""
 import logging
 
 from django.db.models import Q
 from django.utils import timezone
 
 from ..api import err, ok
-from ..models import ReportPublishRecord, Strategy, VerificationReport
+from ..models import Strategy, VerificationReport
 from . import authed_user, json_resp, parse_body
 
 logger = logging.getLogger("build_protection_service")
@@ -42,21 +42,10 @@ def _report_payload(r):
         "created_by_name": r.created_by.display_name or r.created_by.username,
         "published_at": r.published_at.strftime("%Y-%m-%dT%H:%M:%S") if r.published_at else None,
         "publish_count": r.publish_count,
+        "deprecated_at": r.deprecated_at.strftime("%Y-%m-%dT%H:%M:%S") if r.deprecated_at else None,
+        "deprecated_reason": r.deprecated_reason,
         "created_at": r.created_at.strftime("%Y-%m-%dT%H:%M:%S"),
         "updated_at": r.updated_at.strftime("%Y-%m-%dT%H:%M:%S"),
-    }
-
-
-def _publish_payload(p):
-    """发布记录序列化（含截图 base64，供前端历史回显）。"""
-    return {
-        "id": p.id,
-        "publisher_name": p.publisher.display_name or p.publisher.username,
-        "push_status": p.push_status,
-        "push_target": p.push_target,
-        "message": p.message,
-        "screenshot": p.screenshot,
-        "created_at": p.created_at.strftime("%Y-%m-%dT%H:%M:%S"),
     }
 
 
@@ -146,6 +135,8 @@ def report_detail_view(request, rid):
     if request.method == "PUT":
         if user.role not in WRITE_ROLES or user.id != report.created_by_id:
             return json_resp(err(40301, "仅报告作者可修改"), status=403)
+        if report.status == "published":
+            return json_resp(err(40301, "报告已发布不可修改，请先废弃后重新发布"), status=403)
         body = parse_body(request)
         bad = _validate(body)
         if bad:
@@ -158,13 +149,16 @@ def report_detail_view(request, rid):
         report.summary = (body.get("summary") or "").strip()
         report.risks = (body.get("risks") or "").strip()
         report.remark = (body.get("remark") or "").strip()
+        if report.status == "deprecated":
+            # 废弃解锁编辑：保存后回到草稿态，废弃标记保留用于追溯
+            report.status = "draft"
         report.save()
         return json_resp(ok(_report_payload(report)))
     return json_resp(err(42201, "不支持的请求方法"), status=422)
 
 
 def publish_view(request, rid):
-    """POST 发布：校验作者 → 落库发布记录（截图）→ 更新报告状态 → 打印模拟推送日志。"""
+    """POST 发布：校验作者 → 校验截图 → 更新报告状态 → 打印模拟推送日志（不落发布记录）。"""
     user, error = authed_user(request)
     if error:
         return error
@@ -176,6 +170,8 @@ def publish_view(request, rid):
         return json_resp(err(40301, "仅报告作者可发布"), status=403)
     if request.method != "POST":
         return json_resp(err(42201, "不支持的请求方法"), status=422)
+    if report.status == "published":
+        return json_resp(err(42201, "报告已发布不可重复发布，请先废弃后重新发布"), status=422)
     body = parse_body(request)
     screenshot = body.get("screenshot") or ""
     if not screenshot:
@@ -184,34 +180,40 @@ def publish_view(request, rid):
         return json_resp(err(42201, "截图超过 2MB 限制"), status=422)
     conclusion_label = dict(VerificationReport.CONCLUSION_CHOICES).get(report.conclusion, report.conclusion)
     message = f"报告《{report.title}》已发布，结论：{conclusion_label}"
-    record = ReportPublishRecord.objects.create(
-        report=report, publisher=user, screenshot=screenshot,
-        push_status="pushed", push_target=PUSH_TARGET, message=message,
-    )
     report.status = "published"
     report.published_at = timezone.now()
     report.publish_count += 1
     report.save()
-    # 模拟推送：仅打印日志，不调用任何真实推送服务
+    # 模拟推送：仅打印日志，不调用任何真实推送服务；截图随日志校验字节数，不落库
     logger.info(
-        "[report-push][simulate] target=%s message=%s screenshot_bytes=%d record_id=%d",
-        record.push_target, record.message, len(screenshot.encode("utf-8")), record.id,
+        "[report-push][simulate] target=%s message=%s screenshot_bytes=%d",
+        PUSH_TARGET, message, len(screenshot.encode("utf-8")),
     )
-    return json_resp(ok(_publish_payload(record)))
+    return json_resp(ok(_report_payload(report)))
 
 
-def publishes_view(request, rid):
-    """GET 发布历史（倒序，含截图）。"""
+def deprecate_view(request, rid):
+    """POST 废弃报告：仅发布状态的作者可废弃，记录废弃时间与原因，页面据此标记。"""
     user, error = authed_user(request)
     if error:
         return error
     try:
-        report = VerificationReport.objects.get(pk=rid)
+        report = VerificationReport.objects.select_related("created_by").get(pk=rid)
     except VerificationReport.DoesNotExist:
         return json_resp(err(40401, "报告不存在"), status=404)
-    records = (
-        ReportPublishRecord.objects.filter(report=report)
-        .select_related("publisher")
-        .order_by("-created_at")
-    )
-    return json_resp(ok([_publish_payload(p) for p in records]))
+    if request.method != "POST":
+        return json_resp(err(42201, "不支持的请求方法"), status=422)
+    if user.role not in WRITE_ROLES or user.id != report.created_by_id:
+        return json_resp(err(40301, "仅报告作者可废弃"), status=403)
+    if report.status != "published":
+        return json_resp(err(42201, "仅已发布报告可废弃"), status=422)
+    body = parse_body(request)
+    reason = (body.get("reason") or "").strip()
+    if not reason:
+        return json_resp(err(42201, "废弃原因不能为空"), status=422)
+    report.status = "deprecated"
+    report.deprecated_at = timezone.now()
+    report.deprecated_reason = reason
+    report.save()
+    logger.info("[report-deprecate] id=%d by=%s reason=%s", rid, user.username, reason)
+    return json_resp(ok(_report_payload(report)))

@@ -656,10 +656,9 @@ class ReportApiTests(ConfigAwareTestCase):
         )
         self.assertEqual(resp.status_code, 200)
         data = resp.json()["data"]
-        self.assertEqual(data["push_status"], "pushed")
-        self.assertEqual(data["push_target"], "构建通知群")
-        self.assertIn("27A 冒烟验证报告", data["message"])
-        self.assertIn("通过", data["message"])
+        self.assertEqual(data["status"], "published")
+        self.assertEqual(data["publish_count"], 1)
+        self.assertIsNotNone(data["published_at"])
         # 报告状态已更新
         resp = self.client.get(f"/api/reports/{r['id']}")
         rep = resp.json()["data"]
@@ -688,20 +687,74 @@ class ReportApiTests(ConfigAwareTestCase):
         resp = self.client.post(f"/api/reports/{r['id']}/publish", {"screenshot": huge}, format="json")
         self.assertEqual(resp.status_code, 422)
 
-    def test_republish_appends_record(self):
+    def test_published_cannot_republish_or_edit(self):
         self._auth(self.token)
         r = self.client.post("/api/reports", self._valid(), format="json").json()["data"]
         img = "data:image/png;base64,AAAA"
         self.client.post(f"/api/reports/{r['id']}/publish", {"screenshot": img}, format="json")
+        # 已发布重发被拒，发布次数保持 1
+        resp = self.client.post(f"/api/reports/{r['id']}/publish", {"screenshot": img}, format="json")
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["code"], 42201)
+        self.assertIn("不可重复发布", resp.json()["message"])
+        # 已发布修改被拒
+        resp = self.client.put(f"/api/reports/{r['id']}", self._valid(title="发布后篡改"), format="json")
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.json()["code"], 40301)
+        self.assertIn("先废弃后重新发布", resp.json()["message"])
+        self.assertEqual(self.client.get(f"/api/reports/{r['id']}").json()["data"]["publish_count"], 1)
+
+    def test_deprecate_flow(self):
+        self._auth(self.token)
+        r = self.client.post("/api/reports", self._valid(), format="json").json()["data"]
+        img = "data:image/png;base64,AAAA"
         self.client.post(f"/api/reports/{r['id']}/publish", {"screenshot": img}, format="json")
-        resp = self.client.get(f"/api/reports/{r['id']}/publishes")
-        records = resp.json()["data"]
-        self.assertEqual(len(records), 2)
-        self.assertEqual(records[0]["publisher_name"], "tester1")
-        # 倒序：最新在前
-        self.assertGreater(records[0]["id"], records[1]["id"])
-        # 报告累计发布 2 次
-        self.assertEqual(self.client.get(f"/api/reports/{r['id']}").json()["data"]["publish_count"], 2)
+        # 草稿态不可废弃
+        r2 = self.client.post("/api/reports", self._valid(title="草稿报告"), format="json").json()["data"]
+        resp = self.client.post(f"/api/reports/{r2['id']}/deprecate", {"reason": "误操作"}, format="json")
+        self.assertEqual(resp.status_code, 422)
+        self.assertIn("仅已发布报告可废弃", resp.json()["message"])
+        # 缺原因被拒
+        resp = self.client.post(f"/api/reports/{r['id']}/deprecate", {}, format="json")
+        self.assertEqual(resp.status_code, 422)
+        self.assertIn("废弃原因不能为空", resp.json()["message"])
+        # 非作者废弃被拒
+        self._auth(self._login("builder1"))
+        resp = self.client.post(f"/api/reports/{r['id']}/deprecate", {"reason": "非作者废弃"}, format="json")
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.json()["code"], 40301)
+        # 作者废弃成功
+        self._auth(self.token)
+        resp = self.client.post(f"/api/reports/{r['id']}/deprecate", {"reason": "结论填写有误"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()["data"]
+        self.assertEqual(data["status"], "deprecated")
+        self.assertIsNotNone(data["deprecated_at"])
+        self.assertEqual(data["deprecated_reason"], "结论填写有误")
+        # 废弃后不可重复废弃
+        resp = self.client.post(f"/api/reports/{r['id']}/deprecate", {"reason": "重复废弃"}, format="json")
+        self.assertEqual(resp.status_code, 422)
+
+    def test_deprecated_unlock_then_republish(self):
+        self._auth(self.token)
+        r = self.client.post("/api/reports", self._valid(), format="json").json()["data"]
+        img = "data:image/png;base64,AAAA"
+        self.client.post(f"/api/reports/{r['id']}/publish", {"screenshot": img}, format="json")
+        self.client.post(f"/api/reports/{r['id']}/deprecate", {"reason": "发布有误"}, format="json")
+        # 废弃后编辑解锁：回到草稿态，废弃标记保留追溯
+        resp = self.client.put(f"/api/reports/{r['id']}", self._valid(title="修正后标题"), format="json")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()["data"]
+        self.assertEqual(data["status"], "draft")
+        self.assertEqual(data["title"], "修正后标题")
+        self.assertIsNotNone(data["deprecated_at"])
+        self.assertEqual(data["deprecated_reason"], "发布有误")
+        # 重新发布成功，累计发布 2 次
+        resp = self.client.post(f"/api/reports/{r['id']}/publish", {"screenshot": img}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        rep = resp.json()["data"]
+        self.assertEqual(rep["status"], "published")
+        self.assertEqual(rep["publish_count"], 2)
 
     def test_reports_requires_auth(self):
         resp = self.client.get("/api/reports")

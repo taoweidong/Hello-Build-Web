@@ -43,5 +43,5 @@ urlpatterns = [
     path("reports", reports.reports_view, name="reports"),
     path("reports/<int:rid>", reports.report_detail_view, name="report_detail"),
     path("reports/<int:rid>/publish", reports.publish_view, name="report_publish"),
-    path("reports/<int:rid>/publishes", reports.publishes_view, name="report_publishes"),
+    path("reports/<int:rid>/deprecate", reports.deprecate_view, name="report_deprecate"),
 ]

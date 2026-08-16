@@ -67,9 +67,10 @@ const conclusionMap: Record<string, { text: string; type: "success" | "danger" |
   fail: { text: "不通过", type: "danger" },
   risk: { text: "有风险", type: "warning" }
 };
-const statusMap: Record<string, { text: string; type: "info" | "success" }> = {
+const statusMap: Record<string, { text: string; type: "info" | "success" | "danger" }> = {
   draft: { text: "草稿", type: "info" },
-  published: { text: "已发布", type: "success" }
+  published: { text: "已发布", type: "success" },
+  deprecated: { text: "已废弃", type: "danger" }
 };
 function conclusionTag(c: string) {
   return conclusionMap[c] || { text: c, type: "info" as const };
@@ -132,6 +133,7 @@ onMounted(async () => {
         >
           <el-option label="草稿" value="draft" />
           <el-option label="已发布" value="published" />
+          <el-option label="已废弃" value="deprecated" />
         </el-select>
         <el-select
           v-model="filter.version_id"
@@ -210,7 +212,7 @@ onMounted(async () => {
               复制链接
             </el-button>
             <el-button
-              v-if="canEdit(row as ReportItem)"
+              v-if="canEdit(row as ReportItem) && row.status !== 'published'"
               type="primary"
               link
               size="small"

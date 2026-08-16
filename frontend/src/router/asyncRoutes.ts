@@ -165,16 +165,6 @@ export const asyncRoutes = [
           title: "验证报告",
           roles: ALL_ROLES
         }
-      },
-      {
-        path: "/report/detail/:id",
-        name: "ReportDetail",
-        component: () => import("@/views/report/detail.vue"),
-        meta: {
-          title: "报告详情",
-          showLink: false,
-          roles: ALL_ROLES
-        }
       }
     ]
   },

@@ -221,24 +221,15 @@ export interface ReportItem {
   summary: string;
   risks: string;
   remark: string;
-  /** 状态：draft / published */
+  /** 状态：draft（草稿）/ published（已发布）/ deprecated（已废弃） */
   status: string;
   created_by_id: number;
   created_by_name: string;
   published_at?: string | null;
   publish_count: number;
+  deprecated_at?: string | null;
+  deprecated_reason?: string | null;
   created_at: string;
   updated_at: string;
-}
-
-/** 发布暨推送记录（含截图 base64） */
-export interface ReportPublishItem {
-  id: number;
-  publisher_name: string;
-  push_status: string;
-  push_target: string;
-  message: string;
-  screenshot: string;
-  created_at: string;
 }
 
