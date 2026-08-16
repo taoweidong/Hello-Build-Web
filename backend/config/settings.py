@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-change-me-please-32chars-minimum")
+SECRET_KEY = os.getenv("SECRET_KEY", "dev-only-insecure-secret-key-do-not-use-in-production-0123456789abcdef")
 DEBUG = os.getenv("DEBUG", "true").lower() in ("1", "true", "yes")
 ALLOWED_HOSTS = ["*"]
 
@@ -21,6 +21,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "rest_framework_simplejwt",
+    "django_filters",
     "corsheaders",
     "build_protection_service",
 ]
@@ -89,6 +90,7 @@ REST_FRAMEWORK = {
         "build_protection_service.auth.JWTAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
+    "DEFAULT_FILTER_BACKENDS": ("django_filters.rest_framework.DjangoFilterBackend",),
     "DEFAULT_PAGINATION_CLASS": None,
 }
 

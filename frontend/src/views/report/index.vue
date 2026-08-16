@@ -4,9 +4,9 @@
 import { ref, reactive, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
-import { getReports, type ReportQuery } from "@/api/report";
+import { getReportRevisions, getReports, type ReportQuery } from "@/api/report";
 import { getStrategies } from "@/api/strategy";
-import type { ReportItem, StrategyItem } from "@/api/types";
+import type { ReportItem, ReportRevisionItem, StrategyItem } from "@/api/types";
 import { getCurrentUser, formatTime } from "@/utils/business";
 
 defineOptions({ name: "ReportIndex" });
@@ -19,7 +19,8 @@ const canWrite = computed(
   () => currentUser?.role === "tester" || currentUser?.role === "builder"
 );
 function canEdit(row: ReportItem) {
-  return canWrite.value && currentUser?.id === row.created_by_id;
+  // 发布后仍可编辑（后端锁定最终结论字段），仅作者可编辑
+  return canWrite.value && currentUser?.username === row.created_by_username;
 }
 
 // ---- 筛选 ----
@@ -28,27 +29,25 @@ const list = ref<ReportItem[]>([]);
 const filter = reactive<ReportQuery>({
   keyword: "",
   status: undefined,
-  version_id: undefined,
-  strategy_id: undefined
+  version_name: undefined,
+  strategy_name: undefined
 });
 
-// 版本/策略级联选项：从全量策略推导（策略自带版本归属）
+// 版本/策略级联选项：从全量策略推导（报告存文本快照，过滤按名称，与后端 FilterSet 对齐）
 const allStrategies = ref<StrategyItem[]>([]);
 const versionOptions = computed(() => {
-  const map = new Map<number, string>();
+  const names = new Set<string>();
   allStrategies.value.forEach(s => {
-    if (s.version_id != null && !map.has(s.version_id)) {
-      map.set(s.version_id, s.version_name || "");
-    }
+    if (s.version_name) names.add(s.version_name);
   });
-  return Array.from(map, ([id, name]) => ({ id, name }));
+  return Array.from(names, name => ({ name }));
 });
 const strategyOptions = computed(() =>
-  allStrategies.value.filter(s => s.version_id === filter.version_id)
+  allStrategies.value.filter(s => s.version_name === filter.version_name)
 );
 
 function onVersionChange() {
-  filter.strategy_id = undefined;
+  filter.strategy_name = undefined;
   load();
 }
 
@@ -69,8 +68,7 @@ const conclusionMap: Record<string, { text: string; type: "success" | "danger" |
 };
 const statusMap: Record<string, { text: string; type: "info" | "success" | "danger" }> = {
   draft: { text: "草稿", type: "info" },
-  published: { text: "已发布", type: "success" },
-  deprecated: { text: "已废弃", type: "danger" }
+  published: { text: "已发布", type: "success" }
 };
 function conclusionTag(c: string) {
   return conclusionMap[c] || { text: c, type: "info" as const };
@@ -97,6 +95,31 @@ async function copyLink(row: ReportItem) {
     document.body.removeChild(ta);
   }
   ElMessage.success("链接已复制，可直接粘贴分享");
+}
+
+// ---- 修改记录弹窗 ----
+const revisionsVisible = ref(false);
+const revisionsLoading = ref(false);
+const revisionsList = ref<ReportRevisionItem[]>([]);
+const revisionTagMap: Record<string, "info" | "warning" | "success"> = {
+  create: "info",
+  update: "warning",
+  publish: "success"
+};
+function revisionTag(r: ReportRevisionItem) {
+  return revisionTagMap[r.action] || "info";
+}
+async function viewRevisions(row: ReportItem) {
+  revisionsVisible.value = true;
+  revisionsLoading.value = true;
+  revisionsList.value = [];
+  try {
+    revisionsList.value = await getReportRevisions(row.id);
+  } catch {
+    ElMessage.error("修改记录加载失败");
+  } finally {
+    revisionsLoading.value = false;
+  }
 }
 
 function goDetail(row: ReportItem) {
@@ -133,30 +156,29 @@ onMounted(async () => {
         >
           <el-option label="草稿" value="draft" />
           <el-option label="已发布" value="published" />
-          <el-option label="已废弃" value="deprecated" />
         </el-select>
         <el-select
-          v-model="filter.version_id"
+          v-model="filter.version_name"
           placeholder="全部版本"
           clearable
           style="width: 150px"
           @change="onVersionChange"
         >
-          <el-option v-for="v in versionOptions" :key="v.id" :label="v.name" :value="v.id" />
+          <el-option v-for="v in versionOptions" :key="v.name" :label="v.name" :value="v.name" />
         </el-select>
         <el-select
-          v-model="filter.strategy_id"
+          v-model="filter.strategy_name"
           placeholder="全部策略"
           clearable
-          :disabled="!filter.version_id"
+          :disabled="!filter.version_name"
           style="width: 190px"
           @change="load"
         >
-          <el-option v-for="s in strategyOptions" :key="s.id" :label="s.name" :value="s.id" />
+          <el-option v-for="s in strategyOptions" :key="s.name" :label="s.name" :value="s.name" />
         </el-select>
         <el-input
           v-model="filter.keyword"
-          placeholder="标题 / ID 搜索"
+          placeholder="标题 / 版本 / 策略搜索"
           clearable
           style="width: 180px"
           @keyup.enter="load"
@@ -199,11 +221,11 @@ onMounted(async () => {
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="created_by_name" label="作者" width="110" />
+        <el-table-column prop="created_by_username" label="作者" width="110" />
         <el-table-column label="更新时间" width="140">
           <template #default="{ row }">{{ formatTime(row.updated_at) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="210" fixed="right">
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link size="small" @click="goDetail(row as ReportItem)">
               查看
@@ -212,7 +234,7 @@ onMounted(async () => {
               复制链接
             </el-button>
             <el-button
-              v-if="canEdit(row as ReportItem) && row.status !== 'published'"
+              v-if="canEdit(row as ReportItem)"
               type="primary"
               link
               size="small"
@@ -220,11 +242,52 @@ onMounted(async () => {
             >
               编辑
             </el-button>
+            <el-button type="warning" link size="small" @click="viewRevisions(row as ReportItem)">
+              修改记录
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
       <el-empty v-if="!loading && list.length === 0" description="暂无报告" />
     </div>
+
+    <!-- 修改记录弹窗：时间倒序，由近及远，含创建/修改/发布留痕 -->
+    <el-dialog v-model="revisionsVisible" title="修改记录" width="880px" append-to-body>
+      <el-table
+        :data="revisionsList"
+        v-loading="revisionsLoading"
+        max-height="420"
+        style="width: 100%"
+      >
+        <el-table-column label="操作时间" width="170">
+          <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
+        </el-table-column>
+        <el-table-column prop="operator_username" label="修改人" width="110" />
+        <el-table-column label="操作内容" min-width="150">
+          <template #default="{ row }">
+            <el-tag :type="revisionTag(row as ReportRevisionItem)" size="small">
+              {{ row.action_label }}
+            </el-tag>
+            <span v-if="row.field_name" style="margin-left: 6px">{{ row.field_name }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column
+          prop="before_value"
+          label="修改前内容"
+          min-width="160"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          prop="after_value"
+          label="修改后内容"
+          min-width="160"
+          show-overflow-tooltip
+        />
+        <template #empty>
+          <el-empty description="暂无修改记录" />
+        </template>
+      </el-table>
+    </el-dialog>
   </div>
 </template>
 

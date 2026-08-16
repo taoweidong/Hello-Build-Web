@@ -40,8 +40,9 @@ urlpatterns = [
     path("admin/config", admin.config_view, name="admin_config"),
     path("admin/logs/<str:kind>", admin.logs_view, name="admin_logs"),
 
-    path("reports", reports.reports_view, name="reports"),
-    path("reports/<int:rid>", reports.report_detail_view, name="report_detail"),
-    path("reports/<int:rid>/publish", reports.publish_view, name="report_publish"),
-    path("reports/<int:rid>/deprecate", reports.deprecate_view, name="report_deprecate"),
+    # 验证报告：DRF ViewSet（列表/新建/详情/修改 + 发布/修改记录），废弃功能已移除
+    path("reports", reports.ReportViewSet.as_view({"get": "list", "post": "create"}), name="reports"),
+    path("reports/<int:pk>", reports.ReportViewSet.as_view({"get": "retrieve", "put": "update"}), name="report_detail"),
+    path("reports/<int:pk>/publish", reports.ReportViewSet.as_view({"post": "publish"}), name="report_publish"),
+    path("reports/<int:pk>/revisions", reports.ReportViewSet.as_view({"get": "revisions"}), name="report_revisions"),
 ]

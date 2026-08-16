@@ -211,25 +211,50 @@ export interface WeeklyData {
 export interface ReportItem {
   id: number;
   title: string;
-  version_id?: number | null;
-  version_name?: string | null;
-  strategy_id?: number | null;
-  strategy_name?: string | null;
+  /** 版本/策略为文本快照（无外键关联，随报告保存） */
+  version_name: string;
+  strategy_name: string;
   /** 结论：pass / fail / risk */
   conclusion: string;
+  /** 结论中文标签（后端计算） */
+  conclusion_label: string;
   environment: string;
   summary: string;
   risks: string;
   remark: string;
-  /** 状态：draft（草稿）/ published（已发布）/ deprecated（已废弃） */
+  /** 状态：draft（草稿）/ published（已发布） */
   status: string;
-  created_by_id: number;
-  created_by_name: string;
+  /** 状态中文标签（后端计算） */
+  status_label: string;
+  /** 作者账号（文本快照） */
+  created_by_username: string;
   published_at?: string | null;
   publish_count: number;
-  deprecated_at?: string | null;
-  deprecated_reason?: string | null;
+  /** 是否为更新报告：发布次数大于 1（后端计算） */
+  is_updated: boolean;
+  /** 更新次数：发布次数减 1（后端计算） */
+  update_count: number;
   created_at: string;
   updated_at: string;
+}
+
+/** 报告修改记录：创建/修改/发布全留痕，按时间倒序返回 */
+export interface ReportRevisionItem {
+  id: number;
+  report_id: number;
+  report_title: string;
+  /** 动作：create（创建）/ update（修改）/ publish（发布） */
+  action: string;
+  /** 动作中文标签 */
+  action_label: string;
+  /** 修改字段（中文标签），如 标题 / 验证内容 */
+  field_name: string;
+  /** 修改前内容 */
+  before_value: string;
+  /** 修改后内容 */
+  after_value: string;
+  /** 操作人账号 */
+  operator_username: string;
+  created_at: string;
 }
 

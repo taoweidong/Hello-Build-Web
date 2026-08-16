@@ -524,8 +524,8 @@ class ReportApiTests(ConfigAwareTestCase):
     def _valid(self, **overrides):
         payload = {
             "title": "27A 冒烟验证报告",
-            "version_id": self.version.id,
-            "strategy_id": self.strategy.id,
+            "version_name": "27A",
+            "strategy_name": "27A-master-晚间",
             "conclusion": "pass",
             "environment": "测试环境",
             "summary": "冒烟用例全部通过，无阻塞问题。",
@@ -545,7 +545,7 @@ class ReportApiTests(ConfigAwareTestCase):
         self.assertEqual(data["conclusion"], "pass")
         self.assertEqual(data["version_name"], "27A")
         self.assertEqual(data["strategy_name"], "27A-master-晚间")
-        self.assertEqual(data["created_by_id"], self.tester.id)
+        self.assertEqual(data["created_by_username"], "tester1")
         self._auth(self._login("builder1"))
         resp = self.client.post("/api/reports", self._valid(title="builder 报告"), format="json")
         self.assertEqual(resp.status_code, 200)
@@ -575,18 +575,18 @@ class ReportApiTests(ConfigAwareTestCase):
     def test_version_strategy_must_be_paired(self):
         self._auth(self.token)
         # 只选版本不选策略
-        resp = self.client.post("/api/reports", self._valid(strategy_id=None), format="json")
+        resp = self.client.post("/api/reports", self._valid(strategy_name=""), format="json")
         self.assertEqual(resp.status_code, 422)
         # 只选策略不选版本
-        resp = self.client.post("/api/reports", self._valid(version_id=None), format="json")
+        resp = self.client.post("/api/reports", self._valid(version_name=""), format="json")
         self.assertEqual(resp.status_code, 422)
-        # 策略不属于所选版本
+        # 策略不属于所选版本（27B 的策略配 27A 的版本）
         pm27b = User.objects.create_user(username="pm27b", password="123456", role="pm")
         v2 = Version.objects.create(name="27B", pm_user=pm27b, status="active")
         b2 = Branch.objects.create(version=v2, name="master")
-        s2 = Strategy.objects.create(branch=b2, template=self.tmpl, name="27B-master-晚间",
-                                     build_start_time="23:00", push_mode="normal", created_by=self.pm)
-        resp = self.client.post("/api/reports", self._valid(strategy_id=s2.id), format="json")
+        Strategy.objects.create(branch=b2, template=self.tmpl, name="27B-master-晚间",
+                                build_start_time="23:00", push_mode="normal", created_by=self.pm)
+        resp = self.client.post("/api/reports", self._valid(strategy_name="27B-master-晚间"), format="json")
         self.assertEqual(resp.status_code, 422)
 
     def test_list_and_detail(self):
@@ -611,10 +611,10 @@ class ReportApiTests(ConfigAwareTestCase):
         # keyword 命中 ID（字符串）
         resp = self.client.get("/api/reports", {"keyword": str(r["id"])})
         self.assertEqual(len(resp.json()["data"]), 1)
-        # status / version_id / 未命中
+        # status / version_name / 未命中
         resp = self.client.get("/api/reports", {"status": "draft"})
         self.assertEqual(len(resp.json()["data"]), 2)
-        resp = self.client.get("/api/reports", {"version_id": self.version.id})
+        resp = self.client.get("/api/reports", {"version_name": "27A"})
         self.assertEqual(len(resp.json()["data"]), 2)
         resp = self.client.get("/api/reports", {"keyword": "不存在的关键词"})
         self.assertEqual(len(resp.json()["data"]), 0)
@@ -687,74 +687,88 @@ class ReportApiTests(ConfigAwareTestCase):
         resp = self.client.post(f"/api/reports/{r['id']}/publish", {"screenshot": huge}, format="json")
         self.assertEqual(resp.status_code, 422)
 
-    def test_published_cannot_republish_or_edit(self):
+    def test_published_editable_but_conclusion_locked(self):
         self._auth(self.token)
         r = self.client.post("/api/reports", self._valid(), format="json").json()["data"]
         img = "data:image/png;base64,AAAA"
         self.client.post(f"/api/reports/{r['id']}/publish", {"screenshot": img}, format="json")
-        # 已发布重发被拒，发布次数保持 1
-        resp = self.client.post(f"/api/reports/{r['id']}/publish", {"screenshot": img}, format="json")
+        # 发布后仍可修改非结论字段
+        resp = self.client.put(f"/api/reports/{r['id']}", self._valid(title="发布后修订"), format="json")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()["data"]
+        self.assertEqual(data["title"], "发布后修订")
+        self.assertEqual(data["status"], "published")
+        # 发布后修改最终结论被拒
+        resp = self.client.put(f"/api/reports/{r['id']}", self._valid(conclusion="fail"), format="json")
         self.assertEqual(resp.status_code, 422)
         self.assertEqual(resp.json()["code"], 42201)
-        self.assertIn("不可重复发布", resp.json()["message"])
-        # 已发布修改被拒
-        resp = self.client.put(f"/api/reports/{r['id']}", self._valid(title="发布后篡改"), format="json")
-        self.assertEqual(resp.status_code, 403)
-        self.assertEqual(resp.json()["code"], 40301)
-        self.assertIn("先废弃后重新发布", resp.json()["message"])
-        self.assertEqual(self.client.get(f"/api/reports/{r['id']}").json()["data"]["publish_count"], 1)
+        self.assertIn("最终结论不可修改", resp.json()["message"])
+        # 结论仍保持原值
+        rep = self.client.get(f"/api/reports/{r['id']}").json()["data"]
+        self.assertEqual(rep["conclusion"], "pass")
+        self.assertEqual(rep["publish_count"], 1)
 
-    def test_deprecate_flow(self):
+    def test_republish_marks_updated(self):
         self._auth(self.token)
         r = self.client.post("/api/reports", self._valid(), format="json").json()["data"]
         img = "data:image/png;base64,AAAA"
-        self.client.post(f"/api/reports/{r['id']}/publish", {"screenshot": img}, format="json")
-        # 草稿态不可废弃
-        r2 = self.client.post("/api/reports", self._valid(title="草稿报告"), format="json").json()["data"]
-        resp = self.client.post(f"/api/reports/{r2['id']}/deprecate", {"reason": "误操作"}, format="json")
-        self.assertEqual(resp.status_code, 422)
-        self.assertIn("仅已发布报告可废弃", resp.json()["message"])
-        # 缺原因被拒
-        resp = self.client.post(f"/api/reports/{r['id']}/deprecate", {}, format="json")
-        self.assertEqual(resp.status_code, 422)
-        self.assertIn("废弃原因不能为空", resp.json()["message"])
-        # 非作者废弃被拒
-        self._auth(self._login("builder1"))
-        resp = self.client.post(f"/api/reports/{r['id']}/deprecate", {"reason": "非作者废弃"}, format="json")
-        self.assertEqual(resp.status_code, 403)
-        self.assertEqual(resp.json()["code"], 40301)
-        # 作者废弃成功
-        self._auth(self.token)
-        resp = self.client.post(f"/api/reports/{r['id']}/deprecate", {"reason": "结论填写有误"}, format="json")
-        self.assertEqual(resp.status_code, 200)
-        data = resp.json()["data"]
-        self.assertEqual(data["status"], "deprecated")
-        self.assertIsNotNone(data["deprecated_at"])
-        self.assertEqual(data["deprecated_reason"], "结论填写有误")
-        # 废弃后不可重复废弃
-        resp = self.client.post(f"/api/reports/{r['id']}/deprecate", {"reason": "重复废弃"}, format="json")
-        self.assertEqual(resp.status_code, 422)
-
-    def test_deprecated_unlock_then_republish(self):
-        self._auth(self.token)
-        r = self.client.post("/api/reports", self._valid(), format="json").json()["data"]
-        img = "data:image/png;base64,AAAA"
-        self.client.post(f"/api/reports/{r['id']}/publish", {"screenshot": img}, format="json")
-        self.client.post(f"/api/reports/{r['id']}/deprecate", {"reason": "发布有误"}, format="json")
-        # 废弃后编辑解锁：回到草稿态，废弃标记保留追溯
-        resp = self.client.put(f"/api/reports/{r['id']}", self._valid(title="修正后标题"), format="json")
-        self.assertEqual(resp.status_code, 200)
-        data = resp.json()["data"]
-        self.assertEqual(data["status"], "draft")
-        self.assertEqual(data["title"], "修正后标题")
-        self.assertIsNotNone(data["deprecated_at"])
-        self.assertEqual(data["deprecated_reason"], "发布有误")
-        # 重新发布成功，累计发布 2 次
+        # 首次发布：非更新报告
         resp = self.client.post(f"/api/reports/{r['id']}/publish", {"screenshot": img}, format="json")
         self.assertEqual(resp.status_code, 200)
-        rep = resp.json()["data"]
-        self.assertEqual(rep["status"], "published")
-        self.assertEqual(rep["publish_count"], 2)
+        data = resp.json()["data"]
+        self.assertEqual(data["publish_count"], 1)
+        self.assertFalse(data["is_updated"])
+        self.assertEqual(data["update_count"], 0)
+        # 修改后重复发布：标记为更新报告，发布次数累计
+        self.client.put(f"/api/reports/{r['id']}", self._valid(title="修正后标题"), format="json")
+        resp = self.client.post(f"/api/reports/{r['id']}/publish", {"screenshot": img}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()["data"]
+        self.assertEqual(data["status"], "published")
+        self.assertEqual(data["publish_count"], 2)
+        self.assertTrue(data["is_updated"])
+        self.assertEqual(data["update_count"], 1)
+        # 发布留痕两条：最近的为更新发布，最早的为发布报告
+        logs = self.client.get(f"/api/reports/{r['id']}/revisions").json()["data"]
+        pub_logs = [log for log in logs if log["action"] == "publish"]
+        self.assertEqual(len(pub_logs), 2)
+        self.assertEqual(pub_logs[0]["field_name"], "更新发布")
+        self.assertEqual(pub_logs[1]["field_name"], "发布报告")
+
+    def test_revision_logs_ordered_desc(self):
+        self._auth(self.token)
+        r = self.client.post("/api/reports", self._valid(), format="json").json()["data"]
+        rid = r["id"]
+        # 修改标题与验证内容 → 两条 update 留痕
+        self.client.put(
+            f"/api/reports/{rid}",
+            self._valid(title="修正标题", summary="补充问题记录"),
+            format="json",
+        )
+        self.client.post(
+            f"/api/reports/{rid}/publish",
+            {"screenshot": "data:image/png;base64,AAAA"},
+            format="json",
+        )
+        resp = self.client.get(f"/api/reports/{rid}/revisions")
+        self.assertEqual(resp.status_code, 200)
+        logs = resp.json()["data"]
+        # 时间倒序：最近的发布在最前，创建在最末
+        self.assertEqual(logs[0]["action"], "publish")
+        self.assertEqual(logs[0]["action_label"], "发布")
+        self.assertEqual(logs[-1]["action"], "create")
+        self.assertEqual(logs[-1]["field_name"], "创建报告")
+        # 修改记录含字段/前后内容/操作人，按时间倒序
+        update_logs = [log for log in logs if log["action"] == "update"]
+        labels = [log["field_name"] for log in update_logs]
+        self.assertEqual(labels[0], "验证内容")
+        self.assertEqual(labels[1], "标题")
+        title_log = next(log for log in update_logs if log["field_name"] == "标题")
+        self.assertEqual(title_log["before_value"], "27A 冒烟验证报告")
+        self.assertEqual(title_log["after_value"], "修正标题")
+        self.assertEqual(title_log["operator_username"], "tester1")
+        self.assertIsNotNone(title_log["created_at"])
+        self.assertEqual(title_log["report_id"], rid)
 
     def test_reports_requires_auth(self):
         resp = self.client.get("/api/reports")

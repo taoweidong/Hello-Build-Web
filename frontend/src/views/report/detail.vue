@@ -10,7 +10,6 @@ import {
   createReport,
   updateReport,
   publishReport,
-  deprecateReport,
   getReports,
   type ReportForm
 } from "@/api/report";
@@ -40,15 +39,17 @@ const canWrite = computed(
   () => currentUser?.role === "tester" || currentUser?.role === "builder"
 );
 function canEdit(row: ReportItem) {
-  // published 锁定不可编辑；deprecated 允许编辑解锁后重新发布
-  return canWrite.value && currentUser?.id === row.created_by_id && row.status !== "published";
+  // 发布后仍可编辑（最终结论锁定），仅作者可编辑
+  return canWrite.value && currentUser?.username === row.created_by_username;
 }
 const canEditCurrent = computed(() => (report.value ? canEdit(report.value) : false));
-const canDeprecateCurrent = computed(
-  () => !!report.value && report.value.status === "published" && canWrite.value && currentUser?.id === report.value.created_by_id
-);
 const canPublishCurrent = computed(() =>
   report.value ? canEdit(report.value) && !isNew.value : false
+);
+
+// 已发布后最终结论锁定，其余字段仍可编辑（规则见后端 ReportService）
+const conclusionLocked = computed(
+  () => !!report.value && report.value.status === "published"
 );
 
 // ---- 数据 ----
@@ -59,35 +60,27 @@ const report = ref<ReportItem | null>(null);
 const cardWrapRef = ref<HTMLElement | null>(null);
 const editing = ref(isNew.value); // 新建态初始为编辑态；详情默认只读
 
-// ---- 版本/策略选项（从全量策略推导，与列表页一致）----
+// ---- 版本/策略选项（从全量策略推导，与列表页一致；报告存文本快照，按名称级联）----
 const allStrategies = ref<StrategyItem[]>([]);
 const versionOptions = computed(() => {
-  const map = new Map<number, string>();
+  const names = new Set<string>();
   allStrategies.value.forEach(s => {
-    if (s.version_id != null && !map.has(s.version_id)) {
-      map.set(s.version_id, s.version_name || "");
-    }
+    if (s.version_name) names.add(s.version_name);
   });
-  return Array.from(map, ([id, name]) => ({ id, name }));
+  return Array.from(names, name => ({ name }));
 });
 const strategyOptions = computed(() =>
-  allStrategies.value.filter(s => s.version_id === form.version_id)
+  allStrategies.value.filter(s => s.version_name === form.version_name)
 );
-function versionNameOf(id?: number | null) {
-  return allStrategies.value.find(s => s.version_id === id)?.version_name || null;
-}
-function strategyNameOf(id?: number | null) {
-  return allStrategies.value.find(s => s.id === id)?.name || null;
-}
 function onVersionChange() {
-  form.strategy_id = null;
+  form.strategy_name = null;
 }
 
 // ---- 表单 ----
 const form = reactive<ReportForm>({
   title: "",
-  version_id: null,
-  strategy_id: null,
+  version_name: null,
+  strategy_name: null,
   conclusion: "pass",
   environment: "",
   summary: "",
@@ -99,8 +92,8 @@ const form = reactive<ReportForm>({
 function initNewForm() {
   // 重置全部字段：路由从详情切到新建时组件复用，需清空残留（含版本/策略）
   form.title = "27A 冒烟验证报告";
-  form.version_id = null;
-  form.strategy_id = null;
+  form.version_name = null;
+  form.strategy_name = null;
   form.conclusion = "pass";
   form.environment = "测试环境（27A 预发）";
   form.summary =
@@ -112,8 +105,8 @@ if (isNew.value) initNewForm();
 
 function fillForm(r: ReportItem) {
   form.title = r.title;
-  form.version_id = r.version_id ?? null;
-  form.strategy_id = r.strategy_id ?? null;
+  form.version_name = r.version_name ?? null;
+  form.strategy_name = r.strategy_name ?? null;
   form.conclusion = r.conclusion;
   form.environment = r.environment;
   form.summary = r.summary;
@@ -138,24 +131,23 @@ const cardData = computed(() => {
   if (editing.value || isNew.value) {
     return {
       title: form.title.trim() || "（未填写标题）",
-      version_name: versionNameOf(form.version_id),
-      strategy_name: strategyNameOf(form.strategy_id),
+      version_name: form.version_name || null,
+      strategy_name: form.strategy_name || null,
       conclusion: form.conclusion,
       status: base?.status || "draft",
       environment: form.environment,
       summary: form.summary,
       risks: form.risks,
       remark: form.remark,
-      created_by_name:
-        base?.created_by_name ||
-        currentUser?.display_name ||
+      created_by_username:
+        base?.created_by_username ||
         currentUser?.username ||
         "",
       created_at: base?.created_at || new Date().toISOString(),
       published_at: base?.published_at || null,
       publish_count: base?.publish_count || 0,
-      deprecated_at: base?.deprecated_at || null,
-      deprecated_reason: base?.deprecated_reason || ""
+      is_updated: base?.is_updated || false,
+      update_count: base?.update_count || 0
     };
   }
   return {
@@ -168,12 +160,12 @@ const cardData = computed(() => {
     summary: base?.summary || "",
     risks: base?.risks || "",
     remark: base?.remark || "",
-    created_by_name: base?.created_by_name || "",
+    created_by_username: base?.created_by_username || "",
     created_at: base?.created_at || new Date().toISOString(),
     published_at: base?.published_at || null,
     publish_count: base?.publish_count || 0,
-    deprecated_at: base?.deprecated_at || null,
-    deprecated_reason: base?.deprecated_reason || ""
+    is_updated: base?.is_updated || false,
+    update_count: base?.update_count || 0
   };
 });
 
@@ -193,8 +185,7 @@ const conclusionMap: Record<string, { text: string; type: "success" | "danger" |
 };
 const statusMap: Record<string, { text: string; type: "info" | "success" | "danger" }> = {
   draft: { text: "草稿", type: "info" },
-  published: { text: "已发布", type: "success" },
-  deprecated: { text: "已废弃", type: "danger" }
+  published: { text: "已发布", type: "success" }
 };
 function conclusionTag(c: string) {
   return conclusionMap[c] || { text: c, type: "info" as const };
@@ -217,7 +208,7 @@ function validateForm(): boolean {
     ElMessage.warning("请填写验证内容");
     return false;
   }
-  if (!!form.version_id !== !!form.strategy_id) {
+  if (!!form.version_name !== !!form.strategy_name) {
     ElMessage.warning("版本与策略须同时选择或均不选择");
     return false;
   }
@@ -227,8 +218,8 @@ function validateForm(): boolean {
 function toPayload(): ReportForm {
   return {
     title: form.title.trim(),
-    version_id: form.version_id || null,
-    strategy_id: form.strategy_id || null,
+    version_name: form.version_name || undefined,
+    strategy_name: form.strategy_name || undefined,
     conclusion: form.conclusion,
     environment: form.environment.trim(),
     summary: form.summary.trim(),
@@ -433,38 +424,6 @@ async function openHistory(id: number | string) {
   }
 }
 
-// ---- 废弃报告：仅已发布作者可操作，页面标记 + 原因追溯 ----
-const deprecating = ref(false);
-async function onDeprecate() {
-  if (!report.value) return;
-  let reason = "";
-  try {
-    const { value } = await ElMessageBox.prompt(
-      "报告发布后不可直接修改。废弃后页面将标记「已废弃」，您可重新编辑并再次发布新版本（废弃记录保留）。",
-      "废弃报告",
-      {
-        confirmButtonText: "确认废弃",
-        cancelButtonText: "取消",
-        inputPlaceholder: "请输入废弃原因（必填）",
-        inputValidator: (v: string) => (v && v.trim() ? true : "废弃原因不能为空")
-      }
-    );
-    reason = value.trim();
-  } catch {
-    return; // 用户取消
-  }
-  deprecating.value = true;
-  try {
-    const saved = await deprecateReport(report.value.id, reason);
-    report.value = saved;
-    ElMessage.success("报告已废弃，页面已标记");
-  } catch (e: any) {
-    ElMessage.error(e?.response?.data?.message || "废弃失败，请重试");
-  } finally {
-    deprecating.value = false;
-  }
-}
-
 // ---- 路由切换重置：详情/新建间跳转组件实例复用，需重置页面状态 ----
 watch(
   () => route.params.id,
@@ -511,15 +470,6 @@ onMounted(async () => {
         >
           发布报告
         </el-button>
-        <el-button
-          v-if="canDeprecateCurrent"
-          type="danger"
-          plain
-          :loading="deprecating"
-          @click="onDeprecate"
-        >
-          废弃报告
-        </el-button>
       </div>
       <div class="op-right">
         <span v-if="!isNew && report" class="op-title">报告 #{{ report.id }}</span>
@@ -559,17 +509,6 @@ onMounted(async () => {
       class="section report-card-wrap"
     >
       <div class="report-card">
-        <!-- 废弃标记：页面显著标记，废弃原因随时间保留追溯 -->
-        <div v-if="cardData.status === 'deprecated'" class="card-deprecated-bar">
-          <span class="deprecated-title">⚠ 本报告已废弃</span>
-          <span class="deprecated-meta">
-            （{{ formatTime(cardData.deprecated_at, "YYYY-MM-DD HH:mm") }}）：{{
-              cardData.deprecated_reason || "未填写原因"
-            }}
-          </span>
-          <span class="deprecated-hint">仅作者可重新编辑后发布新版本</span>
-        </div>
-
         <!-- 第 1 行：居中大标题 -->
         <div class="card-head">
           <span class="card-title">{{ headTitle }}</span>
@@ -594,12 +533,12 @@ onMounted(async () => {
             <span class="row-label">关联版本</span>
             <el-select
               v-if="editing"
-              v-model="form.version_id"
+              v-model="form.version_name"
               placeholder="可选"
               clearable
               @change="onVersionChange"
             >
-              <el-option v-for="v in versionOptions" :key="v.id" :label="v.name" :value="v.id" />
+              <el-option v-for="v in versionOptions" :key="v.name" :label="v.name" :value="v.name" />
             </el-select>
             <span v-else class="row-value">{{ cardData.version_name || "—" }}</span>
           </div>
@@ -607,22 +546,29 @@ onMounted(async () => {
             <span class="row-label">关联策略</span>
             <el-select
               v-if="editing"
-              v-model="form.strategy_id"
+              v-model="form.strategy_name"
               placeholder="可选"
               clearable
-              :disabled="!form.version_id"
+              :disabled="!form.version_name"
             >
-              <el-option v-for="s in strategyOptions" :key="s.id" :label="s.name" :value="s.id" />
+              <el-option v-for="s in strategyOptions" :key="s.name" :label="s.name" :value="s.name" />
             </el-select>
             <span v-else class="row-value">{{ cardData.strategy_name || "—" }}</span>
           </div>
           <div class="card-row">
             <span class="row-label">验证结论</span>
-            <el-radio-group v-if="editing" v-model="form.conclusion">
+            <el-radio-group
+              v-if="editing"
+              v-model="form.conclusion"
+              :disabled="conclusionLocked"
+            >
               <el-radio value="pass">通过</el-radio>
               <el-radio value="fail">不通过</el-radio>
               <el-radio value="risk">有风险</el-radio>
             </el-radio-group>
+            <span v-if="editing && conclusionLocked" class="conclusion-locked-hint">
+              报告已发布，最终结论不可修改
+            </span>
             <span v-else class="row-value">
               {{ conclusionTag(cardData.conclusion).text }}（{{ cardData.conclusion }}）
             </span>
@@ -674,7 +620,7 @@ onMounted(async () => {
         <!-- 最后一行：发布人 + 核心结论 + 状态 + 发布/不发布 -->
         <div class="card-foot">
           <div class="foot-left">
-            <span class="foot-publisher">发布人：{{ cardData.created_by_name || "—" }}</span>
+            <span class="foot-publisher">发布人：{{ cardData.created_by_username || "—" }}</span>
             <el-tag :type="conclusionTag(cardData.conclusion).type" size="small" class="foot-tag">
               核心结论：{{ conclusionTag(cardData.conclusion).text }}
             </el-tag>
@@ -692,14 +638,14 @@ onMounted(async () => {
             >
               发布于 {{ formatTime(cardData.published_at, "YYYY-MM-DD HH:mm") }}，共
               {{ cardData.publish_count }} 次
-            </span>
-            <span
-              v-if="cardData.status === 'deprecated' && cardData.deprecated_at"
-              class="foot-meta foot-deprecated"
-            >
-              已废弃于 {{ formatTime(cardData.deprecated_at, "YYYY-MM-DD HH:mm") }}，原发布于
-              {{ formatTime(cardData.published_at, "YYYY-MM-DD HH:mm") }}，共
-              {{ cardData.publish_count }} 次
+              <el-tag
+                v-if="cardData.is_updated"
+                type="warning"
+                size="small"
+                class="foot-tag"
+              >
+                更新报告（已更新 {{ cardData.update_count }} 次）
+              </el-tag>
             </span>
           </div>
           <div class="foot-actions">
@@ -711,11 +657,6 @@ onMounted(async () => {
             <template v-else-if="canEditCurrent">
               <el-button @click="startEdit">编辑</el-button>
               <el-button type="success" :loading="publishing" @click="onPublish">发布</el-button>
-            </template>
-            <template v-else-if="canDeprecateCurrent">
-              <el-button type="danger" plain :loading="deprecating" @click="onDeprecate">
-                废弃报告
-              </el-button>
             </template>
           </div>
         </div>
@@ -783,34 +724,6 @@ onMounted(async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-/* 废弃标记条：卡片顶部显著告警 */
-.card-deprecated-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  background: #fef0f0;
-  border: 1px solid #f56c6c;
-  border-radius: 6px;
-  color: #f56c6c;
-  font-size: 13px;
-  padding: 8px 12px;
-  margin-bottom: 12px;
-}
-.deprecated-title {
-  font-weight: 600;
-}
-.deprecated-meta {
-  color: #e64646;
-}
-.deprecated-hint {
-  margin-left: auto;
-  color: #909399;
-  font-size: 12px;
-}
-.foot-deprecated {
-  color: #f56c6c;
 }
 .op-title {
   font-size: 15px;
@@ -908,6 +821,15 @@ onMounted(async () => {
 .foot-meta {
   color: #909399;
   font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* 已发布最终结论锁定提示 */
+.conclusion-locked-hint {
+  color: #e6a23c;
+  font-size: 12px;
+  line-height: 32px;
 }
 .foot-actions {
   display: flex;

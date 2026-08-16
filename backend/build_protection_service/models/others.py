@@ -1,4 +1,4 @@
-"""全部数据模型。对应原 FastAPI 表结构，用 Django ORM 重建。"""
+"""其余业务模型：用户 / 版本 / 分支 / 策略 / 执行 / 日志等。"""
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
@@ -15,7 +15,7 @@ class User(AbstractUser):
     role = models.CharField("角色", max_length=20, choices=ROLE_CHOICES, default="builder")
     display_name = models.CharField("显示名", max_length=100, blank=True, default="")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.username
 
 
@@ -27,7 +27,7 @@ class Version(models.Model):
     status = models.CharField("状态", max_length=20, default="active")
     created_at = models.DateTimeField(auto_now_add=True)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name
 
 
@@ -40,7 +40,7 @@ class Branch(models.Model):
     class Meta:
         unique_together = ("version", "name")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.version.name}/{self.name}"
 
 
@@ -50,7 +50,7 @@ class StrategyTemplate(models.Model):
     analysis_minutes = models.PositiveIntegerField(default=0)
     description = models.CharField(max_length=255, blank=True, default="")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name
 
 
@@ -73,7 +73,7 @@ class Strategy(models.Model):
     class Meta:
         ordering = ["build_start_time"]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name
 
 
@@ -96,7 +96,7 @@ class ExecutionRound(models.Model):
     class Meta:
         unique_together = ("strategy", "exec_date")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.strategy.name}@{self.exec_date}"
 
 
@@ -128,28 +128,3 @@ class SecurityLog(models.Model):
     action = models.CharField(max_length=100)
     detail = models.CharField(max_length=255, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
-
-
-class VerificationReport(models.Model):
-    """验证报告：独立实体，可选关联版本/策略。"""
-    CONCLUSION_CHOICES = (("pass", "通过"), ("fail", "不通过"), ("risk", "有风险"))
-    STATUS_CHOICES = (("draft", "草稿"), ("published", "已发布"), ("deprecated", "已废弃"))
-    title = models.CharField("标题", max_length=200)
-    version = models.ForeignKey(Version, on_delete=models.SET_NULL, null=True, blank=True, related_name="reports")
-    strategy = models.ForeignKey(Strategy, on_delete=models.SET_NULL, null=True, blank=True, related_name="reports")
-    conclusion = models.CharField("结论", max_length=20, choices=CONCLUSION_CHOICES)
-    environment = models.CharField("验证环境", max_length=255, blank=True, default="")
-    summary = models.TextField("验证内容")
-    risks = models.TextField("问题与风险", blank=True, default="")
-    remark = models.TextField("备注", blank=True, default="")
-    status = models.CharField("状态", max_length=20, choices=STATUS_CHOICES, default="draft")
-    created_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name="created_reports")
-    published_at = models.DateTimeField(null=True, blank=True)
-    publish_count = models.PositiveIntegerField("发布次数", default=0)
-    deprecated_at = models.DateTimeField("废弃时间", null=True, blank=True)
-    deprecated_reason = models.TextField("废弃原因", blank=True, default="")
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return self.title
