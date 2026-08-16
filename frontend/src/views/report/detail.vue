@@ -362,6 +362,37 @@ async function onPublish() {
   }
 }
 
+// ---- 复制报告：报告单截图写入剪贴板（图片），供用户粘贴到文档/聊天等 ----
+const copying = ref(false);
+function dataUrlToBlob(dataUrl: string): Blob {
+  const [head, body] = dataUrl.split(",");
+  const mime = head.match(/data:(.*?);/)?.[1] || "image/png";
+  const bin = atob(body);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+async function copyReport() {
+  if (!cardWrapRef.value || copying.value) return;
+  copying.value = true;
+  try {
+    const dataUrl = await captureCard();
+    if (!navigator.clipboard || typeof ClipboardItem === "undefined") {
+      ElMessage.error("当前浏览器不支持复制图片，请改用系统截图");
+      return;
+    }
+    await navigator.clipboard.write([
+      new ClipboardItem({ "image/png": dataUrlToBlob(dataUrl) })
+    ]);
+    ElMessage.success("报告截图已复制，可直接粘贴到其他位置");
+  } catch (e) {
+    console.error("[report-copy-image] 复制报告截图失败：", e);
+    ElMessage.error("复制失败，请重试或改用浏览器截图");
+  } finally {
+    copying.value = false;
+  }
+}
+
 // ---- 复制链接 ----
 const reportLink = computed(() =>
   `${window.location.origin}/#/report/detail/${routeId.value}`
@@ -514,6 +545,9 @@ onMounted(async () => {
             </el-dropdown-menu>
           </template>
         </el-dropdown>
+        <el-button v-if="!isNew && report && !editing" :loading="copying" @click="copyReport">
+          复制报告
+        </el-button>
         <el-button v-if="!isNew && report" @click="copyLink">复制链接</el-button>
       </div>
     </div>
