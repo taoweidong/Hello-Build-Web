@@ -3,6 +3,7 @@ from django.urls import path
 
 from . import executions, login, logs, plan, reports, strategies, weekly
 from . import admin
+from . import branch_config
 
 app_name = "build_protection_service"
 
@@ -45,4 +46,19 @@ urlpatterns = [
     path("reports/<int:pk>", reports.ReportViewSet.as_view({"get": "retrieve", "put": "update"}), name="report_detail"),
     path("reports/<int:pk>/publish", reports.ReportViewSet.as_view({"post": "publish"}), name="report_publish"),
     path("reports/<int:pk>/revisions", reports.ReportViewSet.as_view({"get": "revisions"}), name="report_revisions"),
+
+    # 分支配置：分支/工程关联/启动参数/授权/实例（DRF ViewSet + 轻量视图）
+    path("branches", branch_config.BranchViewSet.as_view({"get": "list", "post": "create"}), name="branches"),
+    path("branches/<int:pk>", branch_config.BranchViewSet.as_view({"delete": "destroy"}), name="branch_detail"),
+    path("branches/<int:pk>/config", branch_config.BranchViewSet.as_view({"get": "config"}), name="branch_config"),
+    path("branches/<int:pk>/projects", branch_config.BranchViewSet.as_view({"post": "projects"}), name="branch_projects"),
+    path("branches/<int:pk>/permissions", branch_config.BranchViewSet.as_view({"post": "permissions"}), name="branch_permissions"),
+    path("branches/<int:pk>/instances", branch_config.BranchViewSet.as_view({"get": "instances"}), name="branch_instances"),
+    path("branch-projects/<int:pk>", branch_config.BranchProjectViewSet.as_view({"delete": "destroy"}), name="branch_project"),
+    path("branch-projects/<int:pk>/config", branch_config.BranchProjectViewSet.as_view({"put": "config"}), name="branch_project_config"),
+    path("branch-projects/<int:pk>/start", branch_config.BranchProjectViewSet.as_view({"post": "start"}), name="branch_project_start"),
+    path("branch-projects/<int:pk>/stop", branch_config.BranchProjectViewSet.as_view({"post": "stop"}), name="branch_project_stop"),
+    path("branch-permissions/<int:pk>", branch_config.BranchPermissionViewSet.as_view({"delete": "destroy"}), name="branch_permission"),
+    path("users/all", branch_config.users_all, name="users_all"),
+    path("projects", branch_config.projects_view, name="projects"),
 ]
