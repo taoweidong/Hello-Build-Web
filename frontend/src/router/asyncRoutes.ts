@@ -211,5 +211,27 @@ export const asyncRoutes = [
         }
       }
     ]
+  },
+  {
+    path: "/branch-config",
+    name: "BranchConfig",
+    component: Layout,
+    redirect: "/branch-config/index",
+    meta: {
+      icon: "ep/connection",
+      title: "分支配置",
+      rank: 10
+    },
+    children: [
+      {
+        path: "/branch-config/index",
+        name: "BranchConfigIndex",
+        component: () => import("@/views/branch-config/index.vue"),
+        meta: {
+          title: "分支配置",
+          roles: ALL_ROLES
+        }
+      }
+    ]
   }
 ];
