@@ -36,6 +36,8 @@ class Branch(models.Model):
         Version, on_delete=models.CASCADE, related_name="branches"
     )
     name = models.CharField("分支名", max_length=100)
+    repository_url = models.CharField("仓库地址", max_length=255, blank=True, default="")
+    description = models.TextField("描述", blank=True, default="")
 
     class Meta:
         unique_together = ("version", "name")

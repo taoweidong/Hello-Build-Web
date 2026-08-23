@@ -16,14 +16,26 @@ from .others import (
     Version,
 )
 from .report import ReportRevisionLog, VerificationReport
+from .branch_config import (
+    BranchPermission,
+    BranchProject,
+    Instance,
+    Project,
+    StartupConfig,
+)
 
 __all__ = [
     "AdminOpLog",
     "Branch",
+    "BranchPermission",
+    "BranchProject",
     "ExecutionLog",
     "ExecutionRound",
+    "Instance",
+    "Project",
     "ReportRevisionLog",
     "SecurityLog",
+    "StartupConfig",
     "Strategy",
     "StrategyChangeLog",
     "StrategyTemplate",
