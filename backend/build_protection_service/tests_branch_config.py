@@ -98,3 +98,95 @@ class BranchConfigModelTests(BranchConfigFixture):
         self.assertEqual(Instance.objects.count(), 0)
         self.assertEqual(BranchPermission.objects.count(), 0)
         self.assertEqual(Project.objects.count(), 1)  # 工程库不受影响
+
+
+from .services.branch_config import (
+    ROLE_ADMIN,
+    ROLE_OPERATOR,
+    ROLE_VIEWER,
+    advance,
+    build_branch_config,
+    latest_instance,
+    resolve_role,
+    start_instance,
+    stop_instance,
+)
+
+
+class BranchConfigServiceTests(BranchConfigFixture):
+    def test_resolve_role_admin_is_admin(self):
+        self.assertEqual(resolve_role(self.branch, self.admin), ROLE_ADMIN)
+
+    def test_resolve_role_unauthorized_defaults_viewer(self):
+        # 未授权记录的用户默认只读
+        self.assertEqual(resolve_role(self.branch, self.builder), ROLE_VIEWER)
+
+    def test_resolve_role_from_permission(self):
+        BranchPermission.objects.create(
+            branch=self.branch, user=self.builder, role="OPERATOR"
+        )
+        self.assertEqual(resolve_role(self.branch, self.builder), ROLE_OPERATOR)
+
+    def test_start_creates_starting_instance(self):
+        inst = start_instance(self.bp, "bob")
+        self.assertIsNotNone(inst)
+        self.assertEqual(inst.status, "STARTING")
+        self.assertIsNotNone(inst.pid)
+        self.assertGreaterEqual(inst.pid, 32000)
+        self.assertLessEqual(inst.pid, 49999)
+
+    def test_start_duplicate_returns_none(self):
+        start_instance(self.bp, "bob")
+        self.assertIsNone(start_instance(self.bp, "bob"))
+
+    def test_advance_promotes_starting_to_running_after_threshold(self):
+        inst = start_instance(self.bp, "bob")
+        inst.started_at = timezone.now() - timedelta(seconds=5)
+        inst.save(update_fields=["started_at"])
+        advance(inst)
+        inst.refresh_from_db()
+        self.assertEqual(inst.status, "RUNNING")
+        self.assertIsNotNone(inst.last_heartbeat_at)
+
+    def test_advance_keeps_starting_before_threshold(self):
+        inst = start_instance(self.bp, "bob")
+        advance(inst)  # 刚启动，未到 2s 阈值
+        inst.refresh_from_db()
+        self.assertEqual(inst.status, "STARTING")
+
+    def test_stop_transitions_to_stopped(self):
+        inst = start_instance(self.bp, "bob")
+        got = stop_instance(self.bp, "alice")
+        self.assertIsNotNone(got)
+        got.refresh_from_db()
+        self.assertEqual(got.status, "STOPPED")
+        self.assertIsNotNone(got.stopped_at)
+        self.assertEqual(got.exit_code, 0)
+
+    def test_stop_without_instance_is_idempotent(self):
+        self.assertIsNone(stop_instance(self.bp, "alice"))
+
+    def test_latest_instance_orders_by_id_desc(self):
+        old = Instance.objects.create(
+            branch_project=self.bp, status="STOPPED", pid=32000
+        )
+        new = Instance.objects.create(
+            branch_project=self.bp, status="RUNNING", pid=32001
+        )
+        self.assertEqual(latest_instance(self.bp).id, new.id)
+        self.assertNotEqual(latest_instance(self.bp).id, old.id)
+
+    def test_build_config_respects_my_role_and_sections(self):
+        BranchPermission.objects.create(
+            branch=self.branch, user=self.builder, role="ADMIN"
+        )
+        data = build_branch_config(self.branch, self.builder)
+        self.assertEqual(data["my_role"], ROLE_ADMIN)
+        self.assertEqual(data["branch"]["version_name"], "27A")
+        self.assertEqual(len(data["branch_projects"]), 1)
+        bp = data["branch_projects"][0]
+        self.assertEqual(bp["project"]["name"], "GatewayEngine")
+        self.assertEqual(bp["startup_config"]["command"], "python manage.py runserver")
+        self.assertIn("permissions", data)
+        self.assertIn("available_users", data)
+        self.assertIn("available_projects", data)
