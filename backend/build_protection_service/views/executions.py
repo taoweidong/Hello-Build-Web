@@ -7,11 +7,7 @@ from django.utils.timezone import now
 from ..api import err, ok
 from ..models import ExecutionRound
 from ..services.config import get_config
-from . import authed_user, json_resp, parse_body
-
-
-def _fmt(dt):
-    return dt.strftime("%Y-%m-%dT%H:%M:%S") if dt else None
+from . import authed_user, fail_resp, first_error, fmt_dt, json_resp, parse_body
 
 
 def _round_payload(r):
@@ -20,10 +16,10 @@ def _round_payload(r):
         "strategy_id": r.strategy_id,
         "strategy_name": r.strategy.name,
         "exec_date": r.exec_date.strftime("%Y-%m-%d"),
-        "build_start_at": _fmt(r.build_start_at),
-        "build_end_at": _fmt(r.build_end_at),
-        "smoke_start_at": _fmt(r.smoke_start_at),
-        "smoke_end_at": _fmt(r.smoke_end_at),
+        "build_start_at": fmt_dt(r.build_start_at),
+        "build_end_at": fmt_dt(r.build_end_at),
+        "smoke_start_at": fmt_dt(r.smoke_start_at),
+        "smoke_end_at": fmt_dt(r.smoke_end_at),
         "conclusion": r.conclusion,
         "conclusion_note": r.note,
         "push_status": r.push_status,
@@ -59,9 +55,9 @@ def round_detail(request, rid):
         return resp
     r = ExecutionRound.objects.select_related("strategy").filter(id=rid).first()
     if not r:
-        return json_resp(err(40401, "执行轮次不存在"), status=404)
+        return fail_resp(40401, "执行轮次不存在")
     logs = [
-        {"id": lg.id, "stage": lg.stage, "message": lg.message, "created_at": _fmt(lg.created_at)}
+        {"id": lg.id, "stage": lg.stage, "message": lg.message, "created_at": fmt_dt(lg.created_at)}
         for lg in r.logs.all().order_by("id")
     ]
     return json_resp(ok({"round": _round_payload(r), "logs": logs}))
@@ -69,22 +65,22 @@ def round_detail(request, rid):
 
 def conclusion_view(request, rid):
     if request.method != "POST":
-        return json_resp(err(42201, "不支持的请求方法"), status=422)
+        return fail_resp(42201, "不支持的请求方法")
     user, resp = authed_user(request)
     if resp:
         return resp
     r = ExecutionRound.objects.select_related("strategy").filter(id=rid).first()
     if not r:
-        return json_resp(err(40401, "执行轮次不存在"), status=404)
+        return fail_resp(40401, "执行轮次不存在")
     if user.role != "tester":
-        return json_resp(err(40301, "仅测试人员可提交结论"), status=403)
+        return fail_resp(40301, "仅测试人员可提交结论")
     body = parse_body(request)
     conclusion = body.get("conclusion")
     if conclusion not in ("pass", "fail"):
-        return json_resp(err(42201, "非法结论"), status=422)
+        return fail_resp(42201, "非法结论")
     # 防重：已有结论的轮次不可重复提交（初始 conclusion 为 None，对应前端 40902「结论已录入」处理）
     if r.conclusion is not None:
-        return json_resp(err(40902, "结论已录入，不可重复提交"), status=409)
+        return fail_resp(40902, "结论已录入，不可重复提交")
     r.conclusion = conclusion
     r.note = body.get("note", r.note or "")
     r.analysis_end_at = now()

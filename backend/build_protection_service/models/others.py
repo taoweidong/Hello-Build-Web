@@ -140,3 +140,13 @@ class RevokedToken(models.Model):
 
     def __str__(self) -> str:
         return self.jti
+
+
+class RuntimeConfig(models.Model):
+    """运行期配置（KV 持久化）：admin 修改落库，重启不丢；领域逻辑经 services.config 读取。"""
+    key = models.CharField("配置键", max_length=50, unique=True)
+    value = models.IntegerField("配置值")
+    updated_at = models.DateTimeField("更新时间", auto_now=True)
+
+    def __str__(self) -> str:
+        return f"{self.key}={self.value}"

@@ -7,8 +7,13 @@ from django.db.models import ProtectedError
 from ..api import err, ok
 from ..models import AdminOpLog, Branch, SecurityLog, Strategy, StrategyTemplate, Version
 from ..services.config import get_config, set_config
-from . import authed_user, json_resp, parse_body
-from . import strategies as strategy_views
+from ..services.strategies import (
+    StrategyValidationError,
+    create_strategy as svc_create_strategy,
+    strategy_payload,
+    update_strategy as svc_update_strategy,
+)
+from . import authed_user, fail_resp, first_error, json_resp, parse_body, require_admin
 
 User = get_user_model()
 
@@ -17,20 +22,21 @@ _VALID_STATUSES = {"active", "archived"}
 
 
 def _admin_log(user, action, target_type="", target_id="", detail=""):
-    """写管理员操作日志，异常静默。"""
+    """写管理员操作日志，异常仅告警（审计旁路不阻断业务）。"""
+    import logging
+
     try:
         AdminOpLog.objects.create(
             operator=user, action=action,
             target_type=target_type, target_id=str(target_id), detail=detail,
         )
     except Exception:
-        pass
+        logging.getLogger(__name__).warning(
+            "管理操作日志写入失败：action=%s target=%s", action, target_id)
 
 
 def _require_admin(user):
-    if user.role != "admin":
-        return json_resp(err(40301, "仅管理员可操作"), status=403)
-    return None
+    return require_admin(user)
 
 
 # ---------- 版本 ----------
@@ -47,19 +53,19 @@ def create_version(user, body):
     name = body.get("name")
     pm_user_id = body.get("pm_user_id")
     if not name or not pm_user_id:
-        return json_resp(err(42201, "版本名与 PM 必填"), status=422)
+        return fail_resp(42201, "版本名与 PM 必填")
     if Version.objects.filter(name=name).exists():
-        return json_resp(err(40902, "版本号已存在"), status=409)
+        return fail_resp(40902, "版本号已存在")
     pm = User.objects.filter(id=pm_user_id).first()
     if not pm:
-        return json_resp(err(42201, "PM 用户不存在"), status=422)
+        return fail_resp(42201, "PM 用户不存在")
     status = body.get("status", "active")
     if status not in _VALID_STATUSES:
-        return json_resp(err(42201, "非法状态"), status=422)
+        return fail_resp(42201, "非法状态")
     try:
         v = Version.objects.create(name=name, pm_user=pm, status=status)
     except IntegrityError:
-        return json_resp(err(40902, "版本号已存在"), status=409)
+        return fail_resp(40902, "版本号已存在")
     _admin_log(user, "create_version", target_type="version", target_id=v.id, detail=name)
     return json_resp(ok({"id": v.id, "name": v.name, "pm_user_id": v.pm_user_id, "status": v.status}))
 
@@ -75,7 +81,7 @@ def extra_view(request):
         return list_versions(user)
     if request.method == "POST":
         return create_version(user, parse_body(request))
-    return json_resp(err(42201, "不支持的请求方法"), status=422)
+    return fail_resp(42201, "不支持的请求方法")
 
 
 def update_version(request, vid):
@@ -87,26 +93,26 @@ def update_version(request, vid):
         return perr
     v = Version.objects.filter(id=vid).first()
     if not v:
-        return json_resp(err(40401, "版本不存在"), status=404)
+        return fail_resp(40401, "版本不存在")
     body = parse_body(request)
     if body.get("name") is not None:
         dup = Version.objects.filter(name=body["name"]).exclude(id=vid).exists()
         if dup:
-            return json_resp(err(40902, "版本号已存在"), status=409)
+            return fail_resp(40902, "版本号已存在")
         v.name = body["name"]
     if body.get("pm_user_id") is not None:
         pm = User.objects.filter(id=body["pm_user_id"]).first()
         if not pm:
-            return json_resp(err(42201, "PM 用户不存在"), status=422)
+            return fail_resp(42201, "PM 用户不存在")
         v.pm_user = pm
     if body.get("status") is not None:
         if body["status"] not in _VALID_STATUSES:
-            return json_resp(err(42201, "非法状态"), status=422)
+            return fail_resp(42201, "非法状态")
         v.status = body["status"]
     try:
         v.save()
     except IntegrityError:
-        return json_resp(err(40902, "版本号或 PM 已占用"), status=409)
+        return fail_resp(40902, "版本号或 PM 已占用")
     _admin_log(user, "update_version", target_type="version", target_id=vid)
     return json_resp(ok({"id": v.id, "name": v.name, "pm_user_id": v.pm_user_id, "status": v.status}))
 
@@ -120,17 +126,17 @@ def add_branch(request, vid):
         return perr
     v = Version.objects.filter(id=vid).first()
     if not v:
-        return json_resp(err(40401, "版本不存在"), status=404)
+        return fail_resp(40401, "版本不存在")
     body = parse_body(request)
     name = body.get("name")
     if not name:
-        return json_resp(err(42201, "分支名必填"), status=422)
+        return fail_resp(42201, "分支名必填")
     if Branch.objects.filter(version=v, name=name).exists():
-        return json_resp(err(40902, "该版本下分支已存在"), status=409)
+        return fail_resp(40902, "该版本下分支已存在")
     try:
         b = Branch.objects.create(version=v, name=name)
     except IntegrityError:
-        return json_resp(err(40902, "该版本下分支已存在"), status=409)
+        return fail_resp(40902, "该版本下分支已存在")
     _admin_log(user, "add_branch", target_type="branch", target_id=b.id, detail=f"{v.name}/{name}")
     return json_resp(ok({"id": b.id, "version_id": v.id, "name": b.name}))
 
@@ -155,21 +161,21 @@ def users_view(request):
         username = body.get("username")
         role = body.get("role", "builder")
         if not username:
-            return json_resp(err(42201, "用户名必填"), status=422)
+            return fail_resp(42201, "用户名必填")
         if role not in _VALID_ROLES:
-            return json_resp(err(42201, "非法角色"), status=422)
+            return fail_resp(42201, "非法角色")
         if User.objects.filter(username=username).exists():
-            return json_resp(err(40902, "用户名已存在"), status=409)
+            return fail_resp(40902, "用户名已存在")
         try:
             u = User.objects.create_user(
                 username=username, password=body.get("password") or "123456",
                 role=role, display_name=body.get("display_name", ""),
             )
         except IntegrityError:
-            return json_resp(err(40902, "用户名已存在"), status=409)
+            return fail_resp(40902, "用户名已存在")
         _admin_log(user, "create_user", target_type="user", target_id=u.id, detail=username)
         return json_resp(ok({"id": u.id, "username": u.username, "role": u.role}))
-    return json_resp(err(42201, "不支持的请求方法"), status=422)
+    return fail_resp(42201, "不支持的请求方法")
 
 
 def update_user(request, uid):
@@ -181,18 +187,29 @@ def update_user(request, uid):
         return perr
     u = User.objects.filter(id=uid).first()
     if not u:
-        return json_resp(err(40401, "用户不存在"), status=404)
+        return fail_resp(40401, "用户不存在")
     body = parse_body(request)
+    # 记录变更前身份，用于"最后一个 admin"保护判定
+    orig_role, orig_is_active = u.role, u.is_active
     if body.get("password"):
         u.set_password(body["password"])
     if body.get("role") is not None:
         if body["role"] not in _VALID_ROLES:
-            return json_resp(err(42201, "非法角色"), status=422)
+            return fail_resp(42201, "非法角色")
         u.role = body["role"]
     if body.get("display_name") is not None:
         u.display_name = body["display_name"]
     if body.get("is_active") is not None:
-        u.is_active = body["is_active"] in (True, "true", 1)
+        u.is_active = str(body["is_active"]).lower() in ("true", "1")
+    # 最后一个启用状态的 admin 不可被停用/降级，避免系统失去管理入口
+    losing_admin = (
+        orig_role == "admin" and orig_is_active
+        and (u.is_active is False or u.role != "admin")
+    )
+    if losing_admin:
+        others = User.objects.filter(role="admin", is_active=True).exclude(id=u.id).exists()
+        if not others:
+            return fail_resp(40902, "系统至少保留一名启用状态的管理员")
     u.save()
     _admin_log(user, "update_user", target_type="user", target_id=uid)
     return json_resp(ok({"id": u.id, "username": u.username, "role": u.role, "is_active": u.is_active}))
@@ -205,7 +222,7 @@ def templates_view(request):
     if resp:
         return resp
     if user.role not in ("admin", "pm"):
-        return json_resp(err(40301, "无权限操作模板"), status=403)
+        return fail_resp(40301, "无权限操作模板")
     if request.method == "GET":
         qs = StrategyTemplate.objects.all()
         return json_resp(ok([{
@@ -219,7 +236,7 @@ def templates_view(request):
         body = parse_body(request)
         name = body.get("name")
         if not name:
-            return json_resp(err(42201, "模板名必填"), status=422)
+            return fail_resp(42201, "模板名必填")
         t = StrategyTemplate.objects.create(
             name=name,
             smoke_minutes=body.get("smoke_minutes", 0),
@@ -229,7 +246,7 @@ def templates_view(request):
         _admin_log(user, "create_template", target_type="template", target_id=t.id, detail=name)
         return json_resp(ok({"id": t.id, "name": t.name, "smoke_minutes": t.smoke_minutes,
                              "analysis_minutes": t.analysis_minutes, "description": t.description}))
-    return json_resp(err(42201, "不支持的请求方法"), status=422)
+    return fail_resp(42201, "不支持的请求方法")
 
 
 def _template_payload(t):
@@ -242,7 +259,7 @@ def _template_payload(t):
 def _get_template_or_404(tid):
     t = StrategyTemplate.objects.filter(id=tid).first()
     if not t:
-        return None, json_resp(err(40401, "模板不存在"), status=404)
+        return None, fail_resp(40401, "模板不存在")
     return t, None
 
 
@@ -278,7 +295,7 @@ def delete_template(request, user, tid):
         t.delete()
     except ProtectedError:
         # Strategy.template 为 PROTECT，被引用时抛 ProtectedError 而非 IntegrityError
-        return json_resp(err(40903, "模板正在被策略引用，无法删除"), status=409)
+        return fail_resp(40903, "模板正在被策略引用，无法删除")
     _admin_log(user, "delete_template", target_type="template", target_id=tid)
     return json_resp(ok())
 
@@ -291,13 +308,21 @@ def template_detail_view(request, tid):
         return update_template(request, user, tid)
     if request.method == "DELETE":
         return delete_template(request, user, tid)
-    return json_resp(err(42201, "不支持的请求方法"), status=422)
+    return fail_resp(42201, "不支持的请求方法")
 
 
 # ---------- 配置 ----------
 
 # 运行期配置覆盖层统一在 ..services.config，admin 可改，领域逻辑经
 # get_config 读取，未覆盖时回退 settings 默认值；避免直接改写全局 settings。
+
+
+def _config_payload():
+    return {
+        "build_minutes": get_config("build_minutes", settings.BUILD_MINUTES),
+        "push_minutes": get_config("push_minutes", settings.PUSH_MINUTES),
+        "sync_buffer_minutes": get_config("sync_buffer_minutes", settings.SYNC_BUFFER_MINUTES),
+    }
 
 
 def config_view(request):
@@ -308,11 +333,7 @@ def config_view(request):
     if perr:
         return perr
     if request.method == "GET":
-        return json_resp(ok({
-            "build_minutes": get_config("build_minutes", settings.BUILD_MINUTES),
-            "push_minutes": get_config("push_minutes", settings.PUSH_MINUTES),
-            "sync_buffer_minutes": get_config("sync_buffer_minutes", settings.SYNC_BUFFER_MINUTES),
-        }))
+        return json_resp(ok(_config_payload()))
     if request.method == "PUT":
         body = parse_body(request)
         for key in ("build_minutes", "push_minutes", "sync_buffer_minutes"):
@@ -320,14 +341,10 @@ def config_view(request):
                 try:
                     set_config(key, int(body[key]))
                 except (TypeError, ValueError):
-                    return json_resp(err(42201, f"{key} 应为整数"), status=422)
+                    return fail_resp(42201, f"{key} 应为整数")
         _admin_log(user, "update_config", target_type="config", detail=str(body))
-        return json_resp(ok({
-            "build_minutes": get_config("build_minutes", settings.BUILD_MINUTES),
-            "push_minutes": get_config("push_minutes", settings.PUSH_MINUTES),
-            "sync_buffer_minutes": get_config("sync_buffer_minutes", settings.SYNC_BUFFER_MINUTES),
-        }))
-    return json_resp(err(42201, "不支持的请求方法"), status=422)
+        return json_resp(ok(_config_payload()))
+    return fail_resp(42201, "不支持的请求方法")
 
 
 # ---------- 日志 ----------
@@ -367,7 +384,14 @@ def logs_view(request, kind):
 
 
 # ---------- 策略管理（管理员全量 CRUD，写入管理操作日志） ----------
-# 复用 strategies 视图的校验与序列化逻辑，仅 admin 可调用，admin 可跨版本操作。
+# 校验与写路径复用 services.strategies（与 PM 入口同一实现），仅 admin 可调用。
+
+
+def _validation_error(exc):
+    """StrategyValidationError → 统一错误响应（40901/40902→409，其余→422）。"""
+    status = 409 if exc.code in (40901, 40902) else 422
+    return json_resp(err(exc.code, exc.message, exc.extra), status=status)
+
 
 def _list_admin_strategies(request):
     qs = Strategy.objects.select_related("branch", "branch__version", "template").all()
@@ -377,7 +401,7 @@ def _list_admin_strategies(request):
         qs = qs.filter(branch__version_id=version_id)
     if branch_id:
         qs = qs.filter(branch_id=branch_id)
-    return json_resp(ok([strategy_views._strategy_payload(s) for s in qs]))
+    return json_resp(ok([strategy_payload(s) for s in qs]))
 
 
 def _create_admin_strategy(request, user):
@@ -385,24 +409,19 @@ def _create_admin_strategy(request, user):
     branch = Branch.objects.filter(id=body.get("branch_id")).first()
     template = StrategyTemplate.objects.filter(id=body.get("template_id")).first()
     if not branch or not template:
-        return json_resp(err(42201, "分支或模板不存在"), status=422)
-    build_start_time = body.get("build_start_time", "22:00")
-    push_start_time = body.get("push_start_time")
-    err_resp, _ = strategy_views._validate(
-        branch, template, build_start_time, push_start_time,
-        push_mode=body.get("push_mode", "normal"))
-    if err_resp:
-        return json_resp(err(err_resp["code"], err_resp["message"]), status=err_resp["status"])
-    s = Strategy.objects.create(
-        branch=branch, template=template, name=body.get("name"),
-        build_start_time=build_start_time,
-        push_start_time=push_start_time or None,
-        push_mode=body.get("push_mode", "normal"),
-        enabled=body.get("enabled", True),
-        created_by=user,
-    )
+        return fail_resp(42201, "分支或模板不存在")
+    try:
+        s = svc_create_strategy(
+            branch, template, user, name=body.get("name"),
+            build_start_time=body.get("build_start_time", "22:00"),
+            push_start_time=body.get("push_start_time"),
+            push_mode=body.get("push_mode", "normal"),
+            enabled=body.get("enabled", True),
+        )
+    except StrategyValidationError as exc:
+        return _validation_error(exc)
     _admin_log(user, "create_strategy", target_type="strategy", target_id=s.id, detail=s.name)
-    return json_resp(ok(strategy_views._strategy_payload(s)))
+    return json_resp(ok(strategy_payload(s)))
 
 
 def admin_strategies_view(request):
@@ -416,45 +435,36 @@ def admin_strategies_view(request):
         return _list_admin_strategies(request)
     if request.method == "POST":
         return _create_admin_strategy(request, user)
-    return json_resp(err(42201, "不支持的请求方法"), status=422)
+    return fail_resp(42201, "不支持的请求方法")
 
 
 def _update_admin_strategy(request, user, sid):
-    s = Strategy.objects.select_related("branch", "template").filter(id=sid).first()
+    s = Strategy.objects.select_related("branch", "branch__version", "template").filter(id=sid).first()
     if not s:
-        return json_resp(err(40401, "策略不存在"), status=404)
+        return fail_resp(40401, "策略不存在")
     body = parse_body(request)
-    build_start_time = body.get("build_start_time", s.build_start_time)
-    push_start_time = body.get("push_start_time", s.push_start_time)
-    err_resp, _ = strategy_views._validate(
-        s.branch, s.template, build_start_time, push_start_time,
-        push_mode=body.get("push_mode", s.push_mode), exclude_id=s.id)
-    if err_resp:
-        return json_resp(err(err_resp["code"], err_resp["message"]), status=err_resp["status"])
-    s.name = body.get("name", s.name)
-    s.build_start_time = build_start_time
-    s.push_start_time = push_start_time or None
-    s.push_mode = body.get("push_mode", s.push_mode)
-    s.enabled = body.get("enabled", s.enabled)
-    s.save()
+    try:
+        svc_update_strategy(s, body, user)
+    except StrategyValidationError as exc:
+        return _validation_error(exc)
     _admin_log(user, "update_strategy", target_type="strategy", target_id=sid, detail=s.name)
-    return json_resp(ok(strategy_views._strategy_payload(s)))
+    return json_resp(ok(strategy_payload(s)))
 
 
 def _toggle_admin_strategy(request, user, sid):
-    s = Strategy.objects.filter(id=sid).first()
+    s = Strategy.objects.select_related("branch", "branch__version", "template").filter(id=sid).first()
     if not s:
-        return json_resp(err(40401, "策略不存在"), status=404)
+        return fail_resp(40401, "策略不存在")
     s.enabled = not s.enabled
     s.save()
     _admin_log(user, "toggle_strategy", target_type="strategy", target_id=sid)
-    return json_resp(ok(strategy_views._strategy_payload(s)))
+    return json_resp(ok(strategy_payload(s)))
 
 
 def _delete_admin_strategy(request, user, sid):
     s = Strategy.objects.filter(id=sid).first()
     if not s:
-        return json_resp(err(40401, "策略不存在"), status=404)
+        return fail_resp(40401, "策略不存在")
     s.delete()
     _admin_log(user, "delete_strategy", target_type="strategy", target_id=sid)
     return json_resp(ok())
@@ -471,7 +481,7 @@ def admin_strategy_detail_view(request, sid):
         return _update_admin_strategy(request, user, sid)
     if request.method == "DELETE":
         return _delete_admin_strategy(request, user, sid)
-    return json_resp(err(42201, "不支持的请求方法"), status=422)
+    return fail_resp(42201, "不支持的请求方法")
 
 
 def admin_strategy_toggle_view(request, sid):
@@ -482,5 +492,5 @@ def admin_strategy_toggle_view(request, sid):
     if perr:
         return perr
     if request.method != "PATCH":
-        return json_resp(err(42201, "不支持的请求方法"), status=422)
+        return fail_resp(42201, "不支持的请求方法")
     return _toggle_admin_strategy(request, user, sid)

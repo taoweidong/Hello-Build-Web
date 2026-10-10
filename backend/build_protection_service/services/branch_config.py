@@ -12,6 +12,8 @@ import random
 from typing import Dict, List, Optional
 
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError, transaction
+from django.db.models import OuterRef, Subquery
 from django.utils import timezone
 
 from ..models import Branch, BranchPermission, BranchProject, Instance, Project, StartupConfig
@@ -56,22 +58,33 @@ def advance(instance: Instance) -> None:
 
 
 def start_instance(branch_project: BranchProject, actor: str) -> Optional[Instance]:
-    """启动模拟：存在运行中实例返回 None（由视图层转 40903），否则创建 STARTING。"""
-    running = Instance.objects.filter(
-        branch_project=branch_project, status__in=("STARTING", "RUNNING")
-    ).exists()
-    if running:
+    """启动模拟：存在运行中实例返回 None（由视图层转 40903），否则创建 STARTING。
+
+    事务 + 活跃实例部分唯一约束兜底并发启动：竞态命中约束按"已在运行"处理。
+    """
+    try:
+        with transaction.atomic():
+            running = Instance.objects.filter(
+                branch_project=branch_project, status__in=("STARTING", "RUNNING")
+            ).exists()
+            if running:
+                return None
+            now = timezone.now()
+            pid = random.randint(32000, 49999)
+            inst = Instance.objects.create(
+                branch_project=branch_project,
+                status="STARTING",
+                pid=pid,
+                started_at=now,
+                last_heartbeat_at=now,
+                log_tail=f"[{actor}] 发起启动 pid={pid}",
+            )
+    except IntegrityError:
+        logger.info(
+            "[branch-instance][simulate] start bp=%s 并发命中唯一约束，按已在运行处理",
+            branch_project.id,
+        )
         return None
-    now = timezone.now()
-    pid = random.randint(32000, 49999)
-    inst = Instance.objects.create(
-        branch_project=branch_project,
-        status="STARTING",
-        pid=pid,
-        started_at=now,
-        last_heartbeat_at=now,
-        log_tail=f"[{actor}] 发起启动 pid={pid}",
-    )
     logger.info(
         "[branch-instance][simulate] start bp=%s pid=%s actor=%s",
         branch_project.id, pid, actor,
@@ -100,6 +113,17 @@ def stop_instance(branch_project: BranchProject, actor: str) -> Optional[Instanc
 def latest_instance(branch_project: BranchProject) -> Optional[Instance]:
     """取每个关联的最新实例（按 id 倒序第一个）。"""
     return Instance.objects.filter(branch_project=branch_project).order_by("-id").first()
+
+
+def latest_instances_for_branch(branch: Branch) -> Dict[int, Instance]:
+    """单查询批量取分支下全部关联的最新实例，消除逐关联 N+1。"""
+    latest_id = Instance.objects.filter(
+        branch_project_id=OuterRef("branch_project_id")
+    ).order_by("-id").values("id")[:1]
+    rows = Instance.objects.filter(
+        branch_project__branch=branch, id=Subquery(latest_id)
+    )
+    return {row.branch_project_id: row for row in rows}
 
 
 # ---------- 序列化辅助 ----------
@@ -159,8 +183,10 @@ def serialize_project(project: Project) -> Dict:
 def build_branch_config(branch: Branch, user) -> Dict:
     """组装聚合配置：分支 + 工程关联（含启动配置与最新实例）+ 授权 + 可用用户/工程。"""
     items: List[Dict] = []
-    for bp in branch.branch_projects.select_related("project").all():
-        adv = latest_instance(bp)
+    bps = branch.branch_projects.select_related("project", "startup_config").all()
+    latest_by_bp = latest_instances_for_branch(branch)
+    for bp in bps:
+        adv = latest_by_bp.get(bp.id)
         if adv:
             advance(adv)
         conf = getattr(bp, "startup_config", None)
@@ -192,16 +218,16 @@ def build_branch_config(branch: Branch, user) -> Dict:
     }
 
 
-def dump_raw_config(instance: Instance) -> str:
+def dump_raw_config(conf: StartupConfig) -> str:
     """生成 raw_json 原始配置 JSON（供序列化器写入）。"""
     return json.dumps(
         {
-            "command": instance.command,
-            "args": instance.args,
-            "env_vars": instance.env_vars,
-            "working_directory": instance.working_directory,
-            "timeout_seconds": instance.timeout_seconds,
-            "auto_restart": instance.auto_restart,
+            "command": conf.command,
+            "args": conf.args,
+            "env_vars": conf.env_vars,
+            "working_directory": conf.working_directory,
+            "timeout_seconds": conf.timeout_seconds,
+            "auto_restart": conf.auto_restart,
         },
         ensure_ascii=False,
     )

@@ -1,6 +1,6 @@
 """验证报告视图集：列表/详情/新建/修改 + 发布/修改记录（DRF ViewSet，废弃功能已移除）。"""
 import logging
-from typing import Dict, Optional
+from typing import Optional
 
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import mixins, viewsets
@@ -12,7 +12,7 @@ from ..filters.report import ReportFilter
 from ..models import VerificationReport
 from ..serializers.report import ReportRevisionLogSerializer, ReportSerializer
 from ..services.report_service import ReportConclusionLockedError, ReportService
-from . import authed_user, json_resp
+from . import authed_user, fail_resp, first_error, json_resp
 
 logger = logging.getLogger("build_protection_service")
 
@@ -47,16 +47,6 @@ class ReportViewSet(
         except VerificationReport.DoesNotExist:
             return None
 
-    @staticmethod
-    def _first_error(errors: Dict) -> str:
-        """取 serializer 错误中的第一条消息用于统一错误提示。"""
-        for value in errors.values():
-            if isinstance(value, list) and value:
-                return str(value[0])
-            if isinstance(value, str) and value:
-                return value
-        return "参数校验失败"
-
     def list(self, request, *args, **kwargs):
         """报告列表：status / version_name / strategy_name / keyword 过滤，统一响应封装。"""
         _, error = authed_user(request)
@@ -72,7 +62,7 @@ class ReportViewSet(
             return error
         report = self._report(kwargs.get("pk"))
         if report is None:
-            return json_resp(err(40401, "报告不存在"), status=404)
+            return fail_resp(40401, "报告不存在")
         return json_resp(ok(ReportSerializer(report).data))
 
     def create(self, request, *args, **kwargs):
@@ -81,10 +71,10 @@ class ReportViewSet(
         if error:
             return error
         if user.role not in WRITE_ROLES:
-            return json_resp(err(40301, "仅测试/构建人员可新建报告"), status=403)
+            return fail_resp(40301, "仅测试/构建人员可新建报告")
         serializer = ReportSerializer(data=request.data)
         if not serializer.is_valid():
-            return json_resp(err(42201, self._first_error(serializer.errors)), status=422)
+            return fail_resp(42201, first_error(serializer.errors))
         report = ReportService.create(user.username, serializer.validated_data)
         return json_resp(ok(ReportSerializer(report).data))
 
@@ -95,16 +85,16 @@ class ReportViewSet(
             return error
         report = self._report(kwargs.get("pk"))
         if report is None:
-            return json_resp(err(40401, "报告不存在"), status=404)
+            return fail_resp(40401, "报告不存在")
         if user.role not in WRITE_ROLES or report.created_by_username != user.username:
-            return json_resp(err(40301, "仅报告作者可修改"), status=403)
+            return fail_resp(40301, "仅报告作者可修改")
         serializer = ReportSerializer(report, data=request.data)
         if not serializer.is_valid():
-            return json_resp(err(42201, self._first_error(serializer.errors)), status=422)
+            return fail_resp(42201, first_error(serializer.errors))
         try:
             report = ReportService.update(user.username, report, serializer.validated_data)
         except ReportConclusionLockedError as exc:
-            return json_resp(err(42201, str(exc)), status=422)
+            return fail_resp(42201, str(exc))
         return json_resp(ok(ReportSerializer(report).data))
 
     @action(detail=True, methods=["post"])
@@ -115,14 +105,14 @@ class ReportViewSet(
             return error
         report = self._report(pk)
         if report is None:
-            return json_resp(err(40401, "报告不存在"), status=404)
+            return fail_resp(40401, "报告不存在")
         if user.role not in WRITE_ROLES or report.created_by_username != user.username:
-            return json_resp(err(40301, "仅报告作者可发布"), status=403)
+            return fail_resp(40301, "仅报告作者可发布")
         screenshot = (request.data or {}).get("screenshot") or ""
         if not screenshot:
-            return json_resp(err(42201, "缺少页面截图"), status=422)
+            return fail_resp(42201, "缺少页面截图")
         if len(screenshot.encode("utf-8")) > MAX_SCREENSHOT_BYTES:
-            return json_resp(err(42201, "截图超过 2MB 限制"), status=422)
+            return fail_resp(42201, "截图超过 2MB 限制")
         update_mark = "（更新发布）" if report.publish_count > 0 else ""
         conclusion_label = dict(VerificationReport.CONCLUSION_CHOICES).get(
             report.conclusion, report.conclusion
@@ -144,6 +134,6 @@ class ReportViewSet(
             return error
         report = self._report(pk)
         if report is None:
-            return json_resp(err(40401, "报告不存在"), status=404)
+            return fail_resp(40401, "报告不存在")
         logs = ReportService.revisions(report.id)
         return json_resp(ok(ReportRevisionLogSerializer(logs, many=True).data))

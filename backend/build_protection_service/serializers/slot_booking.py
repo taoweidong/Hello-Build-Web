@@ -26,6 +26,17 @@ class SlotTemplateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("时段名称已存在")
         return name
 
+    def validate_weekdays(self, value) -> str:
+        """生效星期校验：逗号分隔的 0-6（0=周一），拦截 "8,abc" 之类永不匹配的脏数据。"""
+        raw = (value or "").strip()
+        if not raw:
+            return raw
+        parts = [x.strip() for x in raw.split(",")]
+        for part in parts:
+            if not part.isdigit() or not 0 <= int(part) <= 6:
+                raise serializers.ValidationError("生效星期应为 0-6 的逗号分隔数字（0=周一）")
+        return ",".join(str(int(x)) for x in parts)
+
     def validate(self, attrs: dict) -> dict:
         start = attrs.get("start_time", getattr(self.instance, "start_time", None))
         end = attrs.get("end_time", getattr(self.instance, "end_time", None))

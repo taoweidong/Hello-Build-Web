@@ -6,7 +6,7 @@
 import logging
 
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
@@ -27,7 +27,7 @@ from ..services.branch_config import (
     ROLE_VALID,
     advance,
     build_branch_config,
-    latest_instance,
+    latest_instances_for_branch,
     resolve_role,
     serialize_branch,
     serialize_config,
@@ -36,21 +36,11 @@ from ..services.branch_config import (
     start_instance as svc_start,
     stop_instance as svc_stop,
 )
-from . import authed_user, json_resp, parse_body
+from . import authed_user, fail_resp, first_error, json_resp, parse_body, parse_int
 
 logger = logging.getLogger("build_protection_service")
 
 User = get_user_model()
-
-
-def _first_error(errors: dict) -> str:
-    """取 serializer 错误第一条消息用于统一提示。"""
-    for value in errors.values():
-        if isinstance(value, list) and value:
-            return str(value[0])
-        if isinstance(value, str) and value:
-            return value
-    return "参数校验失败"
 
 
 def _branch_or_none(pk) -> Branch:
@@ -64,20 +54,20 @@ def _bp_or_none(pk) -> BranchProject:
 def _branch_required(branch):
     """分支不存在返回 (None, 404 响应)。"""
     if branch is None:
-        return None, json_resp(err(40401, "分支不存在"), status=404)
+        return None, fail_resp(40401, "分支不存在")
     return branch, None
 
 
 def _bp_required(bp):
     if bp is None:
-        return None, json_resp(err(40401, "工程关联不存在"), status=404)
+        return None, fail_resp(40401, "工程关联不存在")
     return bp, None
 
 
 def _require_role(user, branch, *roles):
     """角色门槛：有效角色不在 roles 内则返回 40301 响应。"""
     if resolve_role(branch, user) not in roles:
-        return json_resp(err(40301, "无权限执行该操作"), status=403)
+        return fail_resp(40301, "无权限执行该操作")
     return None
 
 
@@ -114,15 +104,14 @@ class BranchViewSet(
         if error:
             return error
         body = request.data or {}
-        version_id = body.get("version_id")
-        version = Version.objects.filter(id=version_id).first() if version_id else None
+        version = Version.objects.filter(id=parse_int(body.get("version_id"))).first()
         if version is None:
-            return json_resp(err(42201, "版本必选且存在"), status=422)
+            return fail_resp(42201, "版本必选且存在")
         name = (body.get("name") or "").strip()
         if not name:
-            return json_resp(err(42201, "分支名必填"), status=422)
+            return fail_resp(42201, "分支名必填")
         if Branch.objects.filter(version=version, name=name).exists():
-            return json_resp(err(40902, "该版本下分支已存在"), status=409)
+            return fail_resp(40902, "该版本下分支已存在")
         try:
             branch = Branch.objects.create(
                 version=version,
@@ -131,7 +120,7 @@ class BranchViewSet(
                 description=(body.get("description") or "").strip(),
             )
         except IntegrityError:
-            return json_resp(err(40902, "该版本下分支已存在"), status=409)
+            return fail_resp(40902, "该版本下分支已存在")
         return json_resp(ok(serialize_branch(branch)))
 
     def destroy(self, request, *args, **kwargs):
@@ -172,16 +161,18 @@ class BranchViewSet(
         if perr:
             return perr
         body = request.data or {}
-        project = Project.objects.filter(id=body.get("project_id")).first()
+        project = Project.objects.filter(id=parse_int(body.get("project_id"))).first()
         if project is None:
-            return json_resp(err(42201, "工程不存在"), status=422)
+            return fail_resp(42201, "工程不存在")
         if BranchProject.objects.filter(branch=branch, project=project).exists():
-            return json_resp(err(40903, "该工程已关联此分支"), status=409)
-        bp = BranchProject.objects.create(
-            branch=branch, project=project, enabled=bool(body.get("enabled", True))
-        )
-        # 关联创建默认启动配置，保证前端 Tab② 可编辑
-        StartupConfig.objects.create(branch_project=bp)
+            return fail_resp(40903, "该工程已关联此分支")
+        # 关联与默认启动配置两步写入，包事务保证一致性
+        with transaction.atomic():
+            bp = BranchProject.objects.create(
+                branch=branch, project=project, enabled=bool(body.get("enabled", True))
+            )
+            # 默认启动配置，保证前端 Tab② 可编辑
+            StartupConfig.objects.create(branch_project=bp)
         return json_resp(
             ok(
                 {
@@ -207,12 +198,12 @@ class BranchViewSet(
         if perr:
             return perr
         body = request.data or {}
-        target = User.objects.filter(id=body.get("user_id")).first()
+        target = User.objects.filter(id=parse_int(body.get("user_id"))).first()
         if target is None:
-            return json_resp(err(42201, "授权用户不存在"), status=422)
+            return fail_resp(42201, "授权用户不存在")
         role = body.get("role")
         if role not in ROLE_VALID:
-            return json_resp(err(42201, "角色必须为 VIEWER/OPERATOR/ADMIN"), status=422)
+            return fail_resp(42201, "角色必须为 VIEWER/OPERATOR/ADMIN")
         perm, _ = BranchPermission.objects.update_or_create(
             branch=branch, user=target, defaults={"role": role}
         )
@@ -227,9 +218,10 @@ class BranchViewSet(
         branch, resp_err = _branch_required(_branch_or_none(pk))
         if resp_err:
             return resp_err
+        latest_by_bp = latest_instances_for_branch(branch)
         rows = []
         for bp in branch.branch_projects.select_related("project").all():
-            inst = latest_instance(bp)
+            inst = latest_by_bp.get(bp.id)
             if inst:
                 advance(inst)
             rows.append(
@@ -280,7 +272,7 @@ class BranchProjectViewSet(mixins.DestroyModelMixin, viewsets.GenericViewSet):
             conf = StartupConfig.objects.create(branch_project=bp)
         serializer = StartupConfigSerializer(conf, data=request.data, partial=True)
         if not serializer.is_valid():
-            return json_resp(err(42201, _first_error(serializer.errors)), status=422)
+            return fail_resp(42201, first_error(serializer.errors))
         conf = serializer.save()
         return json_resp(ok(serialize_config(conf)))
 
@@ -298,7 +290,7 @@ class BranchProjectViewSet(mixins.DestroyModelMixin, viewsets.GenericViewSet):
             return perr
         inst = svc_start(bp, user.username)
         if inst is None:
-            return json_resp(err(40903, "实例已在运行"), status=409)
+            return fail_resp(40903, "实例已在运行")
         return json_resp(ok(serialize_instance(inst)))
 
     @action(detail=True, methods=["post"])
@@ -330,7 +322,7 @@ class BranchPermissionViewSet(mixins.DestroyModelMixin, viewsets.GenericViewSet)
             return error
         perm = self.get_queryset().filter(pk=kwargs.get("pk")).first()
         if perm is None:
-            return json_resp(err(40401, "授权记录不存在"), status=404)
+            return fail_resp(40401, "授权记录不存在")
         perr = _require_role(user, perm.branch, ROLE_ADMIN)
         if perr:
             return perr
@@ -368,9 +360,9 @@ def projects_view(request):
         body = parse_body(request)
         name = (body.get("name") or "").strip()
         if not name:
-            return json_resp(err(42201, "工程名必填"), status=422)
+            return fail_resp(42201, "工程名必填")
         if Project.objects.filter(name=name).exists():
-            return json_resp(err(40902, "工程名已存在"), status=409)
+            return fail_resp(40902, "工程名已存在")
         try:
             project = Project.objects.create(
                 name=name,
@@ -378,6 +370,6 @@ def projects_view(request):
                 description=(body.get("description") or "").strip(),
             )
         except IntegrityError:
-            return json_resp(err(40902, "工程名已存在"), status=409)
+            return fail_resp(40902, "工程名已存在")
         return json_resp(ok(serialize_project(project)))
-    return json_resp(err(42201, "不支持的请求方法"), status=422)
+    return fail_resp(42201, "不支持的请求方法")

@@ -20,7 +20,7 @@ class VerificationReport(models.Model):
     summary = models.TextField("验证内容")
     risks = models.TextField("问题与风险", blank=True, default="")
     remark = models.TextField("备注", blank=True, default="")
-    status = models.CharField("状态", max_length=20, choices=STATUS_CHOICES, default="draft")
+    status = models.CharField("状态", max_length=20, choices=STATUS_CHOICES, default="draft", db_index=True)
     created_by_username = models.CharField("作者账号", max_length=100, blank=True, default="")
     published_at = models.DateTimeField("发布时间", null=True, blank=True)
     publish_count = models.PositiveIntegerField("发布次数", default=0)
@@ -45,7 +45,7 @@ class ReportRevisionLog(models.Model):
 
     ACTION_CHOICES = (("create", "创建"), ("update", "修改"), ("publish", "发布"))
 
-    report_id = models.IntegerField("报告ID")
+    report_id = models.IntegerField("报告ID", db_index=True)
     report_title = models.CharField("报告标题", max_length=200, blank=True, default="")
     action = models.CharField("动作", max_length=20, choices=ACTION_CHOICES)
     field_name = models.CharField("修改字段", max_length=100, blank=True, default="")

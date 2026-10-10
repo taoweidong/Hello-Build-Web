@@ -8,7 +8,7 @@ from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
 from ..api import err, ok
 from ..models import RevokedToken
-from . import authed_user, json_resp, parse_body, security_log
+from . import authed_user, fail_resp, json_resp, parse_body, security_log
 
 User = get_user_model()
 
@@ -33,18 +33,18 @@ def login_view(request):
     username = (body.get("username") or "").strip()
     password = body.get("password") or ""
     if not username or not password:
-        return json_resp(err(42201, "用户名与密码不能为空"), status=422)
+        return fail_resp(42201, "用户名与密码不能为空")
     fail_key = f"login:fail:{username}"
     if cache.get(fail_key, 0) >= _LOGIN_MAX_ATTEMPTS:
         security_log("login_locked", username=username)
-        return json_resp(err(42901, "失败次数过多，请 15 分钟后重试"), status=429)
+        return fail_resp(42901, "失败次数过多，请 15 分钟后重试")
     user = User.objects.filter(username=username).first()
     if user is None or not user.check_password(password):
         cache.set(fail_key, cache.get(fail_key, 0) + 1, _LOGIN_LOCK_SECONDS)
         security_log("login_failed", username=username)
-        return json_resp(err(40101, "用户名或密码错误"), status=401)
+        return fail_resp(40101, "用户名或密码错误")
     if not user.is_active:
-        return json_resp(err(40301, "账号已停用"), status=403)
+        return fail_resp(40301, "账号已停用")
     cache.delete(fail_key)
     refresh = RefreshToken.for_user(user)
     security_log("login_success", username=username)

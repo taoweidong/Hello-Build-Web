@@ -12,6 +12,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 
 from ..api import err, ok
+from ..errors import CODE_STATUS
 from ..models import SlotBooking, SlotTemplate
 from ..serializers.slot_booking import (
     ReleaseBookingSerializer,
@@ -26,33 +27,19 @@ from ..services.slot_booking import (
     serialize_booking_row,
     serialize_template,
 )
-from . import authed_user, json_resp
+from . import authed_user, fail_resp, first_error, json_resp, require_admin
 
 logger = logging.getLogger("build_protection_service")
 
-_ERR_STATUS = {
-    40100: 401, 40301: 403, 40401: 404,
-    40902: 409, 40903: 409, 40904: 409, 42201: 422,
-}
-
 
 def _err_resp(error: dict):
-    """服务层错误 dict（{code, message}）→ 统一响应。"""
-    return json_resp(err(error["code"], error["message"]), status=_ERR_STATUS.get(error["code"], 400))
-
-
-def _first_error(errors: dict) -> str:
-    """取 serializer 错误第一条消息用于统一提示。"""
-    for value in errors.values():
-        if isinstance(value, list) and value:
-            return str(value[0])
-    return "参数校验失败"
+    """服务层错误 dict（{code, message}）→ 统一响应（HTTP 状态由公共映射决定）。"""
+    return json_resp(err(error["code"], error["message"]),
+                     status=CODE_STATUS.get(error["code"], 400))
 
 
 def _require_admin(user):
-    if getattr(user, "role", "") != "admin":
-        return json_resp(err(40301, "无权限执行该操作"), status=403)
-    return None
+    return require_admin(user, message="无权限执行该操作")
 
 
 def _paginate(qs, request, serializer) -> dict:
@@ -99,7 +86,7 @@ class SlotTemplateViewSet(
             return perr
         serializer = SlotTemplateSerializer(data=request.data or {})
         if not serializer.is_valid():
-            return json_resp(err(42201, _first_error(serializer.errors)), status=422)
+            return fail_resp(42201, first_error(serializer.errors))
         template = serializer.save()
         logger.info("[slot-booking] template create id=%s name=%s actor=%s",
                     template.id, template.name, user.username)
@@ -117,10 +104,10 @@ class SlotTemplateViewSet(
             return perr
         template = self.get_queryset().filter(pk=kwargs.get("pk")).first()
         if template is None:
-            return json_resp(err(40401, "时段模板不存在"), status=404)
+            return fail_resp(40401, "时段模板不存在")
         serializer = SlotTemplateSerializer(template, data=request.data or {}, partial=True)
         if not serializer.is_valid():
-            return json_resp(err(42201, _first_error(serializer.errors)), status=422)
+            return fail_resp(42201, first_error(serializer.errors))
         template = serializer.save()
         logger.info("[slot-booking] template update id=%s actor=%s", template.id, user.username)
         return json_resp(ok({
@@ -137,9 +124,9 @@ class SlotTemplateViewSet(
             return perr
         template = self.get_queryset().filter(pk=kwargs.get("pk")).first()
         if template is None:
-            return json_resp(err(40401, "时段模板不存在"), status=404)
+            return fail_resp(40401, "时段模板不存在")
         if SlotBooking.objects.filter(template=template).exists():
-            return json_resp(err(40902, "该时段已有抢占记录，请改用停用"), status=409)
+            return fail_resp(40902, "该时段已有抢占记录，请改用停用")
         template.delete()
         logger.info("[slot-booking] template delete id=%s actor=%s", kwargs.get("pk"), user.username)
         return json_resp(ok(message="时段模板已删除"))
@@ -158,7 +145,7 @@ class SlotBookingViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
             return resp
         serializer = SlotBookingCreateSerializer(data=request.data or {})
         if not serializer.is_valid():
-            return json_resp(err(42201, _first_error(serializer.errors)), status=422)
+            return fail_resp(42201, first_error(serializer.errors))
         data, error = create_booking(user, serializer.validated_data)
         if error:
             return _err_resp(error)
@@ -173,9 +160,10 @@ class SlotBookingViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
             self.get_queryset().filter(pk=pk).first()
         )
         if booking is None:
-            return json_resp(err(40401, "抢占记录不存在"), status=404)
+            return fail_resp(40401, "抢占记录不存在")
         serializer = ReleaseBookingSerializer(data=request.data or {})
-        serializer.is_valid()
+        if not serializer.is_valid():
+            return fail_resp(42201, first_error(serializer.errors))
         data, error = release_booking(booking, user, serializer.validated_data.get("release_reason", ""))
         if error:
             return _err_resp(error)
@@ -204,7 +192,7 @@ class SlotBookingViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
             if params.get("date_to"):
                 qs = qs.filter(date__lte=params["date_to"])
         except (ValueError, ValidationError):
-            return json_resp(err(42201, "日期筛选格式非法，应为 YYYY-MM-DD"), status=422)
+            return fail_resp(42201, "日期筛选格式非法，应为 YYYY-MM-DD")
         if params.get("version_id"):
             qs = qs.filter(version_id=params["version_id"])
         if params.get("branch_id"):

@@ -120,6 +120,14 @@ class Instance(models.Model):
         verbose_name = "运行实例"
         verbose_name_plural = "运行实例"
         ordering = ["-id"]
+        constraints = [
+            # 每条分支工程关联至多一个活跃实例（STARTING/RUNNING），DB 层兜底并发启动
+            models.UniqueConstraint(
+                fields=["branch_project"],
+                condition=models.Q(status__in=("STARTING", "RUNNING")),
+                name="uniq_active_instance_per_branch_project",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"instance#{self.id}-{self.status}"

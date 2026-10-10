@@ -1,0 +1,152 @@
+"""策略领域服务：互斥/冲突校验、创建与更新（PM 与 admin 两入口共用）。
+
+写路径统一包 transaction.atomic；校验失败抛 StrategyValidationError，
+由视图层转统一响应（code + message + extra 冲突详情）。
+"""
+from django.db import transaction
+
+from ..models import Strategy, StrategyChangeLog
+from .config import get_config
+from .conflict import detect_conflicts
+from .mutex import check_build_mutex
+from .timeline import build_timeline, valid_hhmm
+
+
+class StrategyValidationError(Exception):
+    """策略校验失败：code/message 对应统一响应契约，extra 附冲突详情。"""
+
+    def __init__(self, code, message, extra=None):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.extra = extra or {}
+
+
+class SimpleNamespaceTpl:
+    """detect_conflicts 只需模板的冒烟/分析时长，用轻量鸭子类型避免查询。"""
+
+    def __init__(self, smoke, analysis):
+        self.smoke_minutes = smoke
+        self.analysis_minutes = analysis
+
+
+def validate_strategy(branch, template, build_start_time, push_start_time,
+                      push_mode="normal", exclude_id=None, ds=None):
+    """互斥 + 阶段冲突校验；失败抛 StrategyValidationError（40901/40902）。"""
+    from django.conf import settings
+    from django.utils import timezone
+
+    for field, val in (("build_start_time", build_start_time), ("push_start_time", push_start_time)):
+        if val is not None and not valid_hhmm(val):
+            raise StrategyValidationError(42201, f"{field} 格式应为 HH:MM（0-23 时 0-59 分）")
+    build_minutes = get_config("build_minutes", settings.BUILD_MINUTES)
+    push_minutes = get_config("push_minutes", settings.PUSH_MINUTES)
+    sync_buffer_minutes = get_config("sync_buffer_minutes", settings.SYNC_BUFFER_MINUTES)
+    if ds is None:
+        ds = timezone.localdate().strftime("%Y-%m-%d")
+
+    mutex_hits = check_build_mutex(branch.version_id, build_start_time, build_minutes,
+                                   exclude_strategy_id=exclude_id, ds=ds)
+    if mutex_hits:
+        raise StrategyValidationError(
+            40902, "同一时间节点仅允许一个分支构建（资源互斥）", extra={"mutex": mutex_hits})
+
+    same_branch = Strategy.objects.filter(branch=branch, enabled=True)
+    if exclude_id:
+        same_branch = same_branch.exclude(id=exclude_id)
+    existing = [{
+        "build_start_time": s.build_start_time,
+        "template": SimpleNamespaceTpl(s.template.smoke_minutes, s.template.analysis_minutes),
+        "push_mode": s.push_mode,
+        "strategy_name": s.name,
+        "push_start_time": s.push_start_time,
+    } for s in same_branch]
+    cand = [{
+        "build_start_time": build_start_time,
+        "template": SimpleNamespaceTpl(template.smoke_minutes, template.analysis_minutes),
+        "push_mode": push_mode,
+        "strategy_name": "candidate",
+        "push_start_time": push_start_time,
+    }]
+    hits = detect_conflicts(ds, cand, existing, build_minutes, push_minutes, sync_buffer_minutes)
+    if hits:
+        raise StrategyValidationError(
+            40901, "阶段时间冲突，请调整构建时间", extra={"conflicts": hits})
+
+
+def strategy_payload(s: Strategy) -> dict:
+    """策略统一输出契约（列表/详情/创建/更新共用）。"""
+    return {
+        "id": s.id,
+        "branch_id": s.branch_id,
+        "branch_name": s.branch.name,
+        "version_id": s.branch.version_id,
+        "version_name": s.branch.version.name,
+        "template_id": s.template_id,
+        "template_name": s.template.name,
+        "name": s.name,
+        "build_start_time": s.build_start_time,
+        "push_start_time": s.push_start_time,
+        "push_mode": s.push_mode,
+        "enabled": s.enabled,
+    }
+
+
+# 可变字段 → 变更日志中文标签
+_CHANGE_LABELS = {
+    "name": "策略名",
+    "build_start_time": "构建开始时间",
+    "push_start_time": "推送开始时间",
+    "push_mode": "推送模式",
+    "enabled": "启用",
+}
+
+
+def _change_desc(old: dict, body: dict) -> str:
+    """按请求体实际改动字段生成变更描述，如「构建开始时间: 22:00→23:00」。"""
+    parts = []
+    for field, label in _CHANGE_LABELS.items():
+        if body.get(field) is None:
+            continue
+        new_val = body[field]
+        if field == "push_start_time" and not new_val:
+            new_val = None
+        if old.get(field) != new_val:
+            parts.append(f"{label}: {old.get(field)}→{new_val}")
+    return "；".join(parts)
+
+
+@transaction.atomic
+def create_strategy(branch, template, operator, *, name, build_start_time,
+                    push_start_time=None, push_mode="normal", enabled=True):
+    """创建策略（含校验），供 PM 与 admin 两入口共用。"""
+    validate_strategy(branch, template, build_start_time, push_start_time, push_mode=push_mode)
+    return Strategy.objects.create(
+        branch=branch, template=template, name=name,
+        build_start_time=build_start_time,
+        push_start_time=push_start_time or None,
+        push_mode=push_mode, enabled=enabled, created_by=operator,
+    )
+
+
+@transaction.atomic
+def update_strategy(strategy: Strategy, body: dict, operator):
+    """按请求体增量更新策略并留痕字段差异；校验失败抛 StrategyValidationError。"""
+    old = strategy_payload(strategy)
+    build_start_time = body.get("build_start_time", strategy.build_start_time)
+    push_start_time = body.get("push_start_time", strategy.push_start_time)
+    validate_strategy(strategy.branch, strategy.template, build_start_time, push_start_time,
+                      push_mode=body.get("push_mode", strategy.push_mode),
+                      exclude_id=strategy.id)
+    strategy.name = body.get("name", strategy.name)
+    strategy.build_start_time = build_start_time
+    strategy.push_start_time = push_start_time or None
+    strategy.push_mode = body.get("push_mode", strategy.push_mode)
+    strategy.enabled = body.get("enabled", strategy.enabled)
+    strategy.save()
+    desc = _change_desc(old, body)
+    StrategyChangeLog.objects.create(
+        strategy=strategy, operator=operator,
+        change_desc=(f"更新策略: {old['name']}（{desc}）" if desc else f"更新策略: {old['name']}")[:255],
+    )
+    return strategy

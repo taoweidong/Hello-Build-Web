@@ -2,17 +2,21 @@
 from datetime import datetime, timedelta
 
 from django.db.models import Prefetch
+from django.utils import timezone
 
 from ..api import err, ok
 from ..models import Branch, Strategy, Version
-from . import authed_user, json_resp
+from . import authed_user, fail_resp, first_error, json_resp
+
+
+_WEEKDAY_ZH = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
 
 
 def _weekdays(week_start):
     start = datetime.strptime(week_start, "%Y-%m-%d").date()
     return [
         {"date": (start + timedelta(days=i)).strftime("%Y-%m-%d"),
-         "weekday": (start + timedelta(days=i)).strftime("%A")}
+         "weekday": _WEEKDAY_ZH[(start + timedelta(days=i)).weekday()]}
         for i in range(7)
     ]
 
@@ -30,7 +34,7 @@ def weekly_view(request):
     try:
         days = _weekdays(week_start)
     except ValueError:
-        return json_resp(err(42201, "week_start 格式应为 YYYY-MM-DD"), status=422)
+        return fail_resp(42201, "week_start 格式应为 YYYY-MM-DD")
     branches = []
     strategies = []
     if version:
@@ -66,5 +70,5 @@ def weekly_view(request):
 
 
 def _default_monday():
-    today = datetime.now().date()
+    today = timezone.localdate()
     return (today - timedelta(days=today.weekday())).strftime("%Y-%m-%d")

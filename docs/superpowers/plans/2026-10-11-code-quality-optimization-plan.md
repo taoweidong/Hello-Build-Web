@@ -15,15 +15,15 @@
 
 ## 阶段 2：后端 P1（规范化/补测试）
 
-- [ ] T8 新增 `errors.py`（错误码常量 + CODE_STATUS + fail()），slot_booking `_ERR_STATUS` 迁移至公共实现，行为不变
-- [ ] T9 新增 `services/strategies.py` 收敛创建/更新逻辑，admin.py 与 strategies.py 共用，消除跨模块私有访问与复制；策略写路径包 atomic
-- [ ] T10 views/__init__ 统一助手：`first_error`/`require_admin`/`fmt_dt`/`security_log(detail)`，替换三处 `_first_error`、两处 `_require_admin`、两处 `_fmt`
-- [ ] T11 迁移：`ReportRevisionLog.report_id`、`VerificationReport.status` 加 `db_index`；分支项目活跃实例 partial UniqueConstraint + `start_instance` 竞态兜底
-- [ ] T12 校验补齐：weekdays 校验（0-6）；数字 ID 安全解析（非数字→42201）；`release` 检查 `is_valid()`
-- [ ] T13 `RuntimeConfig` 落库持久化（key-value 单行表 + 缓存），`/admin/config` 行为不变，重启不丢
-- [ ] T14 update_strategy 变更日志记录字段差异
-- [ ] T15 测试补齐：admin templates 全 CRUD、versions PUT、users PATCH、admin/logs、logs/changes、round_detail、PM 策略 PATCH/toggle、branch-projects DELETE、停用账号登录 403、mutex/conflict/timeline 服务直测、实例并发约束、配置持久化
-- [ ] T16 阶段回归：后端测试全绿，提交
+- [x] T8 新增 `errors.py`（错误码常量 + CODE_STATUS + fail()），slot_booking `_ERR_STATUS` 迁移至公共实现，行为不变
+- [x] T9 新增 `services/strategies.py` 收敛创建/更新逻辑，admin.py 与 strategies.py 共用，消除跨模块私有访问与复制；策略写路径包 atomic
+- [x] T10 views/__init__ 统一助手：`first_error`/`require_admin`/`fmt_dt`/`security_log(detail)`，替换三处 `_first_error`、两处 `_require_admin`、两处 `_fmt`
+- [x] T11 迁移：`ReportRevisionLog.report_id`、`VerificationReport.status` 加 `db_index`；分支项目活跃实例 partial UniqueConstraint + `start_instance` 竞态兜底
+- [x] T12 校验补齐：weekdays 校验（0-6）；数字 ID 安全解析（非数字→42201）；`release` 检查 `is_valid()`
+- [x] T13 `RuntimeConfig` 落库持久化（key-value 单行表 + 缓存），`/admin/config` 行为不变，重启不丢
+- [x] T14 update_strategy 变更日志记录字段差异
+- [x] T15 测试补齐：admin templates 全 CRUD、versions PUT、users PATCH、admin/logs、logs/changes、round_detail、PM 策略 PATCH/toggle、branch-projects DELETE、停用账号登录 403、mutex/conflict/timeline 服务直测、实例并发约束、配置持久化
+- [x] T16 阶段回归：后端测试全绿，提交
 
 ## 阶段 3：前端测试基建 + API 层
 

@@ -1,14 +1,24 @@
-"""策略 views：列表/预览/创建/更新/启停/删除，含互斥与阶段冲突校验。"""
+"""策略 views：列表/预览/创建/更新/启停/删除。
+
+校验与写路径统一在 services.strategies（PM 与 admin 两入口共用），
+本模块只负责认证、角色门槛、请求体解析与统一响应组装。
+"""
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from ..api import err, ok
-from ..models import Branch, Strategy, StrategyChangeLog, StrategyTemplate
+from ..models import Branch, Strategy, StrategyTemplate
 from ..services.config import get_config
-from ..services.mutex import check_build_mutex
-from ..services.timeline import build_timeline, valid_hhmm
-from . import authed_user, json_resp, parse_body
+from ..services.strategies import (
+    StrategyValidationError,
+    create_strategy as svc_create,
+    strategy_payload,
+    update_strategy as svc_update,
+    validate_strategy,
+)
+from ..services.timeline import build_timeline
+from . import authed_user, fail_resp, json_resp, parse_body
 
 User = get_user_model()
 
@@ -22,79 +32,18 @@ def _authed(request):
     return None
 
 
-def _strategy_payload(s):
-    return {
-        "id": s.id,
-        "branch_id": s.branch_id,
-        "branch_name": s.branch.name,
-        "version_id": s.branch.version_id,
-        "version_name": s.branch.version.name,
-        "template_id": s.template_id,
-        "template_name": s.template.name,
-        "name": s.name,
-        "build_start_time": s.build_start_time,
-        "push_start_time": s.push_start_time,
-        "push_mode": s.push_mode,
-        "enabled": s.enabled,
-    }
-
-
 def _check_pm_bound(user, branch):
     if user.role == "admin":
         return None
     if user.role != "pm":
-        return {"code": 40301, "message": "无权限操作策略", "status": 403}
+        return fail_resp(40301, "无权限操作策略")
     if branch.version.pm_user_id != user.id:
-        return {"code": 40301, "message": "仅可操作本版本分支", "status": 403}
+        return fail_resp(40301, "仅可操作本版本分支")
     return None
 
 
-class SimpleNamespaceTpl:
-    def __init__(self, smoke, analysis):
-        self.smoke_minutes = smoke
-        self.analysis_minutes = analysis
-
-
-def _validate(branch, template, build_start_time, push_start_time,
-              push_mode="normal", exclude_id=None, ds=None):
-    """互斥 + 阶段冲突校验，返回 (err_dict_or_None, conflict_dict_or_None)。"""
-    for field, val in (("build_start_time", build_start_time), ("push_start_time", push_start_time)):
-        if val is not None and not valid_hhmm(val):
-            return {"code": 42201, "message": f"{field} 格式应为 HH:MM（0-23 时 0-59 分）", "status": 422}, None
-    version_id = branch.version_id
-    build_minutes = get_config("build_minutes", settings.BUILD_MINUTES)
-    push_minutes = get_config("push_minutes", settings.PUSH_MINUTES)
-    sync_buffer_minutes = get_config("sync_buffer_minutes", settings.SYNC_BUFFER_MINUTES)
-    if ds is None:
-        ds = timezone.localdate().strftime("%Y-%m-%d")
-    mutex_hits = check_build_mutex(version_id, build_start_time, build_minutes, exclude_id, ds=ds)
-    if mutex_hits:
-        return ({"code": 40902, "message": "同一时间节点仅允许一个分支构建（资源互斥）", "status": 409},
-                {"mutex": mutex_hits})
-    same_branch = Strategy.objects.filter(branch=branch, enabled=True)
-    if exclude_id:
-        same_branch = same_branch.exclude(id=exclude_id)
-    existing = [{
-        "build_start_time": s.build_start_time,
-        "template": SimpleNamespaceTpl(s.template.smoke_minutes, s.template.analysis_minutes),
-        "push_mode": s.push_mode,
-        "strategy_name": s.name,
-        "push_start_time": s.push_start_time,
-    } for s in same_branch]
-    cand = [{
-        "build_start_time": build_start_time,
-        "template": SimpleNamespaceTpl(template.smoke_minutes, template.analysis_minutes),
-        "push_mode": push_mode,
-        "strategy_name": "candidate",
-        "push_start_time": push_start_time,
-    }]
-    from ..services.conflict import detect_conflicts
-    hits = detect_conflicts(ds, cand, existing, build_minutes,
-                            push_minutes, sync_buffer_minutes)
-    if hits:
-        return ({"code": 40901, "message": "阶段时间冲突，请调整构建时间", "status": 409},
-                {"conflicts": hits})
-    return None, None
+def _validation_error(exc: StrategyValidationError):
+    return json_resp(err(exc.code, exc.message, exc.extra), status=409 if exc.code in (40901, 40902) else 422)
 
 
 def list_strategies(request):
@@ -112,12 +61,12 @@ def list_strategies(request):
     bound_version_id = getattr(request.user, "bound_version_id", None)
     if request.user.role == "pm" and bound_version_id:
         qs = qs.filter(branch__version_id=bound_version_id)
-    return json_resp(ok([_strategy_payload(s) for s in qs]))
+    return json_resp(ok([strategy_payload(s) for s in qs]))
 
 
 def preview_strategy(request):
     if request.method != "POST":
-        return json_resp(err(42201, "不支持的请求方法"), status=422)
+        return fail_resp(42201, "不支持的请求方法")
     authed = _authed(request)
     if authed:
         return authed
@@ -125,17 +74,16 @@ def preview_strategy(request):
     branch = Branch.objects.filter(id=body.get("branch_id")).first()
     template = StrategyTemplate.objects.filter(id=body.get("template_id")).first()
     if not branch or not template:
-        return json_resp(err(42201, "分支或模板不存在"), status=422)
+        return fail_resp(42201, "分支或模板不存在")
     build_start_time = body.get("build_start_time", "22:00")
     push_start_time = body.get("push_start_time")
     push_mode = body.get("push_mode", "normal")
-    err_resp, conflict_obj = _validate(
-        branch, template, build_start_time, push_start_time,
-        push_mode=push_mode, exclude_id=body.get("id"))
-    if err_resp:
-        conflict_obj = conflict_obj or {}
-        return json_resp(ok({"conflict": {**err_resp, **conflict_obj}}))
-    # 计算时间线供前端实时预览（与 _validate 同一基准日期：当天）
+    try:
+        validate_strategy(branch, template, build_start_time, push_start_time,
+                          push_mode=push_mode, exclude_id=body.get("id"))
+    except StrategyValidationError as exc:
+        return json_resp(ok({"conflict": {"code": exc.code, "message": exc.message, **exc.extra}}))
+    # 计算时间线供前端实时预览（与校验同一基准日期：当天）
     build_minutes = get_config("build_minutes", settings.BUILD_MINUTES)
     push_minutes = get_config("push_minutes", settings.PUSH_MINUTES)
     sync_buffer_minutes = get_config("sync_buffer_minutes", settings.SYNC_BUFFER_MINUTES)
@@ -154,72 +102,53 @@ def create_strategy(request):
     branch = Branch.objects.filter(id=body.get("branch_id")).first()
     template = StrategyTemplate.objects.filter(id=body.get("template_id")).first()
     if not branch or not template:
-        return json_resp(err(42201, "分支或模板不存在"), status=422)
+        return fail_resp(42201, "分支或模板不存在")
     perr = _check_pm_bound(request.user, branch)
     if perr:
-        return json_resp(err(perr["code"], perr["message"]), status=perr["status"])
-    build_start_time = body.get("build_start_time", "22:00")
-    push_start_time = body.get("push_start_time")
-    err_resp, _ = _validate(
-        branch, template, build_start_time, push_start_time,
-        push_mode=body.get("push_mode", "normal"))
-    if err_resp:
-        return json_resp(err(err_resp["code"], err_resp["message"]), status=err_resp["status"])
-    s = Strategy.objects.create(
-        branch=branch, template=template, name=body.get("name"),
-        build_start_time=build_start_time,
-        push_start_time=push_start_time or None,
-        push_mode=body.get("push_mode", "normal"),
-        enabled=body.get("enabled", True),
-        created_by=request.user,
-    )
-    return json_resp(ok(_strategy_payload(s)))
+        return perr
+    try:
+        s = svc_create(
+            branch, template, request.user, name=body.get("name"),
+            build_start_time=body.get("build_start_time", "22:00"),
+            push_start_time=body.get("push_start_time"),
+            push_mode=body.get("push_mode", "normal"),
+            enabled=body.get("enabled", True),
+        )
+    except StrategyValidationError as exc:
+        return _validation_error(exc)
+    return json_resp(ok(strategy_payload(s)))
 
 
 def update_strategy(request, sid):
     authed = _authed(request)
     if authed:
         return authed
-    s = Strategy.objects.select_related("branch").filter(id=sid).first()
+    s = Strategy.objects.select_related("branch", "branch__version", "template").filter(id=sid).first()
     if not s:
-        return json_resp(err(40401, "策略不存在"), status=404)
+        return fail_resp(40401, "策略不存在")
     perr = _check_pm_bound(request.user, s.branch)
     if perr:
-        return json_resp(err(perr["code"], perr["message"]), status=perr["status"])
-    body = parse_body(request)
-    branch = s.branch
-    template = s.template
-    build_start_time = body.get("build_start_time", s.build_start_time)
-    push_start_time = body.get("push_start_time", s.push_start_time)
-    err_resp, _ = _validate(branch, template, build_start_time, push_start_time,
-                            push_mode=body.get("push_mode", s.push_mode), exclude_id=s.id)
-    if err_resp:
-        return json_resp(err(err_resp["code"], err_resp["message"]), status=err_resp["status"])
-    old = _strategy_payload(s)
-    s.name = body.get("name", s.name)
-    s.build_start_time = build_start_time
-    s.push_start_time = push_start_time or None
-    s.push_mode = body.get("push_mode", s.push_mode)
-    s.enabled = body.get("enabled", s.enabled)
-    s.save()
-    StrategyChangeLog.objects.create(strategy=s, operator=request.user,
-                                     change_desc=f"更新策略: {old['name']}")
-    return json_resp(ok(_strategy_payload(s)))
+        return perr
+    try:
+        svc_update(s, parse_body(request), request.user)
+    except StrategyValidationError as exc:
+        return _validation_error(exc)
+    return json_resp(ok(strategy_payload(s)))
 
 
 def toggle_strategy(request, sid):
     authed = _authed(request)
     if authed:
         return authed
-    s = Strategy.objects.filter(id=sid).first()
+    s = Strategy.objects.select_related("branch", "branch__version", "template").filter(id=sid).first()
     if not s:
-        return json_resp(err(40401, "策略不存在"), status=404)
+        return fail_resp(40401, "策略不存在")
     perr = _check_pm_bound(request.user, s.branch)
     if perr:
-        return json_resp(err(perr["code"], perr["message"]), status=perr["status"])
+        return perr
     s.enabled = not s.enabled
     s.save()
-    return json_resp(ok(_strategy_payload(s)))
+    return json_resp(ok(strategy_payload(s)))
 
 
 def delete_strategy(request, sid):
@@ -228,10 +157,10 @@ def delete_strategy(request, sid):
         return authed
     s = Strategy.objects.filter(id=sid).first()
     if not s:
-        return json_resp(err(40401, "策略不存在"), status=404)
+        return fail_resp(40401, "策略不存在")
     perr = _check_pm_bound(request.user, s.branch)
     if perr:
-        return json_resp(err(perr["code"], perr["message"]), status=perr["status"])
+        return perr
     s.delete()
     return json_resp(ok())
 
@@ -241,7 +170,7 @@ def strategies_view(request):
         return list_strategies(request)
     if request.method == "POST":
         return create_strategy(request)
-    return json_resp(err(42201, "不支持的请求方法"), status=422)
+    return fail_resp(42201, "不支持的请求方法")
 
 
 def strategy_detail_view(request, sid):
@@ -249,4 +178,4 @@ def strategy_detail_view(request, sid):
         return update_strategy(request, sid)
     if request.method == "DELETE":
         return delete_strategy(request, sid)
-    return json_resp(err(42201, "不支持的请求方法"), status=422)
+    return fail_resp(42201, "不支持的请求方法")
