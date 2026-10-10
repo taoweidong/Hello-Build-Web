@@ -2,12 +2,21 @@ import unittest
 from datetime import datetime
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.core.management import call_command
 from django.db import IntegrityError
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
-from .models import Branch, ExecutionRound, Strategy, StrategyTemplate, Version
+from .models import (
+    Branch,
+    ExecutionRound,
+    SecurityLog,
+    Strategy,
+    StrategyTemplate,
+    Version,
+)
 from .services import config as svc_config
 from .services import conflict, mutex, timeline
 
@@ -276,6 +285,18 @@ class StrategyApiTests(ConfigAwareTestCase):
         self.assertEqual(resp.status_code, 422)
         self.assertEqual(resp.json()["code"], 42201)
 
+    def test_create_out_of_range_time_422(self):
+        # 回归：曾放行 "99:99" 导致服务层抛 ValueError 500
+        self._auth(self.token)
+        for bad in ("99:99", "24:00", "22:75", "7:00"):
+            resp = self.client.post("/api/strategies", {
+                "branch_id": self.b1.id, "template_id": self.tmpl.id,
+                "name": f"bad-{bad}", "build_start_time": bad,
+                "push_mode": "normal", "enabled": True,
+            }, format="json")
+            self.assertEqual(resp.status_code, 422, msg=bad)
+            self.assertEqual(resp.json()["code"], 42201, msg=bad)
+
 
 class PlanApiTests(ConfigAwareTestCase):
     def setUp(self):
@@ -310,6 +331,41 @@ class PlanApiTests(ConfigAwareTestCase):
         self.assertEqual(st["push_start_time"], "20:00")
         self.assertIsNotNone(st["timeline"]["push"])
         self.assertEqual(st["timeline"]["build"]["start"], "2026-08-10T22:00:00")
+
+    def test_plan_default_date_is_today(self):
+        # 回归：曾默认魔法日期 "2026-08-10"，现在应为当天
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.token}")
+        Strategy.objects.create(
+            branch=self.b1, template=self.tmpl, name="s1", build_start_time="22:00",
+            push_mode="normal", created_by=self.pm,
+        )
+        resp = self.client.get("/api/plan")
+        self.assertEqual(resp.status_code, 200)
+        st = resp.json()["data"][0]["branches"][0]["strategies"][0]
+        today = timezone.localdate().strftime("%Y-%m-%d")
+        self.assertEqual(st["timeline"]["build"]["start"], f"{today}T22:00:00")
+
+    def test_plan_marks_conflicting_strategies(self):
+        # 阶段重叠的策略应双双向标红（数据经 ORM 直建绕过 API 层 40901 拦截）
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.token}")
+        Strategy.objects.create(branch=self.b1, template=self.tmpl, name="A",
+                                build_start_time="22:00", push_mode="normal", created_by=self.pm)
+        Strategy.objects.create(branch=self.b1, template=self.tmpl, name="B",
+                                build_start_time="22:30", push_mode="normal", created_by=self.pm)
+        resp = self.client.get("/api/plan", {"date": "2026-08-10"})
+        by_name = {s["name"]: s for s in resp.json()["data"][0]["branches"][0]["strategies"]}
+        self.assertTrue(by_name["A"]["conflict"])
+        self.assertTrue(by_name["B"]["conflict"])
+
+    def test_plan_no_conflict_marks_false(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.token}")
+        Strategy.objects.create(branch=self.b1, template=self.tmpl, name="早班",
+                                build_start_time="08:00", push_mode="normal", created_by=self.pm)
+        Strategy.objects.create(branch=self.b1, template=self.tmpl, name="晚班",
+                                build_start_time="22:00", push_mode="normal", created_by=self.pm)
+        resp = self.client.get("/api/plan", {"date": "2026-08-10"})
+        for s in resp.json()["data"][0]["branches"][0]["strategies"]:
+            self.assertFalse(s["conflict"], msg=s["name"])
 
 
 class WeeklyApiTests(ConfigAwareTestCase):
@@ -774,3 +830,152 @@ class ReportApiTests(ConfigAwareTestCase):
         resp = self.client.get("/api/reports")
         self.assertEqual(resp.status_code, 401)
         self.assertEqual(resp.json()["code"], 40100)
+
+class AdminTemplateApiTests(ConfigAwareTestCase):
+    """管理端模板 CRUD：GET 允许 admin+pm，写操作仅 admin；删除被引用模板拦截 40903。"""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.admin = User.objects.create_user(username="admin", password="123456", role="admin")
+        self.pm = User.objects.create_user(username="pm1", password="123456", role="pm")
+        self.version = Version.objects.create(name="27A", pm_user=self.pm, status="active")
+        self.branch = Branch.objects.create(version=self.version, name="master")
+        self.token = self._login("admin")
+
+    def _login(self, username):
+        resp = self.client.post("/api/auth/login", {"username": username, "password": "123456"}, format="json")
+        return resp.json()["data"]["token"]
+
+    def _auth(self, token):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+
+    def test_template_crud_flow(self):
+        self._auth(self.token)
+        resp = self.client.post("/api/admin/templates", {
+            "name": "晚间全量", "smoke_minutes": 480, "analysis_minutes": 120, "description": "d",
+        }, format="json")
+        self.assertEqual(resp.status_code, 200)
+        tid = resp.json()["data"]["id"]
+        # pm 可读不可写
+        self._auth(self._login("pm1"))
+        resp = self.client.get("/api/admin/templates")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(any(t["id"] == tid for t in resp.json()["data"]))
+        resp = self.client.post("/api/admin/templates", {"name": "pm-tpl"}, format="json")
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.json()["code"], 40301)
+        # admin 更新
+        self._auth(self.token)
+        resp = self.client.patch(f"/api/admin/templates/{tid}", {"name": "改名", "smoke_minutes": 90}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["data"]["name"], "改名")
+        self.assertEqual(resp.json()["data"]["smoke_minutes"], 90)
+        # admin 删除（无引用）
+        resp = self.client.delete(f"/api/admin/templates/{tid}")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(StrategyTemplate.objects.filter(id=tid).exists())
+
+    def test_delete_referenced_template_40903(self):
+        # 回归：曾误捕 IntegrityError，删除被 PROTECT 引用的模板实际抛 ProtectedError → 500
+        self._auth(self.token)
+        resp = self.client.post("/api/admin/templates", {"name": "被引用", "smoke_minutes": 60}, format="json")
+        tid = resp.json()["data"]["id"]
+        tmpl = StrategyTemplate.objects.get(id=tid)
+        strategy = Strategy.objects.create(
+            branch=self.branch, template=tmpl, name="s1",
+            build_start_time="22:00", push_mode="normal", created_by=self.pm,
+        )
+        resp = self.client.delete(f"/api/admin/templates/{tid}")
+        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.json()["code"], 40903)
+        self.assertIn("正在被策略引用", resp.json()["message"])
+        self.assertTrue(StrategyTemplate.objects.filter(id=tid).exists())
+        # 解除引用后可正常删除
+        strategy.delete()
+        resp = self.client.delete(f"/api/admin/templates/{tid}")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(StrategyTemplate.objects.filter(id=tid).exists())
+
+    def test_template_requires_auth(self):
+        resp = self.client.get("/api/admin/templates")
+        self.assertEqual(resp.status_code, 401)
+        self.assertEqual(resp.json()["code"], 40100)
+
+
+class LogoutTests(TestCase):
+    """登出拉黑：同 token 登出后立即失效，并记录带用户名的安全日志。"""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.pm = User.objects.create_user(username="pm1", password="123456", role="pm")
+
+    def _login(self):
+        resp = self.client.post("/api/auth/login", {"username": "pm1", "password": "123456"}, format="json")
+        return resp.json()["data"]["token"]
+
+    def test_logout_revokes_token(self):
+        token = self._login()
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+        self.assertEqual(self.client.get("/api/auth/me").status_code, 200)
+        resp = self.client.post("/api/auth/logout")
+        self.assertEqual(resp.status_code, 200)
+        # 同一 token 登出后立即失效
+        resp = self.client.get("/api/auth/me")
+        self.assertEqual(resp.status_code, 401)
+        self.assertEqual(resp.json()["code"], 40100)
+
+    def test_logout_writes_security_log_with_username(self):
+        # 回归：曾读 request.user（恒为 AnonymousUser）导致登出日志无用户名
+        token = self._login()
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+        self.client.post("/api/auth/logout")
+        log = SecurityLog.objects.filter(action="logout").latest("created_at")
+        self.assertEqual(log.username, "pm1")
+
+    def test_logout_without_token_still_ok(self):
+        resp = self.client.post("/api/auth/logout")
+        self.assertEqual(resp.status_code, 200)
+
+    def test_logout_with_garbage_token_still_ok(self):
+        self.client.credentials(HTTP_AUTHORIZATION="Bearer not.a.token")
+        resp = self.client.post("/api/auth/logout")
+        self.assertEqual(resp.status_code, 200)
+
+
+class LoginRateLimitTests(TestCase):
+    """登录防爆破：连续失败 5 次锁定 15 分钟（42901），成功登录清零。"""
+
+    def setUp(self):
+        self.client = APIClient()
+        User.objects.create_user(username="rl_pm", password="123456", role="pm")
+        cache.clear()
+
+    def tearDown(self):
+        # 失败计数存进程级 cache，用后清理避免污染其他用例
+        cache.clear()
+
+    def test_lockout_after_five_failures(self):
+        for _ in range(5):
+            resp = self.client.post("/api/auth/login", {"username": "rl_pm", "password": "bad"}, format="json")
+            self.assertEqual(resp.status_code, 401)
+        # 锁定后即使密码正确也拒绝
+        resp = self.client.post("/api/auth/login", {"username": "rl_pm", "password": "123456"}, format="json")
+        self.assertEqual(resp.status_code, 429)
+        self.assertEqual(resp.json()["code"], 42901)
+        self.assertTrue(SecurityLog.objects.filter(action="login_locked", username="rl_pm").exists())
+
+    def test_success_resets_counter(self):
+        for _ in range(4):
+            self.client.post("/api/auth/login", {"username": "rl_pm", "password": "bad"}, format="json")
+        resp = self.client.post("/api/auth/login", {"username": "rl_pm", "password": "123456"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        # 计数已清零：再失败一次不影响后续正常登录
+        self.client.post("/api/auth/login", {"username": "rl_pm", "password": "bad"}, format="json")
+        resp = self.client.post("/api/auth/login", {"username": "rl_pm", "password": "123456"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+
+    def test_missing_fields_422(self):
+        resp = self.client.post("/api/auth/login", {"username": ""}, format="json")
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["code"], 42201)

@@ -3,11 +3,20 @@
 有 push_start_time → 推送固定为 push_start_time ~ +push_minutes；
 空 → normal 模式推送为 null；sync 模式推送在构建前预留 sync_buffer。
 """
+import re
 from datetime import date, datetime, timedelta
 
 
 def parse_cd(ds: str) -> date:
     return datetime.strptime(ds, "%Y-%m-%d").date()
+
+
+def valid_hhmm(hhmm) -> bool:
+    """严格校验 HH:MM：小时 0-23、分钟 0-59，拦截 "99:99" 之类正则放行的非法值。"""
+    if not isinstance(hhmm, str) or not re.fullmatch(r"\d{2}:\d{2}", hhmm):
+        return False
+    h, m = hhmm.split(":")
+    return int(h) <= 23 and int(m) <= 59
 
 
 def parse_hhmm(base: date, hhmm: str) -> datetime:

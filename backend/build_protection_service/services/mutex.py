@@ -22,9 +22,13 @@ def find_overlaps(intervals):
 
 
 def check_build_mutex(version_id, build_start_time, build_min,
-                      exclude_strategy_id=None):
-    """校验同版本其它启用策略的构建阶段是否与目标构建区间重叠。返回命中列表。"""
+                      exclude_strategy_id=None, ds=None):
+    """校验同版本其它启用策略的构建阶段是否与目标构建区间重叠。返回命中列表。
+
+    ds 为基准日期（"YYYY-MM-DD"），缺省取当天；仅用于相对时间比较，不影响重叠结果。
+    """
     from django.conf import settings
+    from django.utils import timezone as dj_timezone
     from ..models import Strategy
     from .config import get_config
     from .timeline import build_timeline, parse_cd, parse_hhmm
@@ -33,7 +37,9 @@ def check_build_mutex(version_id, build_start_time, build_min,
     push_minutes = get_config("push_minutes", settings.PUSH_MINUTES)
     sync_buffer_minutes = get_config("sync_buffer_minutes", settings.SYNC_BUFFER_MINUTES)
 
-    base = parse_cd("2026-08-10")
+    if ds is None:
+        ds = dj_timezone.localdate().strftime("%Y-%m-%d")
+    base = parse_cd(ds)
     target_start = parse_hhmm(base, build_start_time)
     target_end = target_start + timedelta(minutes=build_min)
 
@@ -47,7 +53,7 @@ def check_build_mutex(version_id, build_start_time, build_min,
     for s in query:
         try:
             tl = build_timeline(
-                "2026-08-10", s.build_start_time,
+                ds, s.build_start_time,
                 s.template.smoke_minutes, s.template.analysis_minutes,
                 build_minutes, push_minutes,
                 sync_buffer_minutes, s.push_mode,

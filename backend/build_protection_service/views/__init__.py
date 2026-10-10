@@ -1,9 +1,13 @@
 """视图辅助：统一 JSON 响应 + 安全日志 + 共享解析/认证。"""
+import logging
+
 from django.contrib.auth import get_user_model
 from django.http import JsonResponse
 
 from ..api import err
 from ..models import SecurityLog
+
+logger = logging.getLogger(__name__)
 
 User = get_user_model()
 
@@ -12,11 +16,12 @@ def json_resp(payload, status=200):
     return JsonResponse(payload, status=status, json_dumps_params={"ensure_ascii": False})
 
 
-def security_log(action, username=""):
+def security_log(action, username="", detail=""):
+    """写安全日志；失败仅告警不阻断业务（审计旁路，不能影响主流程）。"""
     try:
-        SecurityLog.objects.create(username=username, action=action)
+        SecurityLog.objects.create(username=username or "", action=action, detail=detail or "")
     except Exception:
-        pass
+        logger.warning("安全日志写入失败：action=%s username=%s", action, username)
 
 
 def parse_body(request):

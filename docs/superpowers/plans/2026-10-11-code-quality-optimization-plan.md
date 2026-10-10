@@ -5,13 +5,13 @@
 
 ## 阶段 1：后端 P0（Bug/安全）
 
-- [ ] T1 修复 `delete_template` 捕获 `ProtectedError`（views/admin.py），补测试：删除被引用模板→40901、删除空闲模板→成功
-- [ ] T2 修复 HH:MM `"99:99"` → 42201（views/strategies.py 校验），补测试：越界小时/分钟
-- [ ] T3 settings 安全加固：DEBUG 默认 false、ALLOWED_HOSTS env 化、JWT_SIGNING_KEY 独立 env；`.env` 移出版本库 + 新增 `.env.example`
-- [ ] T4 logout 真拉黑：`RevokedToken` 模型 + `JWTAuthentication` 吊销检查 + `/auth/logout` 登记 + security_log 修 username/detail，补测试（登出后同 token 401、登出日志有用户名）
-- [ ] T5 登录失败限流（cache 5 次/15 分钟），补测试（第 6 次锁定、成功后清零）
-- [ ] T6 魔法日期治理：plan/preview 默认 `timezone.localdate()`、mutex 基准日参数化、plan.conflict 真实计算，补测试
-- [ ] T7 阶段回归：后端测试全绿，提交
+- [x] T1 修复 `delete_template` 捕获 `ProtectedError`（views/admin.py），补测试：删除被引用模板→40901、删除空闲模板→成功
+- [x] T2 修复 HH:MM `"99:99"` → 42201（views/strategies.py 校验），补测试：越界小时/分钟
+- [x] T3 settings 安全加固：DEBUG 默认 false、ALLOWED_HOSTS env 化、JWT_SIGNING_KEY 独立 env；`.env` 移出版本库 + 新增 `.env.example`
+- [x] T4 logout 真拉黑：`RevokedToken` 模型 + `JWTAuthentication` 吊销检查 + `/auth/logout` 登记 + security_log 修 username/detail，补测试（登出后同 token 401、登出日志有用户名）
+- [x] T5 登录失败限流（cache 5 次/15 分钟），补测试（第 6 次锁定、成功后清零）
+- [x] T6 魔法日期治理：plan/preview 默认 `timezone.localdate()`、mutex 基准日参数化、plan.conflict 真实计算，补测试
+- [x] T7 阶段回归：后端测试全绿，提交
 
 ## 阶段 2：后端 P1（规范化/补测试）
 

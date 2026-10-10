@@ -130,3 +130,13 @@ class SecurityLog(models.Model):
     action = models.CharField(max_length=100)
     detail = models.CharField(max_length=255, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class RevokedToken(models.Model):
+    """登出拉黑的访问令牌：jti 唯一；到期后自然失效，无需人工清理。"""
+    jti = models.CharField("令牌唯一标识", max_length=64, unique=True)
+    expires_at = models.DateTimeField("过期时间", null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return self.jti

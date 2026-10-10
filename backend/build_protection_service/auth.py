@@ -2,6 +2,8 @@
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken
 
+from .models import RevokedToken
+
 
 class JWTAuthentication(JWTAuthentication):
     def authenticate(self, request):
@@ -17,6 +19,10 @@ class JWTAuthentication(JWTAuthentication):
         try:
             validated = self.get_validated_token(raw_token)
         except InvalidToken:
+            return None
+        # 登出拉黑：jti 命中黑名单视为未认证（见 views/login.py logout_view）。
+        jti = validated.get("jti")
+        if jti and RevokedToken.objects.filter(jti=jti).exists():
             return None
         user = self.get_user(validated)
         if user is None or not user.is_active:

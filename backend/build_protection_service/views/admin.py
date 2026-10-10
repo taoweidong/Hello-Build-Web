@@ -2,6 +2,7 @@
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
+from django.db.models import ProtectedError
 
 from ..api import err, ok
 from ..models import AdminOpLog, Branch, SecurityLog, Strategy, StrategyTemplate, Version
@@ -275,8 +276,9 @@ def delete_template(request, user, tid):
         return notfound
     try:
         t.delete()
-    except IntegrityError:
-        return json_resp(err(40901, "模板正在被策略引用，无法删除"), status=409)
+    except ProtectedError:
+        # Strategy.template 为 PROTECT，被引用时抛 ProtectedError 而非 IntegrityError
+        return json_resp(err(40903, "模板正在被策略引用，无法删除"), status=409)
     _admin_log(user, "delete_template", target_type="template", target_id=tid)
     return json_resp(ok())
 

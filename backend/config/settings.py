@@ -9,8 +9,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-only-insecure-secret-key-do-not-use-in-production-0123456789abcdef")
-DEBUG = os.getenv("DEBUG", "true").lower() in ("1", "true", "yes")
-ALLOWED_HOSTS = ["*"]
+# 安全默认值：DEBUG 与 CORS 默认关闭/收紧，本地开发通过 backend/.env 打开（见 .env.example）。
+DEBUG = os.getenv("DEBUG", "false").lower() in ("1", "true", "yes")
+ALLOWED_HOSTS = [h.strip() for h in os.getenv("ALLOWED_HOSTS", "*").split(",") if h.strip()]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -98,10 +99,19 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
     "ALGORITHM": "HS256",
-    "SIGNING_KEY": SECRET_KEY,
+    # JWT 签名密钥独立于 SECRET_KEY；未配置时回退 SECRET_KEY（生产必须单独设置）。
+    "SIGNING_KEY": os.getenv("JWT_SIGNING_KEY", SECRET_KEY),
 }
 
-CORS_ALLOW_ALL_ORIGINS = True
+# 前后端直连：默认白名单放行本地开发端口；需要全开时设 CORS_ALLOW_ALL_ORIGINS=true，
+# 生产通过 CORS_ALLOWED_ORIGINS 配置实际来源。
+CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL_ORIGINS", "false").lower() in ("1", "true", "yes")
+CORS_ALLOWED_ORIGINS = [
+    o.strip() for o in os.getenv(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:8848,http://127.0.0.1:8848",
+    ).split(",") if o.strip()
+]
 
 # ---- 日志：业务日志输出到控制台（含发布模拟推送等联调用途日志）----
 LOGGING = {

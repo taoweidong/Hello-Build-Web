@@ -1,14 +1,13 @@
 """策略 views：列表/预览/创建/更新/启停/删除，含互斥与阶段冲突校验。"""
-import re
-
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 
 from ..api import err, ok
 from ..models import Branch, Strategy, StrategyChangeLog, StrategyTemplate
 from ..services.config import get_config
 from ..services.mutex import check_build_mutex
-from ..services.timeline import build_timeline
+from ..services.timeline import build_timeline, valid_hhmm
 from . import authed_user, json_resp, parse_body
 
 User = get_user_model()
@@ -56,16 +55,19 @@ class SimpleNamespaceTpl:
         self.analysis_minutes = analysis
 
 
-def _validate(branch, template, build_start_time, push_start_time, push_mode="normal", exclude_id=None):
+def _validate(branch, template, build_start_time, push_start_time,
+              push_mode="normal", exclude_id=None, ds=None):
     """互斥 + 阶段冲突校验，返回 (err_dict_or_None, conflict_dict_or_None)。"""
     for field, val in (("build_start_time", build_start_time), ("push_start_time", push_start_time)):
-        if val is not None and not re.fullmatch(r"\d{2}:\d{2}", val):
-            return {"code": 42201, "message": f"{field} 格式应为 HH:MM", "status": 422}, None
+        if val is not None and not valid_hhmm(val):
+            return {"code": 42201, "message": f"{field} 格式应为 HH:MM（0-23 时 0-59 分）", "status": 422}, None
     version_id = branch.version_id
     build_minutes = get_config("build_minutes", settings.BUILD_MINUTES)
     push_minutes = get_config("push_minutes", settings.PUSH_MINUTES)
     sync_buffer_minutes = get_config("sync_buffer_minutes", settings.SYNC_BUFFER_MINUTES)
-    mutex_hits = check_build_mutex(version_id, build_start_time, build_minutes, exclude_id)
+    if ds is None:
+        ds = timezone.localdate().strftime("%Y-%m-%d")
+    mutex_hits = check_build_mutex(version_id, build_start_time, build_minutes, exclude_id, ds=ds)
     if mutex_hits:
         return ({"code": 40902, "message": "同一时间节点仅允许一个分支构建（资源互斥）", "status": 409},
                 {"mutex": mutex_hits})
@@ -87,7 +89,7 @@ def _validate(branch, template, build_start_time, push_start_time, push_mode="no
         "push_start_time": push_start_time,
     }]
     from ..services.conflict import detect_conflicts
-    hits = detect_conflicts("2026-08-10", cand, existing, build_minutes,
+    hits = detect_conflicts(ds, cand, existing, build_minutes,
                             push_minutes, sync_buffer_minutes)
     if hits:
         return ({"code": 40901, "message": "阶段时间冲突，请调整构建时间", "status": 409},
@@ -133,12 +135,13 @@ def preview_strategy(request):
     if err_resp:
         conflict_obj = conflict_obj or {}
         return json_resp(ok({"conflict": {**err_resp, **conflict_obj}}))
-    # 计算时间线供前端实时预览（与 _validate 同一基准日期）
+    # 计算时间线供前端实时预览（与 _validate 同一基准日期：当天）
     build_minutes = get_config("build_minutes", settings.BUILD_MINUTES)
     push_minutes = get_config("push_minutes", settings.PUSH_MINUTES)
     sync_buffer_minutes = get_config("sync_buffer_minutes", settings.SYNC_BUFFER_MINUTES)
     timeline = build_timeline(
-        "2026-08-10", build_start_time, template.smoke_minutes, template.analysis_minutes,
+        timezone.localdate().strftime("%Y-%m-%d"),
+        build_start_time, template.smoke_minutes, template.analysis_minutes,
         build_minutes, push_minutes, sync_buffer_minutes, push_mode, push_start_time)
     return json_resp(ok({"conflict": None, "timeline": timeline}))
 
