@@ -1,9 +1,12 @@
-"""种子数据：admin 超管 + 演示用户/版本/分支/模板/策略。"""
+"""种子数据：admin 超管 + 演示用户/版本/分支/模板/策略 + 时段抢占演示。"""
+from datetime import date, timedelta
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
+from django.utils import timezone
 
-from ...models import Branch, Strategy, StrategyTemplate, Version
+from ...models import Branch, SlotBooking, SlotTemplate, Strategy, StrategyTemplate, Version
 
 User = get_user_model()
 
@@ -49,4 +52,47 @@ class Command(BaseCommand):
                                     build_start_time="22:30", push_start_time="20:00",
                                     push_mode="normal", created_by=pm27b)
 
+        # ---- 时段抢占演示（守卫锚点：模板名「上午窗口」存在即已种过）----
+        if not SlotTemplate.objects.filter(name="上午窗口").exists():
+            SlotTemplate.objects.create(
+                name="上午窗口", start_time="08:00", end_time="12:00",
+                weekdays="1,2,3,4,5", color="#67c23a", sort_order=1,
+            )
+            SlotTemplate.objects.create(
+                name="下午窗口", start_time="14:00", end_time="18:00",
+                weekdays="1,2,3,4,5", color="#409eff", sort_order=2,
+            )
+            SlotTemplate.objects.create(
+                name="夜间回归", start_time="19:00", end_time="22:00",
+                color="#e6a23c", sort_order=3,
+            )
+            self._seed_slot_bookings()
+
         self.stdout.write(self.style.SUCCESS("种子数据创建完成"))
+
+    def _seed_slot_bookings(self):
+        """为本月起 3 个工作日各抢占上午/下午窗口各一段，供月历页演示。"""
+        version = Version.objects.filter(name="27A").first()
+        branch = Branch.objects.filter(version=version, name="master").first()
+        user = User.objects.filter(username="pm27a").first()
+        morning = SlotTemplate.objects.filter(name="上午窗口").first()
+        afternoon = SlotTemplate.objects.filter(name="下午窗口").first()
+        if not all([version, branch, user, morning, afternoon]):
+            return
+        today = timezone.localdate()
+        first = today.replace(day=1)
+        booked = 0
+        d = first
+        while d <= today + timedelta(days=7) and booked < 3:
+            if d.isoweekday() <= 5 and d > today:
+                for tpl, purpose in ((morning, "27A master 每日构建窗口"), (afternoon, "27A 防护网冒烟窗口")):
+                    SlotBooking.objects.get_or_create(
+                        date=d, template=tpl, status="reserved",
+                        defaults={
+                            "start_snapshot": tpl.start_time, "end_snapshot": tpl.end_time,
+                            "user": user, "purpose": purpose,
+                            "version": version, "branch": branch,
+                        },
+                    )
+                booked += 1
+            d += timedelta(days=1)
