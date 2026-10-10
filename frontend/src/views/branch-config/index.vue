@@ -384,12 +384,6 @@ const permForm = reactive<{ user_id: number | undefined; role: BranchRole }>({
 
 const grantedUserIds = computed(() => (config.value?.permissions ?? []).map(p => p.user_id));
 
-async function openPermDialog() {
-  permForm.user_id = undefined;
-  permForm.role = "OPERATOR";
-  permDialogVisible.value = true;
-}
-
 async function savePermission() {
   if (!selectedId.value || !permForm.user_id) {
     ElMessage.warning("请选择用户");

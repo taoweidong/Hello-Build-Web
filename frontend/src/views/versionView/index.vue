@@ -7,10 +7,9 @@ import { getExecutions } from "@/api/panorama";
 import type { RoundItem } from "@/api/types";
 import { dayjs, formatTime } from "@/utils/business";
 import GanttGanttastic from "@/components/gantt/GanttGanttastic.vue";
-import {
-  STAGE_COLORS,
-  type GanttRow
-} from "@/components/gantt/types";
+import { STAGE_COLORS, type GanttRow } from "@/components/gantt/types";
+import { useGanttRows } from "@/composables/useGanttRows";
+import { roundConclusionMeta, pushStatusMeta } from "@/views/constants";
 // 点击色块时携带的 bar 信息
 import type { GanttBarObject } from "@infectoone/vue-ganttastic";
 
@@ -25,90 +24,7 @@ const filter = reactive({
 
 // ---- 数据 ----
 const planData = ref<PlanVersion[]>([]);
-const rows = ref<GanttRow[]>([]);
-const range = reactive({ start: new Date(), end: new Date() });
-
-/** 把 plan 数据展开为甘特行：每个「版本+分支」为一行，该分支下所有策略的色块绘制在同一行 */
-function buildRows(data: PlanVersion[]) {
-  const result: GanttRow[] = [];
-  data.forEach(v => {
-    v.branches.forEach(b => {
-      const phases: GanttRow["phases"] = [];
-      b.strategies.forEach(s => {
-        const tl = s.timeline;
-        if (!tl) return;
-        if (tl.push) {
-          phases.push({
-            key: `${s.id}-push`,
-            stage: "push",
-            start: tl.push.start,
-            end: tl.push.end,
-            conflict: !!s.conflict
-          });
-        }
-        phases.push(
-          {
-            key: `${s.id}-build`,
-            stage: "build",
-            start: tl.build.start,
-            end: tl.build.end,
-            conflict: !!s.conflict
-          },
-          {
-            key: `${s.id}-smoke`,
-            stage: "smoke",
-            start: tl.smoke.start,
-            end: tl.smoke.end,
-            conflict: !!s.conflict
-          },
-          {
-            key: `${s.id}-analysis`,
-            stage: "analysis",
-            start: tl.analysis.start,
-            end: tl.analysis.end,
-            conflict: !!s.conflict
-          }
-        );
-      });
-      result.push({
-        id: `b-${b.branch_id}`,
-        label: `${v.version_name} / ${b.branch_name}`,
-        type: "strategy",
-        phases
-      });
-    });
-  });
-  return result;
-}
-
-/** 根据数据计算时间轴范围（跨天连续） */
-function computeRange(data: PlanVersion[]) {
-  let min = Infinity;
-  let max = -Infinity;
-  data.forEach(v =>
-    v.branches.forEach(b =>
-      b.strategies.forEach(s => {
-        const tl = s.timeline;
-        if (!tl) return;
-        const all = [tl.push, tl.build, tl.smoke, tl.analysis].filter(Boolean);
-        all.forEach(p => {
-          min = Math.min(min, new Date(p.start).getTime());
-          max = Math.max(max, new Date(p.end).getTime());
-        });
-      })
-    )
-  );
-  if (min === Infinity || max === -Infinity) {
-    const d = dayjs(filter.date).startOf("day");
-    min = d.subtract(6, "hour").valueOf();
-    max = d.add(12, "hour").valueOf();
-  } else {
-    min = Math.floor((min - 2 * 3600 * 1000) / 3600000) * 3600000;
-    max = Math.ceil((max + 2 * 3600 * 1000) / 3600000) * 3600000;
-  }
-  range.start = new Date(min);
-  range.end = new Date(max);
-}
+const { rows, range, buildRows, computeRange } = useGanttRows();
 
 async function load() {
   loading.value = true;
@@ -116,7 +32,7 @@ async function load() {
     const data = await getPlan({ date: filter.date });
     planData.value = data;
     rows.value = buildRows(data);
-    computeRange(data);
+    computeRange(data, filter.date);
   } finally {
     loading.value = false;
   }
@@ -154,19 +70,6 @@ async function onRowClick(row: GanttRow, bar: GanttBarObject) {
 }
 
 // ---- 展示辅助 ----
-const pushStatusMap: Record<string, string> = {
-  pending: "待推送",
-  running: "推送中",
-  success: "成功",
-  failed: "失败",
-  skipped: "跳过"
-};
-const conclusionMap: Record<string, string> = {
-  pending: "待录",
-  pass: "通过",
-  fail: "不通过"
-};
-
 const legend = [
   { label: "构建", color: STAGE_COLORS.build },
   { label: "冒烟", color: STAGE_COLORS.smoke },
@@ -256,17 +159,14 @@ onMounted(load);
         </el-table-column>
         <el-table-column label="结论" width="90">
           <template #default="{ row }">
-            <el-tag
-              :type="row.conclusion === 'pass' ? 'success' : row.conclusion === 'fail' ? 'danger' : 'info'"
-              size="small"
-            >
-              {{ conclusionMap[row.conclusion] }}
+            <el-tag :type="roundConclusionMeta(row.conclusion).type" size="small">
+              {{ roundConclusionMeta(row.conclusion).text }}
             </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="推送" width="90">
           <template #default="{ row }">
-            {{ pushStatusMap[row.push_status] || row.push_status }}
+            {{ pushStatusMeta(row.push_status).text }}
           </template>
         </el-table-column>
       </el-table>

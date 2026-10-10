@@ -40,18 +40,4 @@ export function formatTime(
   return dayjs(parseTime(value)).format(fmt);
 }
 
-/** 计算某日期当天 00:00 对应的 Date */
-export function dayStart(date: string | Date): Date {
-  return dayjs(date).startOf("day").toDate();
-}
-
-/** 阶段状态徽标类型映射 */
-export const stageStatusTypeMap: Record<string, string> = {
-  pending: "info",
-  running: "primary",
-  success: "success",
-  failed: "danger",
-  skipped: "warning"
-};
-
 export { dayjs };

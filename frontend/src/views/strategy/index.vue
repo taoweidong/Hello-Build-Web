@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 // 策略配置页（仅 PM，仅本版本分支）
 // 设计文档 8.5：表单 + 时间线实时预览 preview 接口 + 冲突不可保存
 import { ref, reactive, computed, watch, onMounted } from "vue";
@@ -7,13 +7,12 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import http from "@/api/http";
 import {
   getStrategies,
-  previewStrategy,
   createStrategy,
   updateStrategy,
   toggleStrategy,
-  type StrategyForm,
-  type PreviewResult
+  type StrategyForm
 } from "@/api/strategy";
+import { useStrategyPreview } from "@/composables/useStrategyPreview";
 import { getPlan } from "@/api/plan";
 import type { StrategyItem, TemplateItem } from "@/api/types";
 import { getCurrentUser, dayjs } from "@/utils/business";
@@ -34,7 +33,6 @@ const loading = ref(false);
 const strategyList = ref<StrategyItem[]>([]);
 const branchOptions = ref<Array<{ id: number; name: string }>>([]);
 const templateOptions = ref<TemplateItem[]>([]);
-const preview = ref<PreviewResult | null>(null);
 
 // 默认策略名称前缀
 function defaultName(branchName: string, templateName: string) {
@@ -53,6 +51,10 @@ const form = reactive<StrategyForm>({
 });
 const editingId = ref<number | null>(null);
 const isEditing = computed(() => editingId.value !== null);
+
+// ---- 实时预览（防抖 + 过期响应守卫，composable 共用实现）----
+const { preview, schedule: schedulePreview, reset: resetPreview } =
+  useStrategyPreview(() => (form.branch_id && form.template_id ? form : null));
 
 // 切换分支/模板时自动生成默认名称（若名称未手工修改）
 function onBranchTemplateChange() {
@@ -104,29 +106,6 @@ async function loadMeta() {
   }
 }
 
-// ---- 实时预览（防抖）----
-let previewTimer: ReturnType<typeof setTimeout> | null = null;
-let previewSeq = 0;
-function schedulePreview() {
-  if (!form.branch_id || !form.template_id || !form.build_start_time) return;
-  if (previewTimer) clearTimeout(previewTimer);
-  previewTimer = setTimeout(runPreview, 400);
-}
-async function runPreview() {
-  const cur = ++previewSeq;
-  try {
-    const res = await previewStrategy({
-      ...form,
-      build_start_time: form.build_start_time,
-      push_start_time: form.push_start_time || null
-    });
-    if (cur !== previewSeq) return; // 过期响应丢弃
-    preview.value = res;
-  } catch {
-    if (cur !== previewSeq) return;
-    preview.value = null;
-  }
-}
 watch(
   () => [form.branch_id, form.template_id, form.build_start_time, form.push_mode, form.push_start_time],
   schedulePreview
@@ -186,10 +165,17 @@ async function onSave() {
   startNew();
 }
 
-// ---- 启停 ----
+// ---- 启停（失败后由 load 回滚 UI，不保留乐观状态）----
+const togglingId = ref<number | null>(null);
 async function onToggle(s: StrategyItem) {
-  await toggleStrategy(s.id, s.enabled);
-  ElMessage.success(s.enabled ? "策略已启用" : "策略已停用");
+  togglingId.value = s.id;
+  try {
+    await toggleStrategy(s.id, s.enabled);
+    ElMessage.success(s.enabled ? "策略已启用" : "策略已停用");
+  } finally {
+    togglingId.value = null;
+    await load();
+  }
 }
 
 // ---- 时间线预览渲染 ----
@@ -262,7 +248,11 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column label="启用" width="90">
           <template #default="{ row }">
-            <el-switch v-model="row.enabled" @change="onToggle(row as StrategyItem)" />
+            <el-switch
+              :model-value="row.enabled"
+              :loading="togglingId === row.id"
+              @change="onToggle(row as StrategyItem)"
+            />
           </template>
         </el-table-column>
         <el-table-column label="操作" width="90">

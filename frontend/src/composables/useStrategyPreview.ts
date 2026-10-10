@@ -1,0 +1,55 @@
+// 策略表单实时预览：防抖 + 过期响应守卫（strategy 页与 admin 弹窗两入口共用）
+import { onScopeDispose, shallowRef } from "vue";
+import {
+  previewStrategy,
+  type PreviewResult,
+  type StrategyForm
+} from "@/api/strategy";
+
+export function useStrategyPreview(
+  getForm: () => StrategyForm | null,
+  debounceMs = 400
+) {
+  const preview = shallowRef<PreviewResult | null>(null);
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let seq = 0;
+
+  /** 表单变化后调度防抖预览；分支/模板/时间未选齐时跳过 */
+  function schedule() {
+    const form = getForm();
+    if (!form?.branch_id || !form?.template_id || !form?.build_start_time) return;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(run, debounceMs);
+  }
+
+  async function run() {
+    const form = getForm();
+    if (!form?.branch_id || !form?.template_id) return;
+    const cur = ++seq;
+    try {
+      const res = await previewStrategy({
+        ...form,
+        push_start_time: form.push_start_time || null
+      });
+      if (cur !== seq) return; // 过期响应丢弃
+      preview.value = res;
+    } catch {
+      if (cur !== seq) return;
+      preview.value = null;
+    }
+  }
+
+  /** 清空预览并作废在途响应（关闭弹窗/切换编辑对象时调用） */
+  function reset() {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    seq++;
+    preview.value = null;
+  }
+
+  onScopeDispose(() => {
+    if (timer) clearTimeout(timer);
+  });
+
+  return { preview, schedule, run, reset };
+}

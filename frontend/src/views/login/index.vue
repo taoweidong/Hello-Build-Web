@@ -37,8 +37,9 @@ dataThemeChange(overallStyle.value);
 const { title } = useNav();
 
 const ruleForm = reactive({
-  username: "admin",
-  password: "123456"
+  // 仅开发环境预填演示账号，生产构建不携带默认口令
+  username: import.meta.env.DEV ? "admin" : "",
+  password: import.meta.env.DEV ? "123456" : ""
 });
 
 const onLogin = async (formEl: FormInstance | undefined) => {

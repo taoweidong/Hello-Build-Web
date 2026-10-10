@@ -35,11 +35,11 @@
 
 ## 阶段 4：前端收敛与清理
 
-- [ ] T22 `views/constants.ts` 统一 conclusionMap/pushStatusMap 等；5 处/4 处复制点替换
-- [ ] T23 `composables/useStrategyPreview.ts` 与 `useGanttRows.ts`；plan/versionView/strategy/admin 接入；panorama.ts 改 re-export
-- [ ] T24 安全与细节：mock enableProd 关闭；登录预填仅 DEV；el-switch 失败回滚；BOM 清理；错别字；execution 轮询可见性暂停
-- [ ] T25 死代码清理：GanttChart.vue、business.ts 死函数、openPermDialog；welcome 页业务化
-- [ ] T26 composables 单测；阶段回归全绿，提交
+- [x] T22 `views/constants.ts` 统一 conclusionMap/pushStatusMap 等；5 处/4 处复制点替换
+- [x] T23 `composables/useStrategyPreview.ts` 与 `useGanttRows.ts`；plan/versionView/strategy/admin 接入；panorama.ts 改 re-export
+- [x] T24 安全与细节：mock enableProd 关闭；登录预填仅 DEV；el-switch 失败回滚；BOM 清理；错别字；execution 轮询可见性暂停
+- [x] T25 死代码清理：GanttChart.vue、business.ts 死函数、openPermDialog；welcome 页业务化
+- [x] T26 composables 单测；阶段回归全绿，提交
 
 ## 阶段 5：大文件拆分
 

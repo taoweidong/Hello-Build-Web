@@ -5,18 +5,11 @@ import { ref, reactive, computed, watch, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { getPlan, type PlanVersion } from "@/api/plan";
 import { getExecutions } from "@/api/panorama";
-import {
-  getCurrentUser,
-  timeToMs,
-  dayjs,
-  formatTime
-} from "@/utils/business";
+import { getCurrentUser, dayjs, formatTime } from "@/utils/business";
 import GanttGanttastic from "@/components/gantt/GanttGanttastic.vue";
-import {
-  STAGE_COLORS,
-  type GanttRow,
-  type GanttPhase
-} from "@/components/gantt/types";
+import { STAGE_COLORS, type GanttRow } from "@/components/gantt/types";
+import { useGanttRows } from "@/composables/useGanttRows";
+import { roundConclusionMeta, pushStatusMeta } from "@/views/constants";
 // 点击色块时携带的 bar 信息
 import type { GanttBarObject } from "@infectoone/vue-ganttastic";
 
@@ -43,8 +36,7 @@ const branchOptions = computed(() => {
 
 // ---- 数据 ----
 const planData = ref<PlanVersion[]>([]);
-const rows = ref<GanttRow[]>([]);
-const range = reactive({ start: new Date(), end: new Date() });
+const { rows, range, buildRows, computeRange } = useGanttRows();
 // 点击选中的策略详情（点击色块展示）
 const selectedStrategy = ref<import("@/api/plan").PlanStrategy | null>(null);
 const selectedStrategyName = ref("");
@@ -60,99 +52,6 @@ function onVersionChange() {
 }
 function onBranchChange() {
   load();
-}
-
-/** 把 plan 数据展开为甘特行：每个「版本+分支」为一行，该分支下所有策略的色块绘制在同一行 */
-function buildRows(data: PlanVersion[]) {
-  const result: GanttRow[] = [];
-  data.forEach(v => {
-    v.branches.forEach(b => {
-      const phases: GanttPhase[] = [];
-      b.strategies.forEach(s => {
-        const tl = s.timeline;
-        if (tl) {
-          if (tl.push) {
-            phases.push({
-              key: `${s.id}-push`,
-              stage: "push",
-              start: tl.push.start,
-              end: tl.push.end,
-              conflict: false, // 推送可重叠，不参与互斥标红
-              versionName: v.version_name,
-              strategyName: s.name
-            });
-          }
-          phases.push(
-            {
-              key: `${s.id}-build`,
-              stage: "build",
-              start: tl.build.start,
-              end: tl.build.end,
-              conflict: !!s.conflict,
-              versionName: v.version_name,
-              strategyName: s.name
-            },
-            {
-              key: `${s.id}-smoke`,
-              stage: "smoke",
-              start: tl.smoke.start,
-              end: tl.smoke.end,
-              conflict: !!s.conflict,
-              versionName: v.version_name,
-              strategyName: s.name
-            },
-            {
-              key: `${s.id}-analysis`,
-              stage: "analysis",
-              start: tl.analysis.start,
-              end: tl.analysis.end,
-              conflict: !!s.conflict,
-              versionName: v.version_name,
-              strategyName: s.name
-            }
-          );
-        }
-      });
-      result.push({
-        id: `b-${b.branch_id}`,
-        label: `${v.version_name} / ${b.branch_name}`,
-        type: "strategy",
-        phases
-      });
-    });
-  });
-  return result;
-}
-
-/** 根据数据计算时间轴范围（跨天连续） */
-function computeRange(data: PlanVersion[]) {
-  let min = Infinity;
-  let max = -Infinity;
-  data.forEach(v =>
-    v.branches.forEach(b =>
-      b.strategies.forEach(s => {
-        const tl = s.timeline;
-        if (!tl) return;
-        const all = [tl.push, tl.build, tl.smoke, tl.analysis].filter(Boolean);
-        all.forEach(p => {
-          min = Math.min(min, timeToMs(p.start));
-          max = Math.max(max, timeToMs(p.end));
-        });
-      })
-    )
-  );
-  if (min === Infinity || max === -Infinity) {
-    // 无数据：默认当日 18:00 → 次日 12:00
-    const d = dayjs(filter.date).startOf("day");
-    min = d.subtract(6, "hour").valueOf();
-    max = d.add(12, "hour").valueOf();
-  } else {
-    // 上下各留 2 小时缓冲并按小时取整
-    min = Math.floor((min - 2 * 3600 * 1000) / 3600000) * 3600000;
-    max = Math.ceil((max + 2 * 3600 * 1000) / 3600000) * 3600000;
-  }
-  range.start = new Date(min);
-  range.end = new Date(max);
 }
 
 async function load() {
@@ -182,7 +81,7 @@ async function load() {
       }));
     }
     rows.value = buildRows(data);
-    computeRange(data);
+    computeRange(data, filter.date);
   } finally {
     loading.value = false;
   }
@@ -255,21 +154,6 @@ const legend = [
   { label: "人工分析", color: STAGE_COLORS.analysis },
   { label: "推送", color: STAGE_COLORS.push }
 ];
-
-/** 结论文本与 tag 类型映射（参考 panorama/versionView 的 conclusionMap） */
-const conclusionMap: Record<string, { text: string; type: "success" | "danger" | "info" }> = {
-  pass: { text: "通过", type: "success" },
-  fail: { text: "不通过", type: "danger" },
-  pending: { text: "待录", type: "info" }
-};
-
-const pushStatusMap: Record<string, string> = {
-  pending: "待推送",
-  running: "推送中",
-  success: "成功",
-  failed: "失败",
-  skipped: "跳过"
-};
 
 /** 详情面板时间线（对空 push 容错） */
 const detailPhases = computed(() => {
@@ -395,13 +279,13 @@ onMounted(load);
         <el-table-column prop="exec_date" label="日期" width="110" />
         <el-table-column label="结论" width="90">
           <template #default="{ row }">
-            <el-tag :type="(conclusionMap[row.conclusion] || conclusionMap.pending).type" size="small">
-              {{ (conclusionMap[row.conclusion] || conclusionMap.pending).text }}
+            <el-tag :type="roundConclusionMeta(row.conclusion).type" size="small">
+              {{ roundConclusionMeta(row.conclusion).text }}
             </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="推送" width="90">
-          <template #default="{ row }">{{ pushStatusMap[row.push_status] || row.push_status }}</template>
+          <template #default="{ row }">{{ pushStatusMeta(row.push_status).text }}</template>
         </el-table-column>
         <el-table-column prop="conclusion_note" label="备注" min-width="140">
           <template #default="{ row }">{{ row.conclusion_note || "-" }}</template>

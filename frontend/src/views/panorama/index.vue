@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 // 策略全景页（全角色只读）
 // 设计文档 8.4：版本→分支级联筛选、策略卡片网格、点击联动执行历史表格、行展开日志抽屉
 import { ref, reactive, computed, onMounted } from "vue";
@@ -209,7 +209,7 @@ onMounted(loadStrategies);
     <!-- ② 执行实践全景区 -->
     <div class="section">
       <div class="section-title">
-        执行实践全文区
+        执行实践全景区
         <span v-if="selectedStrategy" class="section-sub">
           —— {{ selectedStrategy.name }}
         </span>

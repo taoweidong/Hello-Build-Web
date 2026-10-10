@@ -1,9 +1,15 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 // 日志中心：执行日志 / 变更日志 / 管理操作（仅 admin）/ 登录安全（仅 admin）
 // 设计文档 8.7：统一表格 + 时间范围筛选，Tab 按角色裁剪
 import { ref, reactive, onMounted } from "vue";
 import { logsApi } from "@/api/logs";
 import { getPlan } from "@/api/plan";
+import type {
+  AdminOpLogItem,
+  ChangeLogItem,
+  ExecutionLogItem,
+  SecurityLogItem
+} from "@/api/types";
 import { getCurrentUser, dayjs, formatTime } from "@/utils/business";
 
 defineOptions({ name: "LogsIndex" });
@@ -31,10 +37,10 @@ const versionOptions = ref<Array<{ id: number; name: string; branches: Array<{ i
 const branchOptions = ref<Array<{ id: number; name: string }>>([]);
 
 // ---- 数据 ----
-const execLogs = ref([]);
-const changeLogs = ref([]);
-const opLogs = ref([]);
-const securityLogs = ref([]);
+const execLogs = ref<ExecutionLogItem[]>([]);
+const changeLogs = ref<ChangeLogItem[]>([]);
+const opLogs = ref<AdminOpLogItem[]>([]);
+const securityLogs = ref<SecurityLogItem[]>([]);
 const loading = ref(false);
 
 async function loadVersionOptions() {

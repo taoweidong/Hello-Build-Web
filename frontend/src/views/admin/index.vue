@@ -1,11 +1,10 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 // 系统管理页（仅管理员）
 // 设计文档 8.6：版本分支 / 用户管理 / 策略模板 / 关键配置 / 策略配置 五个 Tab（含策略配置）
-import { ref, reactive, computed, onMounted, onUnmounted } from "vue";
+import { ref, reactive, computed, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { adminApi } from "@/api/admin";
-import { previewStrategy } from "@/api/strategy";
-import type { PreviewResult } from "@/api/strategy";
+import { useStrategyPreview } from "@/composables/useStrategyPreview";
 import type {
   VersionItem,
   UserInfo,
@@ -273,8 +272,16 @@ const adminStrategyForm = reactive({
   enabled: true
 });
 const adminEditingId = ref<number | null>(null);
-const adminPreview = ref<PreviewResult | null>(null);
 const adminDialogVersionId = ref<number | undefined>(undefined);
+
+// 弹窗策略预览（防抖 + 过期守卫，与 PM 策略页共用实现）
+const {
+  preview: adminPreview,
+  schedule: scheduleAdminPreview,
+  reset: resetAdminPreview
+} = useStrategyPreview(() =>
+  adminStrategyForm.branch_id && adminStrategyForm.template_id ? adminStrategyForm : null
+);
 
 /** 弹窗分支选项：基于弹窗内所选版本 */
 const adminBranchOptions = computed(() => {
@@ -311,7 +318,7 @@ function onAdminVersionChange() {
 
 function openAdminStrategy(s?: StrategyItem) {
   adminStrategyDialog.value = true;
-  adminPreview.value = null;
+  resetAdminPreview();
   if (s) {
     adminDialogVersionId.value = s.version_id;
     adminEditingId.value = s.id;
@@ -334,33 +341,6 @@ function openAdminStrategy(s?: StrategyItem) {
     adminStrategyForm.enabled = true;
   }
   scheduleAdminPreview();
-}
-
-let adminPreviewTimer: ReturnType<typeof setTimeout> | null = null;
-let adminPreviewSeq = 0;
-function scheduleAdminPreview() {
-  if (adminPreviewTimer) clearTimeout(adminPreviewTimer);
-  adminPreviewTimer = setTimeout(runAdminPreview, 400);
-}
-async function runAdminPreview() {
-  if (!adminStrategyForm.branch_id || !adminStrategyForm.template_id) return;
-  const cur = ++adminPreviewSeq;
-  try {
-    const res = await previewStrategy({
-      branch_id: adminStrategyForm.branch_id,
-      template_id: adminStrategyForm.template_id,
-      name: adminStrategyForm.name,
-      build_start_time: adminStrategyForm.build_start_time,
-      push_start_time: adminStrategyForm.push_start_time || null,
-      push_mode: adminStrategyForm.push_mode,
-      enabled: adminStrategyForm.enabled
-    });
-    if (cur !== adminPreviewSeq) return; // 过期响应丢弃
-    adminPreview.value = res;
-  } catch {
-    if (cur !== adminPreviewSeq) return;
-    adminPreview.value = null;
-  }
 }
 
 async function saveAdminStrategy() {
@@ -395,10 +375,17 @@ async function saveAdminStrategy() {
 }
 
 // 注意：adminApi.toggleAdminStrategy 是无参翻转语义（后端翻转 enabled），切不可传 enabled 参数
+// 开关用 :model-value 受控 + finally 重载列表，失败不残留乐观状态
+const togglingStrategyId = ref<number | null>(null);
 async function toggleAdminStrategy(s: StrategyItem) {
-  await adminApi.toggleAdminStrategy(s.id);
-  ElMessage.success(s.enabled ? "策略已启用" : "策略已停用");
-  loadAdminStrategies();
+  togglingStrategyId.value = s.id;
+  try {
+    await adminApi.toggleAdminStrategy(s.id);
+    ElMessage.success(s.enabled ? "策略已启用" : "策略已停用");
+  } finally {
+    togglingStrategyId.value = null;
+    loadAdminStrategies();
+  }
 }
 
 async function deleteAdminStrategy(s: StrategyItem) {
@@ -429,10 +416,6 @@ async function loadConfig() {
 
 onMounted(async () => {
   await Promise.all([loadVersions(), loadUsers(), loadTemplates(), loadConfig(), loadAdminStrategies()]);
-});
-
-onUnmounted(() => {
-  if (adminPreviewTimer) clearTimeout(adminPreviewTimer);
 });
 </script>
 
@@ -614,7 +597,11 @@ onUnmounted(() => {
           </el-table-column>
           <el-table-column label="启用" width="80">
             <template #default="{ row }">
-              <el-switch v-model="row.enabled" @change="toggleAdminStrategy(row as StrategyItem)" />
+              <el-switch
+                :model-value="row.enabled"
+                :loading="togglingStrategyId === row.id"
+                @change="toggleAdminStrategy(row as StrategyItem)"
+              />
             </template>
           </el-table-column>
           <el-table-column label="操作" width="140">

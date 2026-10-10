@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 // 今日执行看板
 // 设计文档 8.3：统计卡片、五列状态流转、结论录入弹窗（仅 tester）、30s 轮询、PM 仅本版本
 import { ref, computed, onMounted, onUnmounted } from "vue";
@@ -109,7 +109,10 @@ async function onConclusionSubmit() {
 let timer: ReturnType<typeof setInterval> | null = null;
 onMounted(() => {
   load();
-  timer = setInterval(load, 30000);
+  timer = setInterval(() => {
+    // 页面隐藏时跳过轮询，避免后台无谓请求堆积
+    if (!document.hidden) load().catch(() => {});
+  }, 30000);
 });
 onUnmounted(() => {
   if (timer) clearInterval(timer);
