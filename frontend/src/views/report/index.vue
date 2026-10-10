@@ -8,6 +8,7 @@ import { getReportRevisions, getReports, type ReportQuery } from "@/api/report";
 import { getStrategies } from "@/api/strategy";
 import type { ReportItem, ReportRevisionItem, StrategyItem } from "@/api/types";
 import { getCurrentUser, formatTime } from "@/utils/business";
+import { reportConclusionMeta, reportStatusMeta } from "@/views/constants";
 
 defineOptions({ name: "ReportIndex" });
 
@@ -60,23 +61,13 @@ async function load() {
   }
 }
 
-// ---- 徽章映射 ----
-const conclusionMap: Record<string, { text: string; type: "success" | "danger" | "warning" | "info" }> = {
-  pass: { text: "通过", type: "success" },
-  fail: { text: "不通过", type: "danger" },
-  risk: { text: "有风险", type: "warning" }
-};
-const statusMap: Record<string, { text: string; type: "info" | "success" | "danger" }> = {
-  draft: { text: "草稿", type: "info" },
-  published: { text: "已发布", type: "success" }
-};
+// ---- 徽章映射（共享常量，与详情页一致）----
 function conclusionTag(c: string) {
-  return conclusionMap[c] || { text: c, type: "info" as const };
+  return reportConclusionMeta(c);
 }
 function statusTag(s: string) {
-  return statusMap[s] || { text: s, type: "info" as const };
+  return reportStatusMeta(s);
 }
-
 // ---- 操作 ----
 // 深链接：hash 路由下浏览器地址即 {origin}/#/report/detail/{id}
 const reportLink = (id: number) => `${window.location.origin}/#/report/detail/${id}`;

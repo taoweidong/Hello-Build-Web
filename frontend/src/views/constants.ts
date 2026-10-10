@@ -33,6 +33,10 @@ export const reportStatusMap: Record<string, TagMeta> = {
   published: { text: "已发布", type: "success" }
 };
 
+export function reportStatusMeta(code: string): TagMeta {
+  return reportStatusMap[code] || { text: code, type: "info" };
+}
+
 // ---- 推送状态（RoundItem.push_status）----
 export const pushStatusMap: Record<string, TagMeta> = {
   pending: { text: "待推送", type: "info" },

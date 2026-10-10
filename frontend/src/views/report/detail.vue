@@ -16,6 +16,8 @@ import {
 import { getStrategies } from "@/api/strategy";
 import type { ReportItem, StrategyItem } from "@/api/types";
 import { getCurrentUser, formatTime } from "@/utils/business";
+import { useReportForm } from "@/composables/useReportForm";
+import { reportConclusionMeta, reportStatusMeta } from "@/views/constants";
 
 // 图标：~icons/ri（Remix Icon）+ ~icons/ep（Element Plus Icon）
 import ArrowLeft from "~icons/ri/arrow-left-line";
@@ -101,43 +103,9 @@ function onVersionChange() {
   form.strategy_name = null;
 }
 
-// ---- 表单 ----
-const form = reactive<ReportForm>({
-  title: "",
-  version_name: null,
-  strategy_name: null,
-  conclusion: "pass",
-  environment: "",
-  summary: "",
-  risks: "",
-  remark: ""
-});
-
-// 新建态预填模拟关键信息，便于快速成稿与截图验证（路由切换新建时同样调用）
-function initNewForm() {
-  // 重置全部字段：路由从详情切到新建时组件复用，需清空残留（含版本/策略）
-  form.title = "27A 冒烟验证报告";
-  form.version_name = null;
-  form.strategy_name = null;
-  form.conclusion = "pass";
-  form.environment = "测试环境（27A 预发）";
-  form.summary =
-    "针对 27A 版本冒烟策略执行完整验证：核心流程用例 12 项全部通过，未出现阻断性问题。";
-  form.risks = "存在 1 项中风险：附件上传偶发延迟（已提单跟踪）。";
-  form.remark = "建议次日回归确认风险项后放行发布。";
-}
+// ---- 表单（状态机收敛在 useReportForm，纯逻辑可单测）----
+const { form, initNewForm, fillForm, validateForm, toPayload } = useReportForm();
 if (isNew.value) initNewForm();
-
-function fillForm(r: ReportItem) {
-  form.title = r.title;
-  form.version_name = r.version_name ?? null;
-  form.strategy_name = r.strategy_name ?? null;
-  form.conclusion = r.conclusion;
-  form.environment = r.environment;
-  form.summary = r.summary;
-  form.risks = r.risks;
-  form.remark = r.remark;
-}
 
 function startEdit() {
   if (report.value) {
@@ -202,21 +170,12 @@ const headTitle = computed(() => {
   return `${v}版本 ${s}策略 测试 ${d} 分析报告`;
 });
 
-// ---- 徽章映射（与列表页一致）----
-const conclusionMap: Record<string, { text: string; type: "success" | "danger" | "warning" | "info" }> = {
-  pass: { text: "通过", type: "success" },
-  fail: { text: "不通过", type: "danger" },
-  risk: { text: "有风险", type: "warning" }
-};
-const statusMap: Record<string, { text: string; type: "info" | "success" | "danger" }> = {
-  draft: { text: "草稿", type: "info" },
-  published: { text: "已发布", type: "success" }
-};
+// ---- 徽章映射（共享常量，与列表页一致）----
 function conclusionTag(c: string) {
-  return conclusionMap[c] || { text: c, type: "info" as const };
+  return reportConclusionMeta(c);
 }
 function statusTag(s: string) {
-  return statusMap[s] || { text: s, type: "info" as const };
+  return reportStatusMeta(s);
 }
 
 // 结论图标映射
@@ -227,40 +186,6 @@ const conclusionIconMap: Record<string, any> = {
 };
 function conclusionIcon(c: string) {
   return conclusionIconMap[c] || CheckDouble;
-}
-
-// ---- 校验 ----
-function validateForm(): boolean {
-  if (!form.title.trim()) {
-    ElMessage.warning("请填写报告标题");
-    return false;
-  }
-  if (!form.conclusion) {
-    ElMessage.warning("请选择验证结论");
-    return false;
-  }
-  if (!form.summary.trim()) {
-    ElMessage.warning("请填写验证内容");
-    return false;
-  }
-  if (!!form.version_name !== !!form.strategy_name) {
-    ElMessage.warning("版本与策略须同时选择或均不选择");
-    return false;
-  }
-  return true;
-}
-
-function toPayload(): ReportForm {
-  return {
-    title: form.title.trim(),
-    version_name: form.version_name || undefined,
-    strategy_name: form.strategy_name || undefined,
-    conclusion: form.conclusion,
-    environment: form.environment.trim(),
-    summary: form.summary.trim(),
-    risks: form.risks.trim(),
-    remark: form.remark.trim()
-  };
 }
 
 // ---- 加载 ----

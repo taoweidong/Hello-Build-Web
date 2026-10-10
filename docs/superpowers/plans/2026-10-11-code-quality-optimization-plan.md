@@ -43,9 +43,9 @@
 
 ## 阶段 5：大文件拆分
 
-- [ ] T27 `admin/index.vue` 拆 5 个 Tab 子组件（components/），行为不变
-- [ ] T28 `report/detail.vue` 抽 `composables/useReportForm.ts`，演示假数据移入 DEV 分支
-- [ ] T29 阶段回归：test + typecheck + build 全绿，提交
+- [x] T27 `admin/index.vue` 拆 5 个 Tab 子组件（components/），行为不变
+- [x] T28 `report/detail.vue` 抽 `composables/useReportForm.ts`，演示假数据移入 DEV 分支
+- [x] T29 阶段回归：test + typecheck + build 全绿，提交
 
 ## 阶段 6：收尾
 
