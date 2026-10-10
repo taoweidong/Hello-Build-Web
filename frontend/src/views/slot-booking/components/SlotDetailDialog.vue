@@ -60,7 +60,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import dayjs from "dayjs";
-import { ElMessageBox, ElMessage } from "element-plus";
+import { ElMessageBox } from "element-plus";
 import {
   releaseBooking,
   type CalendarDayCell,
@@ -108,8 +108,7 @@ async function handleRelease() {
   releasing.value = true;
   try {
     await releaseBooking(props.entry.booking.id);
-    ElMessage.success("已释放");
-    emit("released");
+    emit("released"); // 成功提示由父组件统一弹出，避免重复 toast
   } catch {
     // 拦截器已提示
   } finally {
