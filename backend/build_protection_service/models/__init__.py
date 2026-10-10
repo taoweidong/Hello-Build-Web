@@ -23,6 +23,7 @@ from .branch_config import (
     Project,
     StartupConfig,
 )
+from .slot_booking import SlotBooking, SlotTemplate
 
 __all__ = [
     "AdminOpLog",
@@ -35,6 +36,8 @@ __all__ = [
     "Project",
     "ReportRevisionLog",
     "SecurityLog",
+    "SlotBooking",
+    "SlotTemplate",
     "StartupConfig",
     "Strategy",
     "StrategyChangeLog",
