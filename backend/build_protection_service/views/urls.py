@@ -4,6 +4,7 @@ from django.urls import path
 from . import executions, login, logs, plan, reports, strategies, weekly
 from . import admin
 from . import branch_config
+from . import slot_booking
 
 app_name = "build_protection_service"
 
@@ -61,4 +62,12 @@ urlpatterns = [
     path("branch-permissions/<int:pk>", branch_config.BranchPermissionViewSet.as_view({"delete": "destroy"}), name="branch_permission"),
     path("users/all", branch_config.users_all, name="users_all"),
     path("projects", branch_config.projects_view, name="projects"),
+
+    # 时段抢占：模板/日历聚合/抢占/释放（DRF ViewSet + 函数视图）
+    path("slot-templates", slot_booking.SlotTemplateViewSet.as_view({"get": "list", "post": "create"}), name="slot_templates"),
+    path("slot-templates/<int:pk>", slot_booking.SlotTemplateViewSet.as_view({"put": "update", "delete": "destroy"}), name="slot_template_detail"),
+    path("slot-calendar", slot_booking.slot_calendar, name="slot_calendar"),
+    path("slot-bookings", slot_booking.SlotBookingViewSet.as_view({"get": "list", "post": "create"}), name="slot_bookings"),
+    path("slot-bookings/mine", slot_booking.SlotBookingViewSet.as_view({"get": "mine"}), name="slot_bookings_mine"),
+    path("slot-bookings/<int:pk>/release", slot_booking.SlotBookingViewSet.as_view({"post": "release"}), name="slot_booking_release"),
 ]
