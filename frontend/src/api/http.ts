@@ -1,9 +1,25 @@
 // 业务 API 请求封装 —— Axios 实例
-// 统一处理后端契约：响应 { code, message, data }；错误码 0/40101/40301/40901/40902/42201
-// 401 跳登录 · 403 提示 · 40901 冲突弹框 · 40902 结论重复提示
+// 统一处理后端契约：响应 { code, message, data }；错误码语义见后端 errors.py。
+// 失败路径统一 reject BizError（code/message/data/httpStatus），业务侧直接取 e.code / e.message。
 import axios from "axios";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { getToken, removeToken } from "@/utils/auth";
+import { businessUserKey } from "@/store/constants";
+
+/** 统一业务错误：前端所有 catch 中拿到的是该对象而非原始 axios error */
+export class BizError extends Error {
+  code: number;
+  data: unknown;
+  httpStatus?: number;
+
+  constructor(code: number, message: string, data?: unknown, httpStatus?: number) {
+    super(message);
+    this.name = "BizError";
+    this.code = code;
+    this.data = data;
+    this.httpStatus = httpStatus;
+  }
+}
 
 const service = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL,
@@ -19,6 +35,15 @@ service.interceptors.request.use(config => {
   return config;
 });
 
+// 清理业务侧用户信息（与基座 token 一并清理，避免登录页读到旧身份）
+function clearBusinessUser() {
+  try {
+    localStorage.removeItem(businessUserKey);
+  } catch {
+    /* 存储不可用时忽略 */
+  }
+}
+
 // 响应拦截：统一解包 data 与错误处理
 service.interceptors.response.use(
   (res: any) => {
@@ -26,7 +51,7 @@ service.interceptors.response.use(
     // 契约约定成功时 code === 0
     if (d && d.code !== 0) {
       ElMessage.error(d.message || "请求失败");
-      return Promise.reject(d);
+      return Promise.reject(new BizError(d.code, d.message || "请求失败", d.data));
     }
     // 成功直接返回 data 字段，方便业务层使用
     return d?.data;
@@ -36,25 +61,31 @@ service.interceptors.response.use(
     const body = err?.response?.data || {};
     const detail = body?.detail || body;
     const code = detail?.code;
-    if (code === 40101) {
-      // 令牌失效/未登录：清理并跳登录
+    const message = detail?.message;
+    if (code === 40100 || code === 40101) {
+      // 未认证/登录态失效：清理并跳登录
       removeToken();
+      clearBusinessUser();
       // 记录当前路径，登录后可返回（基座登录后跳首页，此处仅简单跳登录）
       window.location.href = "/#/login";
-    } else if (code === 40301) {
-      ElMessage.error("无权限执行该操作");
+      return Promise.reject(
+        new BizError(code, message || "未认证", body?.data, err?.response?.status)
+      );
+    }
+    if (code === 40301) {
+      ElMessage.error(message || "无权限执行该操作");
     } else if (code === 40901) {
-      // 策略时间冲突：弹框展示冲突策略与重叠时段
-      ElMessageBox.alert(detail?.message || "策略时间冲突", "策略时间冲突", {
+      // 策略时间冲突：弹框展示冲突策略与重叠时段（前端专用弹框契约）
+      ElMessageBox.alert(message || "策略时间冲突", "策略时间冲突", {
         type: "error",
         confirmButtonText: "知道了"
       });
-    } else if (code === 40902) {
-      ElMessage.error(detail?.message || "结论已录入，请查看现有结论");
     } else {
-      ElMessage.error(detail?.message || "请求失败");
+      ElMessage.error(message || "请求失败");
     }
-    return Promise.reject(err);
+    return Promise.reject(
+      new BizError(code ?? 0, message || "请求失败", body?.data, err?.response?.status)
+    );
   }
 );
 

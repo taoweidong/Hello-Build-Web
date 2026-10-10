@@ -17,7 +17,9 @@ import { useMultiTagsStoreHook } from "./multiTags";
 import { type DataInfo, setToken, removeToken, userKey } from "@/utils/auth";
 
 /** 登录用户信息存储 key（含绑定版本等业务元数据） */
-export const businessUserKey = "build-user-info";
+// 业务存储键常量收敛到 store/constants（此处 re-export 保持既有导入兼容）
+export { businessUserKey } from "../constants";
+import { businessUserKey as _businessUserKey } from "../constants";
 
 export const useUserStore = defineStore("pure-user", {
   state: (): userType => ({
@@ -85,7 +87,7 @@ export const useUserStore = defineStore("pure-user", {
               permissions: ["*:*:*"]
             });
             // 额外存储业务用户信息（PM 绑定版本等）
-            localStorage.setItem(businessUserKey, JSON.stringify(user));
+            localStorage.setItem(_businessUserKey, JSON.stringify(user));
             resolve({ success: true, user });
           })
           .catch(error => {
@@ -100,7 +102,7 @@ export const useUserStore = defineStore("pure-user", {
       this.permissions = [];
       removeToken();
       // 清除业务用户信息
-      localStorage.removeItem(businessUserKey);
+      localStorage.removeItem(_businessUserKey);
       useMultiTagsStoreHook().handleTags("equal", [...routerArrays]);
       resetRouter();
       router.push("/login");

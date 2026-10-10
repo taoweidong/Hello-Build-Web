@@ -27,11 +27,11 @@
 
 ## 阶段 3：前端测试基建 + API 层
 
-- [ ] T17 引入 vitest + @vue/test-utils + jsdom，配置 `vitest.config.ts` 与 `test`/`test:watch` scripts
-- [ ] T18 http.ts 收敛：`BizError` 标准化 reject（code/message/httpStatus）、401 清理 `build-user-info`、40902 文案泛化；受影响调用点改用 `e.code`
-- [ ] T19 单测：http.ts 拦截器（解包/错误码分支/401 清理）、`utils/business.ts`、api 层参数契约（mock http）
-- [ ] T20 类型收敛：字面量联合类型（Role/Conclusion/PushStatus/ReportStatus 等）；`BranchItem` 单一来源
-- [ ] T21 阶段回归：前端 test + typecheck 全绿，提交
+- [x] T17 引入 vitest + @vue/test-utils + jsdom，配置 `vitest.config.ts` 与 `test`/`test:watch` scripts
+- [x] T18 http.ts 收敛：`BizError` 标准化 reject（code/message/httpStatus）、401 清理 `build-user-info`、40902 文案泛化；受影响调用点改用 `e.code`
+- [x] T19 单测：http.ts 拦截器（解包/错误码分支/401 清理）、`utils/business.ts`、api 层参数契约（mock http）
+- [x] T20 类型收敛：字面量联合类型（Role/Conclusion/PushStatus/ReportStatus 等）；`BranchItem` 单一来源
+- [x] T21 阶段回归：前端 test + typecheck 全绿，提交
 
 ## 阶段 4：前端收敛与清理
 

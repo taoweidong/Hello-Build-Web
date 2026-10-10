@@ -276,7 +276,7 @@ async function loadReport() {
       editing.value = true;
     }
   } catch (e: any) {
-    const code = e?.response?.data?.code ?? e?.code;
+    const code = e?.code;
     if (code === 40401) {
       ElMessage.error("报告不存在或已删除");
       router.replace("/report/index");
@@ -455,7 +455,7 @@ async function openHistory(id: number | string) {
     editing.value = false;
     await router.replace(`/report/detail/${data.id}`);
   } catch (e: any) {
-    ElMessage.error(e?.response?.data?.message || "报告加载失败");
+    ElMessage.error(e?.message || "报告加载失败");
   }
 }
 

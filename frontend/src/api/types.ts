@@ -9,13 +9,36 @@ export interface ApiResponse<T = unknown> {
   data: T;
 }
 
+// ============ 字面量联合（与后端模型 choices 对齐，避免裸 string 比较散落各页） ============
+
+/** 用户角色（User.ROLE_CHOICES） */
+export type Role = "admin" | "pm" | "builder" | "tester" | "integrator";
+/** 推送模式（Strategy.PUSH_MODE_CHOICES） */
+export type PushMode = "normal" | "sync";
+/** 执行结论（执行轮次 conclusion：未录入为 null） */
+export type RoundConclusion = "pending" | "pass" | "fail" | null;
+/** 推送状态 */
+export type PushStatus =
+  | "pending"
+  | "running"
+  | "success"
+  | "failed"
+  | "skipped"
+  | "";
+/** 报告结论（VerificationReport.CONCLUSION_CHOICES） */
+export type ReportConclusion = "pass" | "fail" | "risk";
+/** 报告状态（VerificationReport.STATUS_CHOICES） */
+export type ReportStatus = "draft" | "published";
+/** 报告留痕动作（ReportRevisionLog.ACTION_CHOICES） */
+export type ReportAction = "create" | "update" | "publish";
+
 /** 用户信息（含绑定版本元数据） */
 export interface UserInfo {
   id: number;
   username: string;
   display_name: string;
   /** 角色：admin / pm / builder / tester / integrator */
-  role: string;
+  role: Role;
   /** 是否启用（停用后不可登录） */
   is_active?: boolean;
   /** PM 绑定版本（仅 PM 角色存在） */
@@ -55,7 +78,7 @@ export interface StrategyItem {
   template_name: string;
   name: string;
   build_start_time: string;
-  push_mode: string;
+  push_mode: PushMode;
   push_start_time?: string | null; // 推送固定时间 HH:MM（可空，空则结论后动态推导）
   enabled: boolean;
   /** 时间线计算结果（preview / strategies 返回） */
@@ -87,11 +110,11 @@ export interface RoundItem {
   smoke_end: string;
   analysis_start: string;
   analysis_end: string;
-  /** 结论：pending / pass / fail */
-  conclusion: string;
+  /** 结论：pending / pass / fail（未录入为 null） */
+  conclusion: RoundConclusion;
   conclusion_note?: string;
   /** 推送状态：pending / running / success / failed / skipped */
-  push_status: string;
+  push_status: PushStatus;
   /** 同步模式是否正式发布 */
   release_approved?: boolean;
 }
@@ -103,11 +126,11 @@ export interface VersionItem {
   pm_user_id?: number | null;
   pm_name?: string;
   status: string;
-  branches?: BranchItem[];
+  branches?: BranchBriefItem[];
 }
 
-/** 分支 */
-export interface BranchItem {
+/** 分支精简信息（admin 版本列表内嵌；完整分支见 branchConfig.ts 的 BranchItem） */
+export interface BranchBriefItem {
   id: number;
   version_id: number;
   name: string;
@@ -175,7 +198,7 @@ export interface SecurityLogItem {
 /** 周视图单日 */
 export interface WeeklyDay {
   date: string; // "YYYY-MM-DD"
-  weekday: string; // 后端返回英文星期名（"%A"，如 "Monday"）
+  weekday: string; // 中文星期名（周一~周日）
 }
 
 /** 周视图策略条目（后端扁平结构） */
@@ -215,7 +238,7 @@ export interface ReportItem {
   version_name: string;
   strategy_name: string;
   /** 结论：pass / fail / risk */
-  conclusion: string;
+  conclusion: ReportConclusion;
   /** 结论中文标签（后端计算） */
   conclusion_label: string;
   environment: string;
@@ -223,7 +246,7 @@ export interface ReportItem {
   risks: string;
   remark: string;
   /** 状态：draft（草稿）/ published（已发布） */
-  status: string;
+  status: ReportStatus;
   /** 状态中文标签（后端计算） */
   status_label: string;
   /** 作者账号（文本快照） */
@@ -244,7 +267,7 @@ export interface ReportRevisionItem {
   report_id: number;
   report_title: string;
   /** 动作：create（创建）/ update（修改）/ publish（发布） */
-  action: string;
+  action: ReportAction;
   /** 动作中文标签 */
   action_label: string;
   /** 修改字段（中文标签），如 标题 / 验证内容 */

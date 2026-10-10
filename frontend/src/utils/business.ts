@@ -2,7 +2,7 @@
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
 import type { UserInfo } from "@/api/types";
-import { businessUserKey } from "@/store/modules/user";
+import { businessUserKey } from "@/store/constants";
 
 dayjs.extend(customParseFormat);
 
