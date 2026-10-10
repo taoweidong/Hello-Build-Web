@@ -233,5 +233,49 @@ export const asyncRoutes = [
         }
       }
     ]
+  },
+  {
+    path: "/slot-booking",
+    name: "SlotBooking",
+    component: Layout,
+    redirect: "/slot-booking/index",
+    meta: {
+      icon: "ep/alarm-clock",
+      title: "时段抢占",
+      rank: 11
+    },
+    children: [
+      {
+        path: "/slot-booking/index",
+        name: "SlotBookingIndex",
+        component: () => import("@/views/slot-booking/index.vue"),
+        meta: {
+          title: "时段抢占",
+          roles: ALL_ROLES
+        }
+      }
+    ]
+  },
+  {
+    path: "/slot-config",
+    name: "SlotConfig",
+    component: Layout,
+    redirect: "/slot-config/index",
+    meta: {
+      icon: "ep/list",
+      title: "时段配置",
+      rank: 12
+    },
+    children: [
+      {
+        path: "/slot-config/index",
+        name: "SlotConfigIndex",
+        component: () => import("@/views/slot-config/index.vue"),
+        meta: {
+          title: "时段配置",
+          roles: ADMIN_ROLE
+        }
+      }
+    ]
   }
 ];
