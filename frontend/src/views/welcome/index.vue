@@ -8,14 +8,14 @@ const router = useRouter();
 
 const entries = [
   {
-    title: "版本全景",
-    desc: "全部版本 · 分支 · 策略甘特总览",
-    path: "/version-view/index"
+    title: "版本策略全景(New)",
+    desc: "时间点 × 周一~周日 调度全景，对外查看 / 对内维护 / 过期置灰",
+    path: "/weekly-new/index"
   },
   {
-    title: "版本计划",
-    desc: "按日查看 构建 → 冒烟 → 分析 → 推送 排布",
-    path: "/plan/index"
+    title: "借用审批",
+    desc: "非本版本人员借用时段发起电子流，来源版本负责人审批",
+    path: "/borrow-flow/index"
   },
   {
     title: "验证报告",
