@@ -18,3 +18,7 @@ venv/
 .idea/
 .env
 .env.local
+
+# 运行日志与工具产物
+*.log
+.workbuddy/
