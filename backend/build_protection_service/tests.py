@@ -1,4 +1,3 @@
-import unittest
 from datetime import datetime
 
 from django.contrib.auth import get_user_model
@@ -174,7 +173,6 @@ class AuthTests(TestCase):
         self.assertEqual(resp.status_code, 401)
         self.assertEqual(resp.json()["code"], 40100)
 
-    @unittest.skip("Task 9 实现 /api/admin/users 后启用")
     def test_pm_cannot_access_admin_only(self):
         token = self._login("pm1")
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")

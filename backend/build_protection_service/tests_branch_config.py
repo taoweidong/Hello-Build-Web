@@ -106,7 +106,6 @@ from .services.branch_config import (
     ROLE_VIEWER,
     advance,
     build_branch_config,
-    latest_instance,
     resolve_role,
     start_instance,
     stop_instance,
@@ -165,16 +164,6 @@ class BranchConfigServiceTests(BranchConfigFixture):
 
     def test_stop_without_instance_is_idempotent(self):
         self.assertIsNone(stop_instance(self.bp, "alice"))
-
-    def test_latest_instance_orders_by_id_desc(self):
-        old = Instance.objects.create(
-            branch_project=self.bp, status="STOPPED", pid=32000
-        )
-        new = Instance.objects.create(
-            branch_project=self.bp, status="RUNNING", pid=32001
-        )
-        self.assertEqual(latest_instance(self.bp).id, new.id)
-        self.assertNotEqual(latest_instance(self.bp).id, old.id)
 
     def test_build_config_respects_my_role_and_sections(self):
         BranchPermission.objects.create(

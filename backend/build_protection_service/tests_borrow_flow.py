@@ -194,9 +194,15 @@ class BorrowFlowTests(ConfigAwareTestCase):
             target_branch=self.b26b, new_build_time="20:30", status="rejected",
             approver=self.pm27a, handle_comment="冲突", handled_at=timezone.now(),
         )
-        self._auth("builder")
+        # 2026-10-12 起列表按"与我相关"过滤：全量列表仅 admin 可见，
+        # 发起人只看到自己发起的电子流（避免他人申请理由/审批意见全量暴露）。
+        self._auth("admin")
         resp = self.client.get("/api/borrow-flows")
         self.assertEqual(len(resp.json()["data"]), 2)
         resp = self.client.get("/api/borrow-flows?status=pending")
         self.assertEqual(len(resp.json()["data"]), 1)
         self.assertEqual(resp.json()["data"][0]["status"], "pending")
+        self._auth("builder")
+        resp = self.client.get("/api/borrow-flows")
+        self.assertEqual(len(resp.json()["data"]), 1)
+        self.assertEqual(resp.json()["data"][0]["borrower_name"], "builder")

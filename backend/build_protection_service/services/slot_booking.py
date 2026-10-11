@@ -16,6 +16,8 @@ from django.utils import timezone
 
 from ..models import Branch, SlotBooking, SlotTemplate, Version
 from ..errors import CODE_FORBIDDEN, CODE_NOT_FOUND, CODE_SLOT_CONFLICT, CODE_UNPROCESSABLE
+# 整数解析与视图层同一实现（原 _safe_int 与 views.parse_int 逐字符相同的双份收敛）
+from ..parsing import parse_int as _safe_int
 
 logger = logging.getLogger("build_protection_service")
 
@@ -24,23 +26,6 @@ _FMT_DT = "%Y-%m-%dT%H:%M:%S"
 
 def _err(code: int, message: str) -> dict:
     return {"code": code, "message": message}
-
-
-def _safe_int(value) -> Optional[int]:
-    """安全转 int：非数字返回 None，避免 filter(id="abc") 抛 ValueError 变成 500。
-
-    与 views.parse_int 保持同一语义（含全角数字拦截），避免两处实现行为分叉。
-    """
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str):
-        text = value.strip()
-        if not text or not text.isascii() or not text.lstrip("-").isdigit():
-            return None
-        return int(text)
-    return None
 
 
 def _today() -> date_cls:

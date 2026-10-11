@@ -11,7 +11,7 @@ from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 
-from ..api import err, ok
+from ..api import ok
 from ..models import (
     Branch,
     BranchPermission,
@@ -147,7 +147,11 @@ class BranchViewSet(
         branch, resp_err = _branch_required(_branch_or_none(pk))
         if resp_err:
             return resp_err
-        return json_resp(ok(build_branch_config(branch, user)))
+        # build_branch_config 内部对实例做惰性 advance() 写库（与 instances 路径同款
+        # 既定设计），包事务避免中途异常时返回不一致的中间状态
+        with transaction.atomic():
+            data = build_branch_config(branch, user)
+        return json_resp(ok(data))
 
     @action(detail=True, methods=["post"])
     def projects(self, request, pk=None):

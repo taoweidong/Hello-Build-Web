@@ -7,12 +7,12 @@ from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 
-from ..api import err, ok
+from ..api import ok
 from ..filters.report import ReportFilter
 from ..models import VerificationReport
 from ..serializers.report import ReportRevisionLogSerializer, ReportSerializer
 from ..services.report_service import ReportConclusionLockedError, ReportService
-from . import authed_user, fail_resp, first_error, json_resp
+from . import authed_user, fail_resp, first_error, json_resp, parse_int
 from ..errors import CODE_FORBIDDEN, CODE_NOT_FOUND, CODE_UNPROCESSABLE
 
 logger = logging.getLogger("build_protection_service")
@@ -49,11 +49,25 @@ class ReportViewSet(
             return None
 
     def list(self, request, *args, **kwargs):
-        """报告列表：status / version_name / strategy_name / keyword 过滤，统一响应封装。"""
+        """报告列表：status / version_name / strategy_name / keyword 过滤，统一响应封装。
+
+        可选分页：携带 page 参数时返回 {items,total,page,page_size}（page_size 默认 20
+        最大 100）；不携带保持全量数组，向后兼容既有前端调用。
+        """
         _, error = authed_user(request)
         if error:
             return error
         qs = self.filter_queryset(self.get_queryset())
+        raw_page = request.query_params.get("page")
+        if raw_page:
+            page = max(1, parse_int(raw_page) or 1)
+            page_size = min(100, max(1, parse_int(request.query_params.get("page_size")) or 20))
+            total = qs.count()
+            rows = qs[(page - 1) * page_size: page * page_size]
+            return json_resp(ok({
+                "items": ReportSerializer(rows, many=True).data,
+                "total": total, "page": page, "page_size": page_size,
+            }))
         return json_resp(ok(ReportSerializer(qs, many=True).data))
 
     def retrieve(self, request, *args, **kwargs):

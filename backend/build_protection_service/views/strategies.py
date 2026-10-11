@@ -5,15 +5,14 @@
 """
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from ..api import err, ok
+from ..api import ok
 from ..errors import (
     CODE_DUPLICATE,
     CODE_FORBIDDEN,
     CODE_NOT_FOUND,
-    CODE_STATUS,
     CODE_UNPROCESSABLE,
 )
 from ..models import Branch, Strategy, StrategyTemplate
@@ -26,7 +25,7 @@ from ..services.strategies import (
     validate_strategy,
 )
 from ..services.timeline import build_timeline
-from . import authed_user, fail_resp, json_resp, parse_body, parse_int
+from . import authed_user, fail_resp, json_resp, parse_body, parse_int, validation_error_resp
 
 User = get_user_model()
 
@@ -50,9 +49,23 @@ def _check_pm_bound(user, branch):
     return None
 
 
-def _validation_error(exc: StrategyValidationError):
-    """StrategyValidationError → 统一错误响应；HTTP 状态由 CODE_STATUS 真源映射。"""
-    return json_resp(err(exc.code, exc.message, exc.extra), status=CODE_STATUS.get(exc.code, 422))
+def filter_strategies_qs(qs, request):
+    """version_id/branch_id 查询参数校验与过滤（PM 与 admin 列表入口共用）。
+
+    返回 (qs, err_response)：非法参数 → (None, 42201 响应)。
+    """
+    raw_version_id = request.GET.get("version_id")
+    raw_branch_id = request.GET.get("branch_id")
+    for name, raw in (("version_id", raw_version_id), ("branch_id", raw_branch_id)):
+        if raw and parse_int(raw) is None:
+            return None, fail_resp(CODE_UNPROCESSABLE, f"{name} 应为整数")
+    version_id = parse_int(raw_version_id)
+    branch_id = parse_int(raw_branch_id)
+    if version_id:
+        qs = qs.filter(branch__version_id=version_id)
+    if branch_id:
+        qs = qs.filter(branch_id=branch_id)
+    return qs, None
 
 
 def list_strategies(request):
@@ -60,17 +73,9 @@ def list_strategies(request):
     if authed:
         return authed
     qs = Strategy.objects.select_related("branch", "branch__version", "template").all()
-    raw_version_id = request.GET.get("version_id")
-    raw_branch_id = request.GET.get("branch_id")
-    for name, raw in (("version_id", raw_version_id), ("branch_id", raw_branch_id)):
-        if raw and parse_int(raw) is None:
-            return fail_resp(CODE_UNPROCESSABLE, f"{name} 应为整数")
-    version_id = parse_int(raw_version_id)
-    branch_id = parse_int(raw_branch_id)
-    if version_id:
-        qs = qs.filter(branch__version_id=version_id)
-    if branch_id:
-        qs = qs.filter(branch_id=branch_id)
+    qs, err_resp = filter_strategies_qs(qs, request)
+    if err_resp:
+        return err_resp
     # PM 仅可见其绑定版本策略（管理员可见全部）；未绑定版本的 PM 取空集
     # （fail-closed，避免过滤条件整体跳过导致越权可见全部策略）。
     if request.user.role == "pm":
@@ -107,7 +112,7 @@ def preview_strategy(request):
         if exc.code == CODE_UNPROCESSABLE:
             # 参数本身非法（时间格式/push_mode 值域）走错误响应；
             # 冲突类（40901/40902）才是预览要回传的 conflict 载荷。
-            return _validation_error(exc)
+            return validation_error_resp(exc)
         return json_resp(ok({"conflict": {"code": exc.code, "message": exc.message, **exc.extra}}))
     # 计算时间线供前端实时预览（与校验同一基准日期：当天）
     build_minutes = get_config("build_minutes", settings.BUILD_MINUTES)
@@ -145,7 +150,7 @@ def create_strategy(request):
             enabled=body.get("enabled", True),
         )
     except StrategyValidationError as exc:
-        return _validation_error(exc)
+        return validation_error_resp(exc)
     return json_resp(ok(strategy_payload(s)))
 
 
@@ -162,7 +167,7 @@ def update_strategy(request, sid):
     try:
         svc_update(s, parse_body(request), request.user)
     except StrategyValidationError as exc:
-        return _validation_error(exc)
+        return validation_error_resp(exc)
     return json_resp(ok(strategy_payload(s)))
 
 
@@ -185,7 +190,9 @@ def toggle_strategy(request, sid):
         # 启用时可能撞 uniq_active_strategy_branch_time 约束（两条同刻策略
         # 先后停用再先后启用的场景），服务层校验不含 toggle 路径，此处兜底。
         # SQLite 的 IntegrityError 不含约束名，按字段组合匹配（见 services 层同款注释）。
-        s.save()
+        # 包子事务：撞约束后不污染外层事务（否则后续查询报 TransactionManagementError）。
+        with transaction.atomic():
+            s.save()
     except IntegrityError as exc:
         msg = str(exc)
         if "strategy.branch_id" in msg and "build_start_time" in msg:

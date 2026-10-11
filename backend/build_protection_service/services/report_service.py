@@ -8,6 +8,8 @@
 """
 from typing import Dict, List, Tuple
 
+from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 
 from ..models import ReportRevisionLog, VerificationReport
@@ -34,20 +36,21 @@ class ReportService:
 
     @classmethod
     def create(cls, username: str, data: Dict) -> VerificationReport:
-        """创建草稿报告并写入创建留痕。"""
-        report = VerificationReport.objects.create(
-            title=data["title"].strip(),
-            version_name=(data.get("version_name") or "").strip(),
-            strategy_name=(data.get("strategy_name") or "").strip(),
-            conclusion=data["conclusion"],
-            environment=(data.get("environment") or "").strip(),
-            summary=data["summary"].strip(),
-            risks=(data.get("risks") or "").strip(),
-            remark=(data.get("remark") or "").strip(),
-            status="draft",
-            created_by_username=username,
-        )
-        cls.log(report, "create", "创建报告", "", report.title, username)
+        """创建草稿报告并写入创建留痕（同一事务：留痕失败整体回滚，不留半套痕迹）。"""
+        with transaction.atomic():
+            report = VerificationReport.objects.create(
+                title=data["title"].strip(),
+                version_name=(data.get("version_name") or "").strip(),
+                strategy_name=(data.get("strategy_name") or "").strip(),
+                conclusion=data["conclusion"],
+                environment=(data.get("environment") or "").strip(),
+                summary=data["summary"].strip(),
+                risks=(data.get("risks") or "").strip(),
+                remark=(data.get("remark") or "").strip(),
+                status="draft",
+                created_by_username=username,
+            )
+            cls.log(report, "create", "创建报告", "", report.title, username)
         return report
 
     @classmethod
@@ -73,28 +76,37 @@ class ReportService:
                 changes.append((label, old_value, new_value))
                 setattr(report, field, new_value)
         if changes:
-            report.save()
-            for label, before, after in changes:
-                cls.log(report, "update", label, before, after, username)
+            # 正文更新与多条留痕同一事务，避免部分日志写入失败留下半套痕迹
+            with transaction.atomic():
+                report.save()
+                for label, before, after in changes:
+                    cls.log(report, "update", label, before, after, username)
         return report
 
     @classmethod
     def publish(cls, username: str, report: VerificationReport) -> VerificationReport:
-        """发布报告：刷新发布时间、发布次数 +1，重复发布标记为更新发布。"""
+        """发布报告：刷新发布时间、发布次数原子 +1，重复发布标记为更新发布。"""
         is_update = report.publish_count > 0
         before_count = report.publish_count
-        report.status = "published"
-        report.published_at = timezone.now()
-        report.publish_count += 1
-        report.save(update_fields=["status", "published_at", "publish_count", "updated_at"])
-        cls.log(
-            report,
-            "publish",
-            "更新发布" if is_update else "发布报告",
-            f"发布次数 {before_count}",
-            f"发布次数 {report.publish_count}",
-            username,
-        )
+        published_at = timezone.now()
+        with transaction.atomic():
+            # F() 原子自增：并发双发布不再因读改写丢计数；
+            # .update() 不触发 auto_now，显式刷新 updated_at 保持列表排序契约。
+            VerificationReport.objects.filter(id=report.id).update(
+                status="published",
+                published_at=published_at,
+                publish_count=F("publish_count") + 1,
+                updated_at=published_at,
+            )
+            report.refresh_from_db()
+            cls.log(
+                report,
+                "publish",
+                "更新发布" if is_update else "发布报告",
+                f"发布次数 {before_count}",
+                f"发布次数 {report.publish_count}",
+                username,
+            )
         return report
 
     @classmethod

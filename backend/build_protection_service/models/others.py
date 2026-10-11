@@ -53,7 +53,7 @@ class Branch(models.Model):
 
 
 class StrategyTemplate(models.Model):
-    name = models.CharField("模板名", max_length=100)
+    name = models.CharField("模板名", max_length=100, unique=True)
     smoke_minutes = models.PositiveIntegerField(default=0)
     analysis_minutes = models.PositiveIntegerField(default=0)
     description = models.CharField(max_length=255, blank=True, default="")
@@ -97,7 +97,7 @@ class Strategy(models.Model):
 
 class ExecutionRound(models.Model):
     strategy = models.ForeignKey(Strategy, on_delete=models.CASCADE, related_name="rounds")
-    exec_date = models.DateField()
+    exec_date = models.DateField(db_index=True)  # 列表按日过滤（date/from/to），避免全表扫
     build_start_at = models.DateTimeField(null=True, blank=True)
     build_end_at = models.DateTimeField(null=True, blank=True)
     smoke_start_at = models.DateTimeField(null=True, blank=True)
@@ -109,7 +109,6 @@ class ExecutionRound(models.Model):
     conclusion = models.CharField("结论", max_length=20, null=True, blank=True)
     note = models.CharField(max_length=255, blank=True, default="")
     push_status = models.CharField("推送状态", max_length=20, null=True, blank=True)
-    release_approved = models.BooleanField(default=False)
 
     class Meta:
         unique_together = ("strategy", "exec_date")
@@ -200,6 +199,15 @@ class BorrowFlow(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        constraints = [
+            # 同借用人 + 同策略仅允许一条待审批申请：并发重复发起的 DB 层兜底
+            # （视图层 check-then-create 在并发下可产生双 pending）
+            models.UniqueConstraint(
+                fields=["strategy", "borrower"],
+                condition=models.Q(status="pending"),
+                name="uniq_pending_borrow_flow",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.strategy.name} -> {self.target_branch.version.name}/{self.target_branch.name}@{self.new_build_time}({self.status})"

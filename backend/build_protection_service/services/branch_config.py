@@ -110,11 +110,6 @@ def stop_instance(branch_project: BranchProject, actor: str) -> Optional[Instanc
     return inst
 
 
-def latest_instance(branch_project: BranchProject) -> Optional[Instance]:
-    """取每个关联的最新实例（按 id 倒序第一个）。"""
-    return Instance.objects.filter(branch_project=branch_project).order_by("-id").first()
-
-
 def latest_instances_for_branch(branch: Branch) -> Dict[int, Instance]:
     """单查询批量取分支下全部关联的最新实例，消除逐关联 N+1。"""
     latest_id = Instance.objects.filter(

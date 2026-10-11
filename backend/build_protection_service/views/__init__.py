@@ -7,6 +7,7 @@ from django.http import JsonResponse
 from ..api import err
 from ..errors import CODE_FORBIDDEN, CODE_NOT_FOUND, CODE_STATUS, CODE_UNAUTHENTICATED, CODE_UNPROCESSABLE
 from ..models import SecurityLog
+from ..parsing import parse_int  # noqa: F401  re-export：视图层沿用 from . import parse_int
 
 logger = logging.getLogger(__name__)
 
@@ -44,35 +45,14 @@ def fmt_dt(dt):
     return dt.strftime("%Y-%m-%dT%H:%M:%S") if dt else None
 
 
-def parse_int(value):
-    """安全转 int；None/非数字返回 None，供 id 过滤前兜底（避免 ValueError 500）。
+def validation_error_resp(exc):
+    """StrategyValidationError → 统一错误响应；HTTP 状态由 CODE_STATUS 真源映射。
 
-    Django 对 ``filter(id="abc")`` 会抛 ValueError（未捕获即 500，破坏统一响应契约），
-    因此所有来自 query/body 的 ID 参数必须先经本函数转换。
-
-    仅接受 ASCII 十进制数字：``int()`` 会接受全角数字（"０"）与 Unicode 数字，
-    这些值不该进入 ID 过滤，故先用 str.isascii() 拦掉。
+    exc 为鸭子类型入参（code/message/extra），PM 与 admin 两入口共用一份实现
+    （原 views/strategies.py 与 views/admin.py 各持一份完全相同的副本）。
     """
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str):
-        text = value.strip()
-        if not text or not text.isascii() or not text.lstrip("-").isdigit():
-            return None
-        return int(text)
-    return None
-
-
-def query_int(request, name, default=None):
-    """从 query string 取整数参数；非数字返回 default（调用方决定是否报错）。"""
-    return parse_int(request.GET.get(name, default))
-
-
-def body_int(body, name, default=None):
-    """从已解析的 JSON body 取整数参数；非数字返回 default。"""
-    return parse_int(body.get(name, default))
+    return json_resp(err(exc.code, exc.message, exc.extra),
+                     status=CODE_STATUS.get(exc.code, 422))
 
 
 def fetch_by_id(model, raw_id, *, not_found="资源不存在", extra_queryset=None):

@@ -51,9 +51,10 @@ def plan_view(request):
     latest_round = ExecutionRound.objects.filter(
         strategy_id=OuterRef("pk")
     ).order_by("-exec_date", "-id")
+    # 仅对本页会展示的策略（enabled=True）做子查询标注，避免全表 annotate
     status_map = {
         s.id: (s.latest_conclusion or "pending")
-        for s in Strategy.objects.annotate(
+        for s in Strategy.objects.filter(enabled=True).annotate(
             latest_conclusion=Subquery(latest_round.values("conclusion")[:1])
         )
     }

@@ -38,10 +38,10 @@ class SlotTemplate(models.Model):
 class SlotBooking(models.Model):
     """抢占记录：先到先得，一人可抢同日多个不同时段。"""
 
+    # 过期不落库：date < today 的 reserved 记录由前端按日期置灰展示（惰性过期设计）
     STATUS_CHOICES = (
         ("reserved", "已抢占"),
         ("released", "已释放"),
-        ("expired", "已过期"),
     )
 
     date = models.DateField("抢占日期")

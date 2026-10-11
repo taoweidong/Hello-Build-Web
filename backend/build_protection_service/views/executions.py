@@ -5,10 +5,10 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.utils.timezone import now
 
-from ..api import err, ok
+from ..api import ok
 from ..models import ExecutionRound
 from ..services.config import get_config
-from . import authed_user, fail_resp, first_error, fmt_dt, json_resp, parse_body, parse_int
+from . import authed_user, fail_resp, fmt_dt, json_resp, parse_body, parse_int
 from ..errors import CODE_DUPLICATE, CODE_FORBIDDEN, CODE_NOT_FOUND, CODE_UNPROCESSABLE
 
 

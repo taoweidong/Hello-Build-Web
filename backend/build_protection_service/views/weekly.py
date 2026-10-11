@@ -4,9 +4,9 @@ from datetime import datetime, timedelta
 from django.db.models import Prefetch
 from django.utils import timezone
 
-from ..api import err, ok
+from ..api import ok
 from ..models import Branch, Strategy, Version
-from . import authed_user, fail_resp, first_error, json_resp, parse_int
+from . import authed_user, fail_resp, json_resp, parse_int
 from ..errors import CODE_UNPROCESSABLE
 
 

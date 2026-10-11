@@ -5,7 +5,8 @@
 - 通过 = 在目标分支按新时间实际创建借用策略（复用 services.strategies.create_strategy
   统一校验：资源互斥/阶段冲突，冲突时电子流保持待审批并回传 40901/40902）。
 """
-from django.db import transaction
+from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from ..api import err, ok
@@ -73,6 +74,8 @@ def borrow_flow_list_view(request):
     if resp:
         return resp
     status = request.GET.get("status")
+    if status and status not in ("pending", "approved", "rejected"):
+        return fail_resp(CODE_UNPROCESSABLE, "status 应为 pending/approved/rejected")
     qs = BorrowFlow.objects.select_related(
         "strategy__branch__version",
         "strategy__template",
@@ -80,6 +83,13 @@ def borrow_flow_list_view(request):
         "approver",
         "target_branch__version",
     )
+    if user.role != "admin":
+        # 仅返回与本人相关的电子流：自己发起的 +（PM 时）由本人审批的，
+        # 避免他人版本的申请理由与审批意见对任意登录用户全量可见（信息暴露）。
+        visible = Q(borrower=user)
+        if user.role == "pm":
+            visible |= Q(strategy__branch__version__pm_user=user)
+        qs = qs.filter(visible)
     if status:
         qs = qs.filter(status=status)
     return json_resp(ok([_payload(f) for f in qs]))
@@ -109,13 +119,18 @@ def borrow_flow_create_view(request):
         strategy=strategy, borrower=user, status="pending"
     ).exists():
         return fail_resp(CODE_ASSOCIATION, "该策略已有待审批的借用申请，请勿重复发起")
-    flow = BorrowFlow.objects.create(
-        strategy=strategy,
-        borrower=user,
-        target_branch=target_branch,
-        new_build_time=new_build_time,
-        reason=(body.get("reason") or "").strip()[:500],
-    )
+    try:
+        # 并发重复发起兜底：uniq_pending_borrow_flow 部分唯一约束（DB 层）
+        with transaction.atomic():
+            flow = BorrowFlow.objects.create(
+                strategy=strategy,
+                borrower=user,
+                target_branch=target_branch,
+                new_build_time=new_build_time,
+                reason=(body.get("reason") or "").strip()[:500],
+            )
+    except IntegrityError:
+        return fail_resp(CODE_ASSOCIATION, "该策略已有待审批的借用申请，请勿重复发起")
     return json_resp(ok(_payload(flow)))
 
 

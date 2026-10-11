@@ -1,21 +1,15 @@
 """系统管理 views：版本/用户/模板/配置/日志，仅 admin（模板 GET 允许 admin+pm）。"""
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
 
-from ..api import err, ok
+from ..api import ok
 from ..errors import (
     CODE_ASSOCIATION,
-    CODE_BAD_CREDENTIALS,
     CODE_DUPLICATE,
     CODE_FORBIDDEN,
     CODE_NOT_FOUND,
-    CODE_RATE_LIMITED,
-    CODE_SLOT_CONFLICT,
-    CODE_STAGE_CONFLICT,
-    CODE_STATUS,
-    CODE_UNAUTHENTICATED,
     CODE_UNPROCESSABLE,
 )
 from ..models import AdminOpLog, Branch, SecurityLog, Strategy, StrategyTemplate, Version
@@ -29,12 +23,14 @@ from ..services.strategies import (
 from . import (
     authed_user,
     fail_resp,
-    first_error,
+    fetch_by_id,
     json_resp,
     parse_body,
     parse_int,
     require_admin,
+    validation_error_resp,
 )
+from .strategies import filter_strategies_qs
 
 User = get_user_model()
 
@@ -54,10 +50,6 @@ def _admin_log(user, action, target_type="", target_id="", detail=""):
     except Exception:
         logging.getLogger(__name__).exception(
             "管理操作日志写入失败：action=%s target=%s", action, target_id)
-
-
-def _require_admin(user):
-    return require_admin(user)
 
 
 # ---------- 版本 ----------
@@ -99,7 +91,7 @@ def extra_view(request):
     user, resp = authed_user(request)
     if resp:
         return resp
-    perr = _require_admin(user)
+    perr = require_admin(user)
     if perr:
         return perr
     if request.method == "GET":
@@ -117,7 +109,7 @@ def update_version(request, vid):
     user, resp = authed_user(request)
     if resp:
         return resp
-    perr = _require_admin(user)
+    perr = require_admin(user)
     if perr:
         return perr
     v = Version.objects.filter(id=vid).first()
@@ -159,7 +151,7 @@ def add_branch(request, vid):
     user, resp = authed_user(request)
     if resp:
         return resp
-    perr = _require_admin(user)
+    perr = require_admin(user)
     if perr:
         return perr
     v = Version.objects.filter(id=vid).first()
@@ -186,7 +178,7 @@ def users_view(request):
     user, resp = authed_user(request)
     if resp:
         return resp
-    perr = _require_admin(user)
+    perr = require_admin(user)
     if perr:
         return perr
     if request.method == "GET":
@@ -230,7 +222,7 @@ def update_user(request, uid):
     user, resp = authed_user(request)
     if resp:
         return resp
-    perr = _require_admin(user)
+    perr = require_admin(user)
     if perr:
         return perr
     u = User.objects.filter(id=uid).first()
@@ -256,16 +248,18 @@ def update_user(request, uid):
         if not isinstance(body["is_active"], bool):
             return fail_resp(CODE_UNPROCESSABLE, "is_active 应为布尔值")
         u.is_active = body["is_active"]
-    # 最后一个启用状态的 admin 不可被停用/降级，避免系统失去管理入口
-    losing_admin = (
-        orig_role == "admin" and orig_is_active
-        and (u.is_active is False or u.role != "admin")
-    )
-    if losing_admin:
-        others = User.objects.filter(role="admin", is_active=True).exclude(id=u.id).exists()
-        if not others:
-            return fail_resp(CODE_DUPLICATE, "系统至少保留一名启用状态的管理员")
-    u.save()
+    # 最后一个启用状态的 admin 不可被停用/降级，避免系统失去管理入口；
+    # 检查与保存同一事务（SQLite BEGIN IMMEDIATE 串行化写路径），并发互降级不会双双通过。
+    with transaction.atomic():
+        losing_admin = (
+            orig_role == "admin" and orig_is_active
+            and (u.is_active is False or u.role != "admin")
+        )
+        if losing_admin:
+            others = User.objects.filter(role="admin", is_active=True).exclude(id=u.id).exists()
+            if not others:
+                return fail_resp(CODE_DUPLICATE, "系统至少保留一名启用状态的管理员")
+        u.save()
     _admin_log(user, "update_user", target_type="user", target_id=uid)
     return json_resp(ok({"id": u.id, "username": u.username, "role": u.role, "is_active": u.is_active}))
 
@@ -303,13 +297,15 @@ def templates_view(request):
             "analysis_minutes": t.analysis_minutes, "description": t.description,
         } for t in qs]))
     if request.method == "POST":
-        perr = _require_admin(user)
+        perr = require_admin(user)
         if perr:
             return perr
         body = parse_body(request)
         name = body.get("name")
         if not isinstance(name, str) or not name.strip():
             return fail_resp(CODE_UNPROCESSABLE, "模板名必填")
+        if StrategyTemplate.objects.filter(name=name.strip()).exists():
+            return fail_resp(CODE_DUPLICATE, "模板名已存在")
         parsed, verr = _parse_template_minutes(body)
         if verr:
             return verr
@@ -335,14 +331,12 @@ def _template_payload(t):
 
 
 def _get_template_or_404(tid):
-    t = StrategyTemplate.objects.filter(id=tid).first()
-    if not t:
-        return None, fail_resp(CODE_NOT_FOUND, "模板不存在")
-    return t, None
+    # 共享 fetch-or-404 实现（原先各视图手写一份）
+    return fetch_by_id(StrategyTemplate, tid, not_found="模板不存在")
 
 
 def update_template(request, user, tid):
-    perr = _require_admin(user)
+    perr = require_admin(user)
     if perr:
         return perr
     t, notfound = _get_template_or_404(tid)
@@ -352,7 +346,10 @@ def update_template(request, user, tid):
     if body.get("name") is not None:
         if not isinstance(body["name"], str) or not body["name"].strip():
             return fail_resp(CODE_UNPROCESSABLE, "模板名不能为空")
-        t.name = body["name"].strip()
+        new_name = body["name"].strip()
+        if StrategyTemplate.objects.filter(name=new_name).exclude(id=tid).exists():
+            return fail_resp(CODE_DUPLICATE, "模板名已存在")
+        t.name = new_name
     parsed, verr = _parse_template_minutes(body)
     if verr:
         return verr
@@ -362,13 +359,17 @@ def update_template(request, user, tid):
         if not isinstance(body["description"], str):
             return fail_resp(CODE_UNPROCESSABLE, "description 应为字符串")
         t.description = body["description"]
-    t.save()
+    try:
+        t.save()
+    except IntegrityError:
+        # 并发重命名撞 unique 约束兜底（StrategyTemplate.name 唯一）
+        return fail_resp(CODE_DUPLICATE, "模板名已存在")
     _admin_log(user, "update_template", target_type="template", target_id=tid)
     return json_resp(ok(_template_payload(t)))
 
 
 def delete_template(request, user, tid):
-    perr = _require_admin(user)
+    perr = require_admin(user)
     if perr:
         return perr
     t, notfound = _get_template_or_404(tid)
@@ -412,7 +413,7 @@ def config_view(request):
     user, resp = authed_user(request)
     if resp:
         return resp
-    perr = _require_admin(user)
+    perr = require_admin(user)
     if perr:
         return perr
     if request.method == "GET":
@@ -436,9 +437,11 @@ def logs_view(request, kind):
     user, resp = authed_user(request)
     if resp:
         return resp
-    perr = _require_admin(user)
+    perr = require_admin(user)
     if perr:
         return perr
+    if kind not in ("operations", "security"):
+        return fail_resp(CODE_UNPROCESSABLE, "kind 应为 operations 或 security")
     items = []
     if kind == "operations":
         qs = AdminOpLog.objects.select_related("operator").order_by("-id")[:200]
@@ -470,25 +473,12 @@ def logs_view(request, kind):
 # 校验与写路径复用 services.strategies（与 PM 入口同一实现），仅 admin 可调用。
 
 
-def _validation_error(exc):
-    """StrategyValidationError → 统一错误响应；HTTP 状态由 CODE_STATUS 真源映射。"""
-    status = CODE_STATUS.get(exc.code, 422)
-    return json_resp(err(exc.code, exc.message, exc.extra), status=status)
-
-
 def _list_admin_strategies(request):
     qs = Strategy.objects.select_related("branch", "branch__version", "template").all()
-    raw_version_id = request.GET.get("version_id")
-    raw_branch_id = request.GET.get("branch_id")
-    for name, raw in (("version_id", raw_version_id), ("branch_id", raw_branch_id)):
-        if raw and parse_int(raw) is None:
-            return fail_resp(CODE_UNPROCESSABLE, f"{name} 应为整数")
-    version_id = parse_int(raw_version_id)
-    branch_id = parse_int(raw_branch_id)
-    if version_id:
-        qs = qs.filter(branch__version_id=version_id)
-    if branch_id:
-        qs = qs.filter(branch_id=branch_id)
+    # 参数校验与过滤逻辑与 PM 列表入口共用同一实现（消除克隆）
+    qs, err_resp = filter_strategies_qs(qs, request)
+    if err_resp:
+        return err_resp
     return json_resp(ok([strategy_payload(s) for s in qs]))
 
 
@@ -511,7 +501,7 @@ def _create_admin_strategy(request, user):
             enabled=body.get("enabled", True),
         )
     except StrategyValidationError as exc:
-        return _validation_error(exc)
+        return validation_error_resp(exc)
     _admin_log(user, "create_strategy", target_type="strategy", target_id=s.id, detail=s.name)
     return json_resp(ok(strategy_payload(s)))
 
@@ -520,7 +510,7 @@ def admin_strategies_view(request):
     user, resp = authed_user(request)
     if resp:
         return resp
-    perr = _require_admin(user)
+    perr = require_admin(user)
     if perr:
         return perr
     if request.method == "GET":
@@ -538,7 +528,7 @@ def _update_admin_strategy(request, user, sid):
     try:
         svc_update_strategy(s, body, user)
     except StrategyValidationError as exc:
-        return _validation_error(exc)
+        return validation_error_resp(exc)
     _admin_log(user, "update_strategy", target_type="strategy", target_id=sid, detail=s.name)
     return json_resp(ok(strategy_payload(s)))
 
@@ -550,8 +540,10 @@ def _toggle_admin_strategy(request, user, sid):
     s.enabled = not s.enabled
     try:
         # 启用可能撞 uniq_active_strategy_branch_time（同分支同刻已有启用策略），
-        # 与 PM 路由 toggle 同款兜底，避免裸 IntegrityError → 500 破坏统一契约。
-        s.save()
+        # 与 PM 路由 toggle 同款兜底，避免裸 IntegrityError → 500 破坏统一契约；
+        # 包子事务防止冲突污染外层事务（否则后续查询报 TransactionManagementError）。
+        with transaction.atomic():
+            s.save()
     except IntegrityError as exc:
         msg = str(exc)
         if "strategy.branch_id" in msg and "build_start_time" in msg:
@@ -576,7 +568,7 @@ def admin_strategy_detail_view(request, sid):
     user, resp = authed_user(request)
     if resp:
         return resp
-    perr = _require_admin(user)
+    perr = require_admin(user)
     if perr:
         return perr
     if request.method == "PATCH":
@@ -590,7 +582,7 @@ def admin_strategy_toggle_view(request, sid):
     user, resp = authed_user(request)
     if resp:
         return resp
-    perr = _require_admin(user)
+    perr = require_admin(user)
     if perr:
         return perr
     if request.method != "PATCH":

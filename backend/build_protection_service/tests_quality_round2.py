@@ -11,9 +11,10 @@ from django.core.cache import cache
 from rest_framework.test import APIClient
 
 from .models import (
-    AdminOpLog, Branch, ExecutionRound, SlotTemplate, Strategy,
-    StrategyTemplate, Version,
+    AdminOpLog, BorrowFlow, Branch, BranchProject, ExecutionRound, Project,
+    SlotTemplate, Strategy, StrategyTemplate, Version,
 )
+from .services.report_service import ReportService
 from .services.slot_booking import template_applies_on
 from .tests import ConfigAwareTestCase
 
@@ -661,3 +662,342 @@ class LoginLockoutKeyTests(ConfigAwareTestCase):
         ok_resp = self._post("admin", "123456", "10.0.0.2")
         self.assertEqual(ok_resp.status_code, 200)
         self.assertEqual(ok_resp.json()["code"], 0)
+
+
+class AdminMiscHardeningTests(ConfigAwareTestCase):
+    """B-P2-21/22：模板重名 40902、logs kind 值域、config 读写与非法值 422。"""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.admin = User.objects.create_user(username="admin", password="123456", role="admin")
+        StrategyTemplate.objects.create(name="模板X", smoke_minutes=30, analysis_minutes=30)
+        resp = self.client.post(
+            "/api/auth/login", {"username": "admin", "password": "123456"}, format="json"
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {resp.json()['data']['token']}")
+
+    def test_create_duplicate_template_name_40902(self):
+        resp = self.client.post("/api/admin/templates", {
+            "name": "模板X", "smoke_minutes": 30, "analysis_minutes": 30,
+        }, format="json")
+        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.json()["code"], 40902)
+
+    def test_patch_template_rename_duplicate_40902(self):
+        other = StrategyTemplate.objects.create(name="模板Y", smoke_minutes=30, analysis_minutes=30)
+        resp = self.client.patch(f"/api/admin/templates/{other.id}", {"name": "模板X"}, format="json")
+        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.json()["code"], 40902)
+
+    def test_logs_kind_valid(self):
+        for kind in ("operations", "security"):
+            resp = self.client.get(f"/api/admin/logs/{kind}")
+            self.assertEqual(resp.status_code, 200, msg=kind)
+            self.assertEqual(resp.json()["code"], 0, msg=kind)
+
+    def test_logs_unknown_kind_422(self):
+        """未知 kind 此前静默落到 security 分支，必须显式 422。"""
+        resp = self.client.get("/api/admin/logs/oops")
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["code"], 42201)
+
+    def test_config_get_ok(self):
+        """零覆盖端点补齐：GET /admin/config。"""
+        resp = self.client.get("/api/admin/config")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()["data"]
+        for key in ("build_minutes", "push_minutes", "sync_buffer_minutes"):
+            self.assertIn(key, data)
+
+    def test_config_put_invalid_422(self):
+        resp = self.client.put("/api/admin/config", {"build_minutes": "abc"}, format="json")
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["code"], 42201)
+
+    def test_config_put_ok(self):
+        resp = self.client.put("/api/admin/config", {"build_minutes": 90}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["data"]["build_minutes"], 90)
+
+
+class ExecutionsFilterTests(ConfigAwareTestCase):
+    """零覆盖补齐：executions 的 date/from/to 过滤（合法 + 非法 42201）。"""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.admin = User.objects.create_user(username="admin", password="123456", role="admin")
+        pm = User.objects.create_user(username="pm1", password="123456", role="pm")
+        version = Version.objects.create(name="27A", pm_user=pm, status="active")
+        branch = Branch.objects.create(version=version, name="master")
+        tmpl = StrategyTemplate.objects.create(name="模板A", smoke_minutes=60, analysis_minutes=30)
+        strategy = Strategy.objects.create(
+            branch=branch, template=tmpl, name="策略A",
+            build_start_time="22:00", push_mode="normal", created_by=pm,
+        )
+        ExecutionRound.objects.create(strategy=strategy, exec_date="2026-10-10")
+        ExecutionRound.objects.create(strategy=strategy, exec_date="2026-10-12")
+        ExecutionRound.objects.create(strategy=strategy, exec_date="2026-10-14")
+        resp = self.client.post(
+            "/api/auth/login", {"username": "admin", "password": "123456"}, format="json"
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {resp.json()['data']['token']}")
+
+    def test_filter_by_date(self):
+        resp = self.client.get("/api/executions?date=2026-10-12")
+        self.assertEqual(resp.status_code, 200)
+        rows = resp.json()["data"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["exec_date"], "2026-10-12")
+
+    def test_filter_by_range(self):
+        resp = self.client.get("/api/executions?from=2026-10-11&to=2026-10-13")
+        self.assertEqual(resp.status_code, 200)
+        rows = resp.json()["data"]
+        self.assertEqual([r["exec_date"] for r in rows], ["2026-10-12"])
+
+    def test_invalid_date_filters_422(self):
+        for query in ("date=abc", "from=xyz", "to=123"):
+            resp = self.client.get(f"/api/executions?{query}")
+            self.assertEqual(resp.status_code, 422, msg=query)
+            self.assertEqual(resp.json()["code"], 42201, msg=query)
+
+
+class StrategyPreviewConflictTests(ConfigAwareTestCase):
+    """补齐 preview 冲突命中分支断言（此前仅测非 POST/非法 id/exclude_id）。"""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.pm = User.objects.create_user(username="pm1", password="123456", role="pm")
+        self.version = Version.objects.create(name="27A", pm_user=self.pm, status="active")
+        self.branch = Branch.objects.create(version=self.version, name="master")
+        self.tmpl = StrategyTemplate.objects.create(name="模板A", smoke_minutes=60, analysis_minutes=30)
+        Strategy.objects.create(
+            branch=self.branch, template=self.tmpl, name="既有策略",
+            build_start_time="22:00", push_mode="normal", created_by=self.pm,
+        )
+        resp = self.client.post(
+            "/api/auth/login", {"username": "pm1", "password": "123456"}, format="json"
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {resp.json()['data']['token']}")
+
+    def _preview(self, build_start_time, push_mode="normal"):
+        return self.client.post("/api/strategies/preview", {
+            "branch_id": self.branch.id, "template_id": self.tmpl.id,
+            "build_start_time": build_start_time, "push_mode": push_mode,
+        }, format="json")
+
+    def test_conflict_hit_returns_conflict_payload(self):
+        resp = self._preview("22:00")
+        self.assertEqual(resp.status_code, 200)
+        conflict = resp.json()["data"]["conflict"]
+        self.assertIsNotNone(conflict)
+        self.assertIn(conflict["code"], (40901, 40902))
+        self.assertTrue(conflict["message"])
+
+    def test_no_conflict_returns_timeline(self):
+        resp = self._preview("03:00")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()["data"]
+        self.assertIsNone(data["conflict"])
+        self.assertTrue(data["timeline"]["build"]["start"].endswith("T03:00:00"))
+
+    def test_invalid_push_mode_422(self):
+        """值域非法走错误响应而非 conflict 载荷（B-P1-12 配套）。"""
+        resp = self._preview("03:00", push_mode="turbo")
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["code"], 42201)
+
+
+class AdminToggleConflictTests(ConfigAwareTestCase):
+    """补齐：admin toggle 启用撞 uniq_active_strategy_branch_time → 40902。"""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.admin = User.objects.create_user(username="admin", password="123456", role="admin")
+        pm = User.objects.create_user(username="pm1", password="123456", role="pm")
+        version = Version.objects.create(name="27A", pm_user=pm, status="active")
+        self.branch = Branch.objects.create(version=version, name="master")
+        tmpl = StrategyTemplate.objects.create(name="模板A", smoke_minutes=60, analysis_minutes=30)
+        Strategy.objects.create(
+            branch=self.branch, template=tmpl, name="启用中的策略",
+            build_start_time="22:00", push_mode="normal", created_by=pm, enabled=True,
+        )
+        self.disabled = Strategy.objects.create(
+            branch=self.branch, template=tmpl, name="停用的同刻策略",
+            build_start_time="22:00", push_mode="normal", created_by=pm, enabled=False,
+        )
+        resp = self.client.post(
+            "/api/auth/login", {"username": "admin", "password": "123456"}, format="json"
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {resp.json()['data']['token']}")
+
+    def test_admin_toggle_enable_conflict_40902(self):
+        resp = self.client.patch(f"/api/admin/strategies/{self.disabled.id}/toggle")
+        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.json()["code"], 40902)
+        self.disabled.refresh_from_db()
+        self.assertFalse(self.disabled.enabled)
+
+
+class BorrowFlowVisibilityTests(ConfigAwareTestCase):
+    """B-P2-20/信息暴露：电子流仅相关人可见 + pending 唯一约束兜底并发重复发起。"""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.pm_a = User.objects.create_user(username="pmA", password="123456", role="pm")
+        self.pm_b = User.objects.create_user(username="pmB", password="123456", role="pm")
+        self.builder_x = User.objects.create_user(username="bx", password="123456", role="builder")
+        self.builder_y = User.objects.create_user(username="by", password="123456", role="builder")
+        self.admin = User.objects.create_user(username="admin", password="123456", role="admin")
+        self.v_a = Version.objects.create(name="27A", pm_user=self.pm_a, status="active")
+        self.v_b = Version.objects.create(name="27B", pm_user=self.pm_b, status="active")
+        self.b_a = Branch.objects.create(version=self.v_a, name="master")
+        self.b_b = Branch.objects.create(version=self.v_b, name="master")
+        tmpl = StrategyTemplate.objects.create(name="模板A", smoke_minutes=60, analysis_minutes=30)
+        self.strategy = Strategy.objects.create(
+            branch=self.b_a, template=tmpl, name="被借策略",
+            build_start_time="22:00", push_mode="normal", created_by=self.pm_a,
+        )
+        self._login("bx")
+        resp = self.client.post("/api/borrow-flows", {
+            "strategy_id": self.strategy.id, "target_branch_id": self.b_b.id,
+            "new_build_time": "23:00", "reason": "联调需要借用构建窗口",
+        }, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.flow_id = resp.json()["data"]["id"]
+
+    def _login(self, username):
+        resp = self.client.post(
+            "/api/auth/login", {"username": username, "password": "123456"}, format="json"
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {resp.json()['data']['token']}")
+
+    def _list(self):
+        resp = self.client.get("/api/borrow-flows")
+        self.assertEqual(resp.status_code, 200)
+        return resp.json()["data"]
+
+    def test_visibility_matrix(self):
+        cases = {
+            "bx": 1,      # 发起人可见
+            "by": 0,      # 无关用户不可见（此前全量可见 → 信息暴露）
+            "pmA": 1,     # 审批人（源版本 PM）可见
+            "pmB": 0,     # 目标版本 PM 非审批参与方，不可见
+            "admin": 1,   # 管理员全量可见
+        }
+        for username, expected in cases.items():
+            self._login(username)
+            self.assertEqual(len(self._list()), expected, msg=username)
+
+    def test_duplicate_pending_rejected_40903(self):
+        self._login("bx")
+        resp = self.client.post("/api/borrow-flows", {
+            "strategy_id": self.strategy.id, "target_branch_id": self.b_b.id,
+            "new_build_time": "23:30", "reason": "重复发起",
+        }, format="json")
+        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.json()["code"], 40903)
+
+    def test_db_constraint_blocks_double_pending(self):
+        """部分唯一约束 uniq_pending_borrow_flow 在 DB 层兜底并发双发起。"""
+        from django.db import IntegrityError, transaction
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                BorrowFlow.objects.create(
+                    strategy=self.strategy, borrower=self.builder_x,
+                    target_branch=self.b_b, new_build_time="23:45",
+                )
+
+    def test_invalid_status_filter_422(self):
+        self._login("admin")
+        resp = self.client.get("/api/borrow-flows?status=oops")
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["code"], 42201)
+
+
+class ReportPublishAtomicTests(ConfigAwareTestCase):
+    """B-P2-20：发布计数 F() 原子自增、留痕完整（create + 两次 publish = 3 条）。"""
+
+    def test_publish_increments_and_logs(self):
+        report = ReportService.create("t1", {
+            "title": "冒烟报告", "conclusion": "pass", "summary": "全部通过",
+        })
+        self.assertEqual(report.publish_count, 0)
+        ReportService.publish("t1", report)
+        self.assertEqual(report.publish_count, 1)
+        self.assertEqual(report.status, "published")
+        ReportService.publish("t1", report)
+        self.assertEqual(report.publish_count, 2)
+        revisions = ReportService.revisions(report.id)
+        self.assertEqual(len(revisions), 3)
+        self.assertEqual(revisions[0].action, "publish")  # 倒序：最近一条在前
+        self.assertEqual(revisions[-1].action, "create")
+
+
+class BranchProjectDestroyTests(ConfigAwareTestCase):
+    """零覆盖端点补齐：DELETE /api/branch-projects/<pk>（ADMIN 可删、VIEWER 403、404）。"""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.admin = User.objects.create_user(username="admin", password="123456", role="admin")
+        self.builder = User.objects.create_user(username="b1", password="123456", role="builder")
+        pm = User.objects.create_user(username="pm1", password="123456", role="pm")
+        version = Version.objects.create(name="27A", pm_user=pm, status="active")
+        self.branch = Branch.objects.create(version=version, name="master")
+        self.project = Project.objects.create(name="工程A")
+        self.bp = BranchProject.objects.create(branch=self.branch, project=self.project)
+
+    def _login(self, username):
+        resp = self.client.post(
+            "/api/auth/login", {"username": username, "password": "123456"}, format="json"
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {resp.json()['data']['token']}")
+
+    def test_viewer_cannot_delete(self):
+        self._login("b1")
+        resp = self.client.delete(f"/api/branch-projects/{self.bp.id}")
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.json()["code"], 40301)
+        self.assertTrue(BranchProject.objects.filter(id=self.bp.id).exists())
+
+    def test_admin_delete_ok(self):
+        self._login("admin")
+        resp = self.client.delete(f"/api/branch-projects/{self.bp.id}")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(BranchProject.objects.filter(id=self.bp.id).exists())
+        self.assertTrue(Project.objects.filter(id=self.project.id).exists())  # 工程库不受影响
+
+    def test_delete_missing_404(self):
+        self._login("admin")
+        resp = self.client.delete("/api/branch-projects/999999")
+        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(resp.json()["code"], 40401)
+
+
+class SlotAdminListStatusTests(ConfigAwareTestCase):
+    """B-P2-21：admin 抢占记录列表 status 参数值域校验。"""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.admin = User.objects.create_user(username="admin", password="123456", role="admin")
+        resp = self.client.post(
+            "/api/auth/login", {"username": "admin", "password": "123456"}, format="json"
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {resp.json()['data']['token']}")
+
+    def test_invalid_status_422(self):
+        resp = self.client.get("/api/slot-bookings?status=oops")
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["code"], 42201)
+
+    def test_valid_status_ok(self):
+        for status in ("reserved", "released"):
+            resp = self.client.get(f"/api/slot-bookings?status={status}")
+            self.assertEqual(resp.status_code, 200, msg=status)

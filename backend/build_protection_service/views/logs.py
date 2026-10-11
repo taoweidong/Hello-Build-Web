@@ -1,7 +1,7 @@
 """执行/变更日志 views。"""
 from ..api import ok
 from ..models import ExecutionLog, StrategyChangeLog
-from . import authed_user, fail_resp, first_error, fmt_dt, json_resp
+from . import authed_user, fmt_dt, json_resp
 
 
 def execution_logs(request):

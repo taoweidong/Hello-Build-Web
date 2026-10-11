@@ -11,8 +11,8 @@ from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 
-from ..api import err, ok
-from ..errors import CODE_DUPLICATE, CODE_NOT_FOUND, CODE_STATUS, CODE_UNPROCESSABLE
+from ..api import ok
+from ..errors import CODE_DUPLICATE, CODE_NOT_FOUND, CODE_UNPROCESSABLE
 from ..models import SlotBooking, SlotTemplate
 from ..serializers.slot_booking import (
     ReleaseBookingSerializer,
@@ -30,16 +30,6 @@ from ..services.slot_booking import (
 from . import authed_user, fail_resp, first_error, json_resp, parse_int, require_admin
 
 logger = logging.getLogger("build_protection_service")
-
-
-def _err_resp(error: dict):
-    """服务层错误 dict（{code, message}）→ 统一响应（HTTP 状态由公共映射决定）。"""
-    return json_resp(err(error["code"], error["message"]),
-                     status=CODE_STATUS.get(error["code"], 400))
-
-
-def _require_admin(user):
-    return require_admin(user, message="无权限执行该操作")
 
 
 def _paginate(qs, request, serializer) -> dict:
@@ -81,7 +71,7 @@ class SlotTemplateViewSet(
         user, resp = authed_user(request)
         if resp:
             return resp
-        perr = _require_admin(user)
+        perr = require_admin(user, message="无权限执行该操作")
         if perr:
             return perr
         serializer = SlotTemplateSerializer(data=request.data or {})
@@ -99,7 +89,7 @@ class SlotTemplateViewSet(
         user, resp = authed_user(request)
         if resp:
             return resp
-        perr = _require_admin(user)
+        perr = require_admin(user, message="无权限执行该操作")
         if perr:
             return perr
         template = self.get_queryset().filter(pk=kwargs.get("pk")).first()
@@ -119,7 +109,7 @@ class SlotTemplateViewSet(
         user, resp = authed_user(request)
         if resp:
             return resp
-        perr = _require_admin(user)
+        perr = require_admin(user, message="无权限执行该操作")
         if perr:
             return perr
         template = self.get_queryset().filter(pk=kwargs.get("pk")).first()
@@ -148,7 +138,7 @@ class SlotBookingViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
             return fail_resp(CODE_UNPROCESSABLE, first_error(serializer.errors))
         data, error = create_booking(user, serializer.validated_data)
         if error:
-            return _err_resp(error)
+            return fail_resp(error["code"], error["message"])
         return json_resp(ok(data))
 
     @action(detail=True, methods=["post"])
@@ -166,7 +156,7 @@ class SlotBookingViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
             return fail_resp(CODE_UNPROCESSABLE, first_error(serializer.errors))
         data, error = release_booking(booking, user, serializer.validated_data.get("release_reason", ""))
         if error:
-            return _err_resp(error)
+            return fail_resp(error["code"], error["message"])
         return json_resp(ok(data))
 
     @action(detail=False, methods=["get"])
@@ -181,7 +171,7 @@ class SlotBookingViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
         user, resp = authed_user(request)
         if resp:
             return resp
-        perr = _require_admin(user)
+        perr = require_admin(user, message="无权限执行该操作")
         if perr:
             return perr
         qs = self.get_queryset().all()
@@ -201,8 +191,12 @@ class SlotBookingViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
                 if val is None:
                     return fail_resp(CODE_UNPROCESSABLE, f"{key} 应为整数")
                 qs = qs.filter(**{key: val})
-        if params.get("status"):
-            qs = qs.filter(status=params["status"])
+        status = params.get("status")
+        if status:
+            # 值域校验：任意串静默空结果会让调用方误以为"无数据"
+            if status not in ("reserved", "released"):
+                return fail_resp(CODE_UNPROCESSABLE, "status 应为 reserved 或 released")
+            qs = qs.filter(status=status)
         return json_resp(ok(_paginate(qs.order_by("-date", "-id"), request, serialize_booking_row)))
 
 
@@ -214,5 +208,5 @@ def slot_calendar(request):
     month = request.GET.get("month") or timezone.localdate().strftime("%Y-%m")
     data, error = build_slot_calendar(month, user)
     if error:
-        return _err_resp(error)
+        return fail_resp(error["code"], error["message"])
     return json_resp(ok(data))

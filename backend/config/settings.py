@@ -82,8 +82,8 @@ DATABASES = {
         # 事务以 BEGIN IMMEDIATE 打开：进入事务即取写锁，杜绝
         # 「校验读发生在他人提交前、写入发生在他人提交后」的
         # check-then-act 竞态（影响策略互斥/时段抢占等全部写路径）。
-        # 注意：测试库为 shared-cache 内存库，并发写会直接报
-        # database table is locked（不走 busy 等待），与生产文件库行为不同。
+        # 注意：测试库为 Django 默认的独立内存库（未配置 TEST 项），
+        # 其并发写行为与生产文件库不同，并发用例按内存库语义设计。
         # 迁移 PostgreSQL/MySQL 时删除本项，改在服务层用 select_for_update
         # （见 docs/superpowers/specs/2026-10-11-strategy-concurrency-guard-design.md）。
         "OPTIONS": {"transaction_mode": "IMMEDIATE"},
