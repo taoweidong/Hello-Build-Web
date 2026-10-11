@@ -27,7 +27,7 @@ from ..services.slot_booking import (
     serialize_booking_row,
     serialize_template,
 )
-from . import authed_user, fail_resp, first_error, json_resp, require_admin
+from . import authed_user, fail_resp, first_error, json_resp, parse_int, require_admin
 
 logger = logging.getLogger("build_protection_service")
 
@@ -193,12 +193,14 @@ class SlotBookingViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
                 qs = qs.filter(date__lte=params["date_to"])
         except (ValueError, ValidationError):
             return fail_resp(42201, "日期筛选格式非法，应为 YYYY-MM-DD")
-        if params.get("version_id"):
-            qs = qs.filter(version_id=params["version_id"])
-        if params.get("branch_id"):
-            qs = qs.filter(branch_id=params["branch_id"])
-        if params.get("user_id"):
-            qs = qs.filter(user_id=params["user_id"])
+        # 整数过滤参数须过 parse_int，非法值返回 42201（避免 filter(version_id="abc") → 500）
+        for key in ("version_id", "branch_id", "user_id"):
+            raw = params.get(key)
+            if raw:
+                val = parse_int(raw)
+                if val is None:
+                    return fail_resp(42201, f"{key} 应为整数")
+                qs = qs.filter(**{key: val})
         if params.get("status"):
             qs = qs.filter(status=params["status"])
         return json_resp(ok(_paginate(qs.order_by("-date", "-id"), request, serialize_booking_row)))

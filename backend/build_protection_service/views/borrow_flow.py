@@ -5,6 +5,7 @@
 - 通过 = 在目标分支按新时间实际创建借用策略（复用 services.strategies.create_strategy
   统一校验：资源互斥/阶段冲突，冲突时电子流保持待审批并回传 40901/40902）。
 """
+from django.db import transaction
 from django.utils import timezone
 
 from ..api import err, ok
@@ -122,11 +123,10 @@ def _handle_view(request, fid, approve: bool):
     user, resp = authed_user(request)
     if resp:
         return resp
-    flow = BorrowFlow.objects.filter(id=parse_int(fid)).first()
+    fid = parse_int(fid)
+    flow = BorrowFlow.objects.filter(id=fid).first()
     if not flow:
         return fail_resp(CODE_NOT_FOUND, "借用电子流不存在")
-    if flow.status != "pending":
-        return fail_resp(CODE_ASSOCIATION, "该电子流已处理，请勿重复操作")
     if not _can_approve(user, flow):
         return fail_resp(CODE_FORBIDDEN, "仅被借用策略所属版本负责人或管理员可审批")
     body = parse_body(request)
@@ -134,34 +134,43 @@ def _handle_view(request, fid, approve: bool):
     if not approve and not comment:
         return fail_resp(CODE_UNPROCESSABLE, "驳回时必须填写审批意见")
 
-    if approve:
-        # 通过 = 在目标分支按新时间实际创建借用策略（复用共用写路径，统一互斥/阶段冲突校验）
-        template = StrategyTemplate.objects.filter(
-            id=flow.strategy.template_id
-        ).first()
-        if not template:
-            return fail_resp(CODE_NOT_FOUND, "策略模板不存在")
-        name = f"{flow.strategy.name}({flow.target_branch.version.name}借用)"
-        try:
-            svc_create(
-                flow.target_branch,
-                template,
-                user,
-                name=name,
-                build_start_time=flow.new_build_time,
-                push_mode="normal",
-            )
-        except StrategyValidationError as exc:
-            # 校验不过（资源互斥/阶段冲突）→ 电子流保持待审批，回传统一错误码
-            return json_resp(
-                err(exc.code, f"审批通过失败：{exc.message}", exc.extra),
-                status=CODE_STATUS.get(exc.code, 422),
-            )
-    flow.status = "approved" if approve else "rejected"
-    flow.approver = user
-    flow.handle_comment = comment
-    flow.handled_at = timezone.now()
-    flow.save(update_fields=["status", "approver", "handle_comment", "handled_at"])
+    new_status = "approved" if approve else "rejected"
+    # 事务 + 乐观锁：条件更新抢占 pending 状态，杜绝并发双审批/双处理；
+    # 审批通过建策略失败时整体回滚，电子流保持待审批。
+    with transaction.atomic():
+        claimed = BorrowFlow.objects.filter(id=fid, status="pending").update(
+            status=new_status,
+            approver=user,
+            handle_comment=comment,
+            handled_at=timezone.now(),
+        )
+        if not claimed:
+            return fail_resp(CODE_ASSOCIATION, "该电子流已处理，请勿重复操作")
+        if approve:
+            template = StrategyTemplate.objects.filter(
+                id=flow.strategy.template_id
+            ).first()
+            if not template:
+                transaction.set_rollback(True)
+                return fail_resp(CODE_NOT_FOUND, "策略模板不存在")
+            name = f"{flow.strategy.name}({flow.target_branch.version.name}借用)"
+            try:
+                svc_create(
+                    flow.target_branch,
+                    template,
+                    user,
+                    name=name,
+                    build_start_time=flow.new_build_time,
+                    push_mode="normal",
+                )
+            except StrategyValidationError as exc:
+                # 校验不过（资源互斥/阶段冲突）→ 回滚抢占（保持待审批），回传统一错误码
+                transaction.set_rollback(True)
+                return json_resp(
+                    err(exc.code, f"审批通过失败：{exc.message}", exc.extra),
+                    status=CODE_STATUS.get(exc.code, 422),
+                )
+    flow.refresh_from_db()
     return json_resp(ok(_payload(flow)))
 
 

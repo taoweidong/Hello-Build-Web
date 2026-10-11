@@ -390,6 +390,17 @@ class PlanApiTests(ConfigAwareTestCase):
         for s in resp.json()["data"][0]["branches"][0]["strategies"]:
             self.assertFalse(s["conflict"], msg=s["name"])
 
+    def test_plan_returns_latest_round_conclusion(self):
+        # 回归：status_map 相关子查询曾误用 OuterRef("pk")，导致 status 恒为空
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.token}")
+        s = Strategy.objects.create(branch=self.b1, template=self.tmpl, name="s1",
+                                    build_start_time="22:00", push_mode="normal", created_by=self.pm)
+        ExecutionRound.objects.create(strategy=s, exec_date="2026-08-09", conclusion="fail")
+        ExecutionRound.objects.create(strategy=s, exec_date="2026-08-10", conclusion="pass")
+        resp = self.client.get("/api/plan", {"date": "2026-08-10"})
+        st = resp.json()["data"][0]["branches"][0]["strategies"][0]
+        self.assertEqual(st["status"], "pass")  # 取最近 exec_date 的结论
+
 
 class WeeklyApiTests(ConfigAwareTestCase):
     def setUp(self):

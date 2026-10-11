@@ -2,6 +2,7 @@
 from datetime import timedelta
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.utils.timezone import now
 
 from ..api import err, ok
@@ -40,15 +41,19 @@ def executions_view(request):
         if strategy_id is None:
             return fail_resp(42201, "strategy_id 应为整数")
         qs = qs.filter(strategy_id=strategy_id)
-    date_ = request.GET.get("date")
-    if date_:
-        qs = qs.filter(exec_date=date_)
-    from_date = request.GET.get("from")
-    to_date = request.GET.get("to")
-    if from_date:
-        qs = qs.filter(exec_date__gte=from_date)
-    if to_date:
-        qs = qs.filter(exec_date__lte=to_date)
+    # 日期过滤参数须校验，非法值返回 42201（避免 exec_date="abc" → ValidationError → 500）
+    try:
+        date_ = request.GET.get("date")
+        if date_:
+            qs = qs.filter(exec_date=date_)
+        from_date = request.GET.get("from")
+        to_date = request.GET.get("to")
+        if from_date:
+            qs = qs.filter(exec_date__gte=from_date)
+        if to_date:
+            qs = qs.filter(exec_date__lte=to_date)
+    except (ValueError, ValidationError):
+        return fail_resp(42201, "日期筛选格式非法，应为 YYYY-MM-DD")
     return json_resp(ok([_round_payload(r) for r in qs[:200]]))
 
 

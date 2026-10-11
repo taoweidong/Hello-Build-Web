@@ -57,7 +57,9 @@ def validate_strategy(branch, template, build_start_time, push_start_time,
         raise StrategyValidationError(
             40902, "同一时间节点仅允许一个分支构建（资源互斥）", extra={"mutex": mutex_hits})
 
-    same_branch = Strategy.objects.filter(branch=branch, enabled=True)
+    # select_related("template")：下方推导式逐条读 s.template.*，避免 N+1
+    # （preview 是前端表单防抖高频路径，务必一次取全）
+    same_branch = Strategy.objects.filter(branch=branch, enabled=True).select_related("template")
     if exclude_id:
         same_branch = same_branch.exclude(id=exclude_id)
     existing = [{

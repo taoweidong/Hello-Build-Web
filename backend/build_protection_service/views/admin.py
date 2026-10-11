@@ -489,7 +489,17 @@ def _toggle_admin_strategy(request, user, sid):
     if not s:
         return fail_resp(CODE_NOT_FOUND, "策略不存在")
     s.enabled = not s.enabled
-    s.save()
+    try:
+        # 启用可能撞 uniq_active_strategy_branch_time（同分支同刻已有启用策略），
+        # 与 PM 路由 toggle 同款兜底，避免裸 IntegrityError → 500 破坏统一契约。
+        s.save()
+    except IntegrityError as exc:
+        msg = str(exc)
+        if "strategy.branch_id" in msg and "build_start_time" in msg:
+            return fail_resp(
+                CODE_DUPLICATE, "该分支已存在同一构建时刻的启用策略，无法启用"
+            )
+        raise
     _admin_log(user, "toggle_strategy", target_type="strategy", target_id=sid)
     return json_resp(ok(strategy_payload(s)))
 

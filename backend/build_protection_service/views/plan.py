@@ -38,11 +38,18 @@ def plan_view(request):
         ),
     ).all()
 
-    # 批量取每个策略最近一个执行轮次的结论，避免逐策略 N+1
-    latest = ExecutionRound.objects.filter(strategy_id=OuterRef("pk")).order_by("-exec_date")
+    # 批量取每个策略最近一个执行轮次的结论（按 exec_date 最新），避免逐策略 N+1。
+    # 在 Strategy 上 annotate：外层即 Strategy，OuterRef("pk") 关联其主键，
+    # 内层 ExecutionRound.strategy_id == 该 Strategy.id（此前误在 ExecutionRound 外层
+    # 用 OuterRef("pk") 关联轮次 id，导致 status 恒为空）。
+    latest_round = ExecutionRound.objects.filter(
+        strategy_id=OuterRef("pk")
+    ).order_by("-exec_date", "-id")
     status_map = {
-        c.strategy_id: c.conclusion or "pending"
-        for c in ExecutionRound.objects.filter(id=Subquery(latest.values("id")[:1]))
+        s.id: (s.latest_conclusion or "pending")
+        for s in Strategy.objects.annotate(
+            latest_conclusion=Subquery(latest_round.values("conclusion")[:1])
+        )
     }
 
     build_minutes = get_config("build_minutes", settings.BUILD_MINUTES)
