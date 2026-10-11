@@ -294,20 +294,25 @@ const weekDays = computed(() =>
 );
 
 /** 首次加载未选版本时，后端返回空分支/策略；自动回填第一个版本后由 watcher 二次拉取 */
+// 自增序号守卫：快速翻周/切版本时丢弃过期响应，避免慢响应覆盖新周数据
+let weeklySeq = 0;
 async function loadWeekly() {
+  const seq = ++weeklySeq;
   loading.value = true;
   try {
-    weekly.value = await getWeekly({
+    const data = await getWeekly({
       week_start: weekStart.value,
       version_id: versionId.value
     });
-    if (!versionId.value && weekly.value.versions.length) {
-      versionId.value = weekly.value.versions[0].version_id;
+    if (seq !== weeklySeq) return; // 过期响应丢弃
+    weekly.value = data;
+    if (!versionId.value && data.versions.length) {
+      versionId.value = data.versions[0].version_id;
     }
   } catch {
     // 拦截器已提示
   } finally {
-    loading.value = false;
+    if (seq === weeklySeq) loading.value = false;
   }
 }
 
