@@ -22,6 +22,19 @@ export function canEditPanorama(
   return false;
 }
 
+/**
+ * 判断某日某时刻（每日循环策略的一次排布）是否已早于当前时间——即已过期的历史任务。
+ * dateStr "YYYY-MM-DD" + timeStr "HH:mm" 组合成本地时刻与 now 比较；无法解析时按未过期处理。
+ */
+export function isPastSlot(
+  dateStr: string,
+  timeStr: string,
+  now: Date = new Date()
+): boolean {
+  const ts = parseTime(`${dateStr} ${timeStr}:00`).getTime();
+  return Number.isNaN(ts) ? false : ts < now.getTime();
+}
+
 /** 获取当前登录用户信息（从业务存储读取，含绑定版本） */
 export function getCurrentUser(): UserInfo | null {
   try {

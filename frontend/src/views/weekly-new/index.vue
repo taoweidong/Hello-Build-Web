@@ -74,6 +74,23 @@
               :value="v.version_id"
             />
           </el-select>
+          <el-select
+            v-model="branchFilter"
+            multiple
+            collapse-tags
+            collapse-tags-tooltip
+            clearable
+            size="small"
+            placeholder="全部分支"
+            style="width: 200px; margin-left: 8px"
+          >
+            <el-option
+              v-for="b in branches"
+              :key="b.branch_id"
+              :label="b.branch_name"
+              :value="b.branch_id"
+            />
+          </el-select>
         </div>
         <div class="toolbar-right">
           <div class="toolbar-stats">
@@ -84,7 +101,11 @@
           <el-divider direction="vertical" />
           <div class="legend">
             <span class="legend-label">图例:</span>
-            <span v-for="b in branches" :key="b.branch_id" class="legend-item">
+            <span
+              v-for="b in visibleBranches"
+              :key="b.branch_id"
+              class="legend-item"
+            >
               <i
                 class="legend-dot"
                 :style="{ background: branchColor(b.branch_id) }"
@@ -104,13 +125,16 @@
           v-else-if="!loading && branches.length === 0"
           description="该版本暂无分支，无法排布任务"
         />
+        <el-empty
+          v-else-if="!loading && filteredStrategies.length === 0"
+          description="所选分支暂无策略排布"
+        />
         <HourGrid
           v-else
           :days="weekDays"
           :rows="timeRows"
           :today="today"
-          :editable="canEdit"
-          @task-click="openEditDialog"
+          @task-click="onTaskClick"
         />
       </div>
     </el-card>
@@ -129,6 +153,9 @@
       :strategy="borrowStrategy"
       :current-version-id="versionId"
     />
+
+    <!-- 只读详情弹窗（已过期的历史任务，仅支持查看） -->
+    <StrategyDetailDialog v-model="detailVisible" :strategy="detailStrategy" />
   </div>
 </template>
 
@@ -143,11 +170,12 @@ import ArrowRight from "~icons/ep/arrow-right";
 import { getWeekly } from "@/api/weekly";
 import { getStrategies } from "@/api/strategy";
 import type { WeeklyData, StrategyItem, WeeklyStrategy } from "@/api/types";
-import { canEditPanorama, getCurrentUser } from "@/utils/business";
+import { canEditPanorama, getCurrentUser, isPastSlot } from "@/utils/business";
 import { useBranchColors } from "@/composables/useBranchColors";
 import HourGrid, { type HourTaskItem } from "./components/HourGrid.vue";
 import StrategyEditDialog from "./components/StrategyEditDialog.vue";
 import StrategyBorrowDialog from "./components/StrategyBorrowDialog.vue";
+import StrategyDetailDialog from "./components/StrategyDetailDialog.vue";
 
 defineOptions({ name: "WeeklyNewIndex" });
 
@@ -240,6 +268,20 @@ const currentVersionName = computed(
       ?.version_name ?? ""
 );
 
+// ---- 分支筛选：多选过滤网格与图例，空=全部 ----
+const branchFilter = ref<number[]>([]);
+const filteredStrategies = computed(() =>
+  branchFilter.value.length
+    ? strategies.value.filter(s => branchFilter.value.includes(s.branch_id))
+    : strategies.value
+);
+/** 图例/统计随筛选联动：仅展示当前筛选到的分支 */
+const visibleBranches = computed(() =>
+  branchFilter.value.length
+    ? branches.value.filter(b => branchFilter.value.includes(b.branch_id))
+    : branches.value
+);
+
 // 分支配色：固定色板、按 branch_id 稳定取色（与 weekly 共用）
 const { branchColor } = useBranchColors(branches);
 
@@ -269,10 +311,10 @@ async function loadWeekly() {
   }
 }
 
-/** 任务卡片（按精确时间点归类：构建/推送起始时间相等才落行） */
+/** 任务卡片（按精确时间点归类：构建/推送起始时间相等才落行；受分支筛选过滤） */
 function tasksAtTime(t: string): HourTaskItem[] {
   const tasks: HourTaskItem[] = [];
-  for (const s of strategies.value) {
+  for (const s of filteredStrategies.value) {
     if (s.build_start_time === t) {
       tasks.push({
         key: `b-${s.strategy_id}`,
@@ -308,22 +350,28 @@ function tasksAtTime(t: string): HourTaskItem[] {
 /**
  * 时间点行：0:00~23:59 内仅渲染有任务的时间点，按时间升序（非线性铺满，无任务时段省略）。
  * 策略当前为每日循环，7 天共享同一组任务；结构按天独立，兼容将来每天时间点存在差异的情况。
+ * 每格按「日期+时刻」判定是否已过期（早于当前时间）——过期为已完成的历史任务，置灰删除线、仅可查看详情。
  */
 const timeRows = computed(() => {
   const times = new Set<string>();
-  for (const s of strategies.value) {
+  for (const s of filteredStrategies.value) {
     times.add(s.build_start_time);
     if (s.push_start_time) times.add(s.push_start_time);
   }
+  const now = new Date();
   return [...times].sort().map(t => ({
     time: t,
-    cells: weekDays.value.map(d => ({ date: d.date, tasks: tasksAtTime(t) }))
+    cells: weekDays.value.map(d => ({
+      date: d.date,
+      past: isPastSlot(d.date, t, now),
+      tasks: tasksAtTime(t)
+    }))
   }));
 });
 
 const stats = computed(() => ({
-  tasks: strategies.value.length,
-  branches: branches.value.length
+  tasks: filteredStrategies.value.length,
+  branches: visibleBranches.value.length
 }));
 
 // ---- 编辑能力：外部人员只读，内部维护人员（admin / 绑定版本的 pm）可修改任意时间与信息 ----
@@ -345,9 +393,23 @@ const borrowVisible = ref(false);
 const borrowStrategy = ref<(WeeklyStrategy & { version_name?: string }) | null>(
   null
 );
+// 只读详情弹窗（已过期的历史任务：已完成、不可修改/借用，仅支持查看）
+const detailVisible = ref(false);
+const detailStrategy = ref<(WeeklyStrategy & { version_name?: string }) | null>(
+  null
+);
 
-async function openEditDialog(task: HourTaskItem) {
+async function onTaskClick(task: HourTaskItem, past: boolean) {
   if (!versionId.value) return;
+  // 已过期：为已完成的历史任务，任何角色均仅可查看，不可编辑/借用
+  if (past) {
+    const s =
+      strategies.value.find(x => x.strategy_id === task.strategyId) ?? null;
+    if (!s) return;
+    detailStrategy.value = { ...s, version_name: currentVersionName.value };
+    detailVisible.value = true;
+    return;
+  }
   // 无修改权限 → 策略详情 + 借用申请（借用至自己的版本与时间，走电子流审批）
   if (!canEdit.value) {
     const s =
@@ -384,8 +446,9 @@ watch(weekStart, () => {
   loadWeekly();
 });
 watch(versionId, value => {
-  // 版本变化（含首屏自动回填）都重新拉取，保证拿到该版本的分支与策略
+  // 版本变化（含首屏自动回填）都重新拉取，保证拿到该版本的分支与策略；分支 id 跨版本不同，重置筛选
   strategyDetailList.value = null;
+  branchFilter.value = [];
   if (value) loadWeekly();
 });
 

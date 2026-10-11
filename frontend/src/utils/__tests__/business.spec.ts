@@ -4,6 +4,7 @@ import {
   canEditPanorama,
   formatTime,
   getCurrentUser,
+  isPastSlot,
   parseTime,
   timeToMs
 } from "@/utils/business";
@@ -80,6 +81,24 @@ describe("utils/business", () => {
     it("角色缺失或版本未选时不允许编辑", () => {
       expect(canEditPanorama(undefined, 1, 1)).toBe(false);
       expect(canEditPanorama("admin", undefined, undefined)).toBe(false);
+    });
+  });
+
+  describe("isPastSlot 过期时段判定", () => {
+    const now = new Date("2026-10-11T15:00:00");
+    it("日期+时刻早于当前时间判为已过期", () => {
+      expect(isPastSlot("2026-10-11", "09:30", now)).toBe(true);
+      expect(isPastSlot("2026-10-10", "23:00", now)).toBe(true);
+    });
+    it("晚于当前时间判为未过期", () => {
+      expect(isPastSlot("2026-10-11", "21:00", now)).toBe(false);
+      expect(isPastSlot("2026-10-12", "02:00", now)).toBe(false);
+    });
+    it("恰好等于当前时刻不算过期（未早于）", () => {
+      expect(isPastSlot("2026-10-11", "15:00", now)).toBe(false);
+    });
+    it("无法解析的时间按未过期处理", () => {
+      expect(isPastSlot("bad-date", "25:99", now)).toBe(false);
     });
   });
 });
