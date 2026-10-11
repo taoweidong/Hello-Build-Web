@@ -29,17 +29,17 @@
 
 - 模型 `BorrowFlow`（迁移 0011）：strategy / borrower / target_branch / new_build_time / reason / status(pending·approved·rejected) / approver / handle_comment / handled_at / created_at。
 - API（`views/borrow_flow.py`）：
-  - `GET /api/borrow-flows?status=` 列表（全角色，relation 实时组装名称）；
-  - `POST /api/borrow-flows` 发起（目标版本 ≠ 来源版本、时间格式 HH:MM、防重复待审批）；
-  - `POST /api/borrow-flows/<id>/approve` 通过（权限校验 → 原子创建借用策略 → 置已通过）；
+  - `GET /api/borrow-flows?status=` 列表：`status` 值域校验（pending/approved/rejected，非法 → 42201）；**按「与我相关」过滤（2026-10-12 补）**——admin 见全部，其余角色仅 `borrower=本人`，PM 追加来源版本 `pm_user=本人` 的电子流（避免他人版本的申请理由/审批意见对任意登录用户全量可见）；relation 实时组装名称；
+  - `POST /api/borrow-flows` 发起（目标版本 ≠ 来源版本、时间格式 HH:MM、防重复待审批；另有 DB 层部分唯一约束 `uniq_pending_borrow_flow` 兜底并发双发起，IntegrityError → 40903）；
+  - `POST /api/borrow-flows/<id>/approve` 通过（权限校验 → 事务内创建借用策略 + 乐观锁 `filter(status="pending").update()` 抢占，0 行更新 → 40903 重复处理）；
   - `POST /api/borrow-flows/<id>/reject` 驳回（必填意见）。
 - seed 演示：pm26b 借用 27A-master-早间回归 至 26B/master@15:00（待审批，时段无冲突可供演示通过）；builder 的一条历史已驳回样例。
 
 ## 4. 前端
 
-- `api/borrowFlow.ts`：类型 + 四个接口 + `formatBorrowFlowText`（复制文案纯函数，含单测）。
+- `api/borrowFlow.ts`：类型 + 四个接口 + `formatBorrowFlowText`（复制文案纯函数，含单测）+ `borrowFlowUrl`（审批页直达链接 `…#/borrow-flow/index?focus=<id>`，2026-10-11 补）。
 - `StrategyBorrowDialog.vue`：上半 el-descriptions 只读详情，下半借用表单；提交成功后引导「前往审批页」。
-- `views/borrow-flow/index.vue`：状态筛选 + 「仅看我可审批的」 + 表格（策略/原时间/借用人/借用至/原因/状态/申请时间/审批）+ 操作列「复制 / 通过 / 驳回」（通过/驳回仅对 `canApprove` 行渲染）；复制走 `navigator.clipboard`，降级为弹框手动复制。
+- `views/borrow-flow/index.vue`：状态筛选 + 「仅看我可审批的」 + 表格（策略/原时间/借用人/借用至/原因/状态/申请时间/审批）+ 操作列「复制 / 通过 / 驳回」（通过/驳回仅对 `canApprove` 行渲染）；复制走 `navigator.clipboard`，被拦截时降级为手动复制弹框（VNode 文本节点渲染，不用 `dangerouslyUseHTMLString`，杜绝他人输入 reason/审批意见的存储型 XSS，2026-10-12 加固）；**复制文案末尾附「审批详情链接」，页面加载时读取 `?focus=<id>` 自动定位并打开对应电子流详情（未找到则警告提示）**。
 - 菜单：借用审批（`ep/tickets`，rank 14，ALL_ROLES）。
 
 ## 5. 测试

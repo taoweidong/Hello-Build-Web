@@ -36,8 +36,9 @@
 
 - Django 项目位于 `backend/`，核心 app `build_protection_service`。
 - 使用 Django REST Framework（DRF）实现全部接口。
-- 自定义响应封装：统一 `{code, message, data}`，错误码 `40101/40301/40901/40902/42201` 与现有契约一致。
+- 自定义响应封装：统一 `{code, message, data}`，错误码常量与 HTTP 状态映射集中在 `errors.py`（40100/40101/40301/40401/40901~40904/42201/42901，2026-10-11 常量化）；DRF 内置异常（认证/权限/解析/方法不允许等）经 `exception_handlers.py` 的 `contract_exception_handler` 归一化为同一契约（2026-10-12 补）。
 - 认证：Django `django.contrib.auth` 的 `AbstractUser` + 自定义 `role` 字段；JWT 签发/校验保持现有登录契约 `{username,password}` → `{token,user}`。
+- 安全基线（2026-10-12 补）：全局启用 `CsrfViewMiddleware`，业务 API 统一 `csrf_exempt`（JWT 走 Authorization 头、不依赖 cookie 会话，admin 后台仍受 CSRF 保护）；`DEBUG=false` 时 `SECRET_KEY` 缺失或仍为默认值 → `ImproperlyConfigured` 拒绝启动（测试进程豁免）。
 - 前端仅需适配认证 token 获取/校验方式，其余接口路径与响应结构不变。
 
 ### 3.2 后端目录结构

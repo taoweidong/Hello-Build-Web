@@ -70,6 +70,8 @@ class Meta:
 
 **实施中发现的新漏洞（已一并修复）**：`toggle_strategy`（PM 启停策略）此前直接 `s.save()`，无任何约束捕获 —— 两条同刻策略先后停用再先后启用时，第二条启用会 IntegrityError → **500**。已在 `views/strategies.py` 补捕获返回 40902。
 
+**后续补齐（2026-10-11/12）**：admin 路由的策略启停（系统管理页 `_toggle_admin_strategy`）同样补 IntegrityError → 40902「无法启用」兜底；两处 toggle 的写库均包在 `transaction.atomic()` 子事务中执行，约束冲突时不污染外层事务（否则 SQLite/PostgreSQL 下外层事务进入 aborted 状态，后续查询全部报错）。
+
 **SQLite 消息行为（实测）**：SQLite 的 `IntegrityError` 消息格式为
 `UNIQUE constraint failed: <table>.<col1>, <table>.<col2>`，**不包含约束名**
 （PostgreSQL 会含约束名）。因此兜底匹配按字段组合

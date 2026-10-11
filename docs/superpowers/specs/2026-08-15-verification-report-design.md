@@ -65,12 +65,12 @@ ReportPublishRecord（发布暨推送记录）
 
 | 方法 | 路径 | 说明 | 权限 |
 |------|------|------|------|
-| GET | `/reports` | 列表，支持 `status`、`version_id`、`strategy_id`、`keyword`（匹配标题/ID）过滤，按 `-updated_at` 排 | 全员 |
+| GET | `/reports` | 列表，支持 `status`、`conclusion`、`title`、`version_name`、`strategy_name`（模糊）、`keyword`（匹配标题/版本/策略，纯数字兼匹配报告 ID）过滤，按 `-updated_at` 排。**可选分页（2026-10-12 补）**：携带 `page` 时返回 `{items,total,page,page_size}`（`page_size` 默认 20、最大 100），不携带则保持全量数组（向后兼容） | 全员 |
 | POST | `/reports` | 新建（默认 draft），返回完整报告 | tester/builder |
 | GET | `/reports/<id>` | 详情 | 全员 |
 | PUT | `/reports/<id>` | 修改内容（新建后未发布或已发布均可改） | 仅作者 |
-| POST | `/reports/<id>/publish` | 发布：body `{ screenshot }`，校验必填与 ≤2MB；创建发布记录、状态转 published、更新 published_at/publish_count、模拟推送 | 仅作者 |
-| GET | `/reports/<id>/publishes` | 该报告的全部发布记录（含截图 base64），按时间倒序 | 全员 |
+| POST | `/reports/<id>/publish` | 发布：body `{ screenshot }`，校验必填与 ≤2MB；状态转 published、更新 published_at、`publish_count` 经 `F()+1` 原子自增（事务化）、模拟推送 | 仅作者 |
+| GET | `/reports/<id>/revisions` | 该报告的修订/发布历史，按时间倒序（路由名为 `revisions`，非 `publishes`） | 全员 |
 
 ### 4.1 权限矩阵
 

@@ -219,9 +219,9 @@ PM 仅配置两个时间节点：
 | `user` | id, username(唯一), password_hash, display_name, role(admin/pm/builder/tester/integrator), is_active, created_at | 用户 |
 | `version` | id, name(唯一), **pm_user_id FK→user UNIQUE**, status(active/archived), created_at | 版本；pm_user_id UNIQUE 实现 PM↔版本双向一对一 |
 | `branch` | id, version_id FK, name, UNIQUE(version_id,name), created_at | 分支 |
-| `strategy_template` | id, name, smoke_minutes, analysis_minutes, description, created_by FK, updated_at | 策略模板 |
+| `strategy_template` | id, name(唯一), smoke_minutes, analysis_minutes, description, created_by FK, updated_at | 策略模板（name 唯一约束与 smoke/analysis_minutes 非负整数校验于 2026-10-12 补齐，重名 → 40902） |
 | `strategy` | id, branch_id FK, template_id FK, name, build_start_time(HH:MM), push_mode(normal/sync), enabled, created_by FK, updated_at | 构建策略（每日循环配置） |
-| `execution_round` | id, strategy_id FK, exec_date, 各阶段 start/end（绝对时间）, conclusion(pending/pass/fail), conclusion_by, conclusion_at, push_status, release_approved, UNIQUE(strategy_id,exec_date) | 每日执行轮次实例 |
+| `execution_round` | id, strategy_id FK, exec_date(db_index), 各阶段 start/end（绝对时间）, conclusion(pending/pass/fail), conclusion_by, conclusion_at, note, push_status, UNIQUE(strategy_id,exec_date) | 每日执行轮次实例（`release_approved` 字段已于 2026-10-12 删除，见下 §6.3） |
 | `global_config` | key, value, updated_at | 全局关键配置 |
 
 ### 6.2 日志表
@@ -231,12 +231,12 @@ PM 仅配置两个时间节点：
 | `execution_log` | round_id, stage, event, detail, at | 各阶段状态流转、结论录入、推送触发 |
 | `strategy_change_log` | strategy_id, operator, field, old_value, new_value, at | PM 每次保存策略修改 |
 | `admin_op_log` | operator, action, target_type, target_id, detail, at | 管理员对版本/分支/用户/模板/配置的增删改 |
-| `security_log` | user_id, event(login/logout/login_failed), ip, at | 登录登出、鉴权失败 |
+| `security_log` | username, action(login_success/login_failed/login_locked/logout/…), detail（含 `ip=… ua=…` 审计串）, created_at | 登录登出、鉴权失败（无独立 ip 列，客户端 IP/UA 由 `security_log(request=…)` 拼入 detail，2026-10-11 补齐） |
 
 ### 6.3 关键设计决策
 
 1. **策略（配置）与执行轮次（实例）分离**：strategy 存每日循环配置；execution_round 记录每天的实际执行实例，天然支撑"变更次日生效、当日不受影响"（当日轮次按旧配置快照执行）；
-2. **结论双字段**：conclusion（正常模式控制推送）+ release_approved（同步模式标记是否正式发布）；
+2. **结论单字段**：conclusion（pending/pass/fail）控制推送；早期设计的 `release_approved`（同步模式发布标记）从未落地，已于 2026-10-12 从模型删除。结论录入改为**原子抢占**（单条 `UPDATE … WHERE conclusion IS NULL`，并发双提交后到者更新 0 行 → 40902），消除 check-then-act 竞态；
 3. **种子数据**：admin 账号、27A/27B/26B 三个版本（各绑定 PM）、master/TR5/TR6 分支、5 类角色用户、3 个模板、对应策略与近 7 天模拟执行轮次；
 4. **软删除**：版本/分支/策略不做物理删除，以 status/enabled 标记，保护历史日志完整性。
 
@@ -248,11 +248,13 @@ PM 仅配置两个时间节点：
 
 ```
 统一响应：{ "code": 0, "message": "ok", "data": {...} }
-错误码：0 成功 · 40101 未登录 · 40301 无权限 ·
-        40901 策略时间冲突（附冲突详情）· 40902 结论重复录入 ·
-        42201 参数校验失败
+错误码（初版列举，2026-10 已常量化扩充，全集与语义以 backend/build_protection_service/errors.py 为准）：
+        0 成功 · 40100/40101 未认证 · 40301 无权限 · 40401 不存在 ·
+        40901 策略时间冲突（附冲突详情）· 40902 重名/互斥/结论重复录入 ·
+        40903 重复关联/授权 · 40904 时段抢占冲突 · 42201 参数校验失败 ·
+        42901 登录尝试过频
 鉴权：Authorization: Bearer <JWT>
-文档：FastAPI 自动生成 /docs（OpenAPI 3.0）
+文档：后端已由 FastAPI 迁移至 Django + DRF（2026-08-10），无自动 /docs；接口以本 spec 与 views/urls.py 为准
 ```
 
 权限约定：写接口服务端二次校验角色；PM 写接口额外校验版本归属；管理员接口统一前缀 `/api/admin/*`；前端 Axios 拦截器统一处理 401 跳登录 / 403 提示 / 409 冲突弹框。
@@ -271,28 +273,30 @@ PM 仅配置两个时间节点：
 
 | 方法 | 路径 | 说明 | 角色 |
 |---|---|---|---|
-| GET | /api/plan?date= | 甘特看板聚合：版本→分支→策略→各阶段时间区间+冲突标记 | 全部 |
-| GET | /api/strategies?version_id=&branch_id= | 策略列表（含时间线计算结果） | 全部 |
+| GET | /api/plan?date= | 甘特看板聚合：版本→分支→策略→各阶段时间区间+冲突标记；date 非法（非 YYYY-MM-DD）→ 42201；status 经关联子查询取当日轮次结论 | 全部 |
+| GET | /api/strategies?version_id=&branch_id= | 策略列表（含时间线计算结果）；无绑定版本的 PM → 空集（fail-closed，2026-10-12） | 全部 |
 | POST | /api/strategies/preview | 保存前预览：时间线排布+冲突检测（不落库） | PM |
-| POST | /api/strategies | 新建策略（校验版本归属+冲突，冲突 40901） | PM |
+| POST | /api/strategies | 新建策略（name 必填缺失 → 42201、push_mode ∈ normal/sync、enabled 布尔，校验版本归属+冲突，冲突 40901） | PM |
 | PATCH | /api/strategies/{id} | 修改（开始时间/推送模式/名称），写变更日志，按生效规则应用 | PM |
-| PATCH | /api/strategies/{id}/toggle | 启用/停用 | PM |
+| POST/PATCH | /api/strategies/{id}/toggle | 启用/停用（无参翻转，仅 POST/PATCH，2026-10-12 加方法守卫）；启用撞互斥唯一约束 → 40902 | PM |
 
 **执行 execution**
 
 | 方法 | 路径 | 说明 | 角色 |
 |---|---|---|---|
 | GET | /api/executions?date=&strategy_id=&from=&to= | 执行看板/全景页：轮次阶段状态、结论、推送状态（PM 仅本版本） | 全部 |
-| GET | /api/executions/rounds/{id} | 轮次详情（各阶段实际起止+执行日志） | 全部 |
-| POST | /api/executions/rounds/{id}/conclusion | 录入结论（pass/fail+备注）→ 正常模式且通过：经 PushPort 触发推送（mock 留痕）；同步模式：写 release_approved | 防护网测试 |
+| GET | /api/executions/rounds/{id} | 轮次详情（各阶段实际起止+执行日志）；PM 仅本版本，跨版本 → 40301（2026-10-12 补 PM 隔离） | 全部（PM 限本版本） |
+| POST | /api/executions/rounds/{id}/conclusion | 录入结论（pass/fail+备注）→ 原子抢占防重（已录入 → 40902）；正常模式且通过：经 PushPort 触发推送（mock 留痕）；同步模式：仅置 push_status 空、不写发布标记（release_approved 已删除） | 防护网测试 |
 
 **系统管理 admin（前缀 /api/admin，写操作均写管理操作日志）**
 
+> 2026-10-12 补：写端点加请求方法守卫（update_version 仅 PUT/PATCH、add_branch 仅 POST、update_user 仅 PATCH、模板 toggle 仅 POST/PATCH），错误方法 → 42201；模板 smoke/analysis_minutes 非负整数校验（非法 → 42201），模板重名 → 40902；用户创建密码必填、is_active 严格布尔、绑定 PM 必须为 pm 角色。
+
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET/POST/PATCH | /api/admin/versions · POST /{id}/branches | 版本与分支管理（含 PM 绑定，校验一对一） |
-| GET/POST/PATCH | /api/admin/users · PATCH /{id} | 用户管理（创建/启停/重置密码/角色分配） |
-| GET/POST/PATCH/DELETE | /api/admin/templates | 策略模板管理（被引用不可删） |
+| GET/POST/PATCH | /api/admin/versions · POST /{id}/branches | 版本与分支管理（含 PM 绑定，校验一对一；pm_user_id 必须为 pm 角色） |
+| GET/POST/PATCH | /api/admin/users · PATCH /{id} | 用户管理（创建/启停/重置密码/角色分配；创建密码必填） |
+| GET/POST/PATCH/DELETE | /api/admin/templates | 策略模板管理（被引用不可删；name 唯一，smoke/analysis_minutes 非负整数） |
 | GET/PUT | /api/admin/config | 全局关键配置 |
 
 **日志 logs**

@@ -1,6 +1,6 @@
 # 代码质量优化设计（2026-10-11）
 
-依据：`docs/code-quality-assessment-2026-10-11.md` 评估报告。本设计定义分阶段优化范围、关键决策与验收标准；配套 checkbox 实施计划见 `docs/superpowers/plans/2026-10-11-code-quality-optimization-plan.md`。
+依据：`docs/code-quality-assessment-2026-10-11.md` 评估报告。本设计定义分阶段优化范围、关键决策与验收标准；配套 checkbox 实施计划见 `docs/superpowers/plans/2026-10-11-code-quality-optimization-plan.md`。**复评见 `docs/code-quality-assessment-2026-10-12.md`（第二轮），后续修复设计见 `specs/2026-10-12-code-quality-optimization-round2-design.md`；本文个别决策已被第二轮调整，以 D3/D9/D16 条目内注记为准。**
 
 ## 目标与不变量
 
@@ -20,13 +20,13 @@
 
 - **D1 错误码常量化**：新增 `build_protection_service/errors.py`，定义错误码常量 + `CODE_STATUS` 映射 + `fail(code, message, data=None, status=None)` 辅助（status 缺省由映射决定，40901/40902/40903/40904→409、40100/40101→401、40301→403、40401→404、42201→422）。`api.py` 的 `ok()/err()` 保持兼容；视图逐步改用 `fail()`，行为（状态码与报文）与现状一致。
 - **D2 logout 真拉黑**：新增 `RevokedToken` 模型（jti 唯一、expires_at、created_at）；`auth.JWTAuthentication` 验证成功后检查 jti 是否已吊销；`/auth/logout` 解析 Authorization 头中的 token 并登记吊销（按 exp 过期即自然失效，无需清理任务也可用；提供可选清理）。security_log 修复 username（从请求头解析前先认证）与 detail 参数。
-- **D3 登录限流**：Django cache（LocMemCache）按 username 计失败次数，5 次/15 分钟内锁定；成功登录清零。轻量实现于 `views/login.py`，可测试。
+- **D3 登录限流**：Django cache（LocMemCache）按 username 计失败次数，5 次/15 分钟内锁定；成功登录清零。轻量实现于 `views/login.py`，可测试。（2026-10-12 第二轮调整：失败计数键改为「username+客户端 IP」联合键，防止他人远程锁死任意账号，见 round2 B-P1-16。）
 - **D4 魔法日期治理**：`plan.py` 与 `strategies.py` preview 的默认日期改为 `timezone.localdate()`；`mutex.check_build_mutex` 的基准日参数化（默认今天）；`plan.py` 的 `conflict` 字段用 `services/conflict.find_conflicts` 真实计算（当日启用策略间的时间重叠）。
 - **D5 HH:MM 校验**：`strategies.py` 校验正则后增加 0-23/0-59 范围校验（复用 `timeline.parse_hhmm`），非法返回 42201。
 - **D6 模板删除 BUG**：`delete_template` 改捕 `ProtectedError`（`django.db.models`），保持 40901+409 报文不变。
 - **D7 settings 安全默认**：`DEBUG` 默认 false、`ALLOWED_HOSTS` 从 env（默认 `["*"]` 保持开发可用，生产由 env 收紧）、新增 `JWT_SIGNING_KEY` env（缺省回退 SECRET_KEY）、`.env` 移出版本库（`git rm --cached`）并新增 `.env.example` 模板。CORS 保持全开但支持 env 覆盖（开发直连不变量 4）。
 - **D8 策略写路径事务化**：策略创建/更新（PM 与 admin 两入口）包 `transaction.atomic`，将共用校验+创建逻辑收敛到 `services/strategies.py`（新增），消除 admin.py 对 strategy_views 私有成员的访问与复制粘贴。SQLite 下 atomic + 先查后写已消除大部分窗口，DB 级约束作为后续演进记录（不改契约）。
-- **D9 校验与索引补齐**：`SlotTemplateSerializer.weekdays` 校验（0-6 逗号分隔）；数字 ID 过滤统一走安全解析（非数字→42201）；迁移新增 `ReportRevisionLog.report_id`、`VerificationReport.status` 的 `db_index`；`SlotBooking` 已有约束不动。
+- **D9 校验与索引补齐**：`SlotTemplateSerializer.weekdays` 校验（0-6 逗号分隔；**2026-10-12 第二轮已改为 isoweekday 1-7 口径**——0-6 与服务层 `isoweekday()` 匹配、模型 help_text、seed、前端 UI 冲突，导致周日模板无法创建，见 round2 B-P0-1）；数字 ID 过滤统一走安全解析（非数字→42201）；迁移新增 `ReportRevisionLog.report_id`、`VerificationReport.status` 的 `db_index`；`SlotBooking` 已有约束不动。
 - **D10 运行期配置落库**：`services/config.py` 改为 DB 单行表 `RuntimeConfig`（key-value JSON）+ 内存缓存失效，写入持久化，重启不丢；`/admin/config` GET/PUT 行为不变。
 - **D11 助手去重**：`views/__init__.py` 提供统一 `first_error`、`require_admin`、`fmt_dt`；`_ERR_STATUS` 由 D1 取代；`security_log` 支持 detail。
 - **D12 N+1 缓解**：`build_branch_config` 用 prefetch 批量取实例；`start_instance` 加「同 branch_project 活跃实例唯一」的 partial UniqueConstraint（迁移），并发兜底。
@@ -36,7 +36,7 @@
 - **D13 vitest 测试基础设施**：引入 `vitest` + `@vue/test-utils` + `jsdom`，`package.json` 增加 `test`（vitest run）与 `test:watch`；`vitest.config.ts` 复用 vite 别名 `@`。
 - **D14 http.ts 错误契约收敛**：失败路径 reject 标准化 `BizError`（携带 `code/message/httpStatus/raw`），保留现有弹窗行为；401 时同步清理 `build-user-info`；40902 兜底文案泛化（去掉报告业务措辞）；受影响调用点（`report/detail.vue`、`slot-booking/index.vue`）改用 `e.code`。
 - **D15 类型收敛**：`types.ts` 新增 `Role`/`Conclusion`/`PushStatus`/`ReportStatus` 等字面量联合并替换 `string` 字段；删除 `branchConfig.ts` 内重复 `BranchItem`，统一从 `types.ts` 导出。
-- **D16 共享常量与 composables**：新增 `src/views/constants.ts`（conclusionMap/pushStatusMap/stageStatusTypeMap 等单一来源）；`src/composables/useStrategyPreview.ts`（防抖+seq 守卫+冲突弹框）；`src/composables/useGanttRows.ts`（plan/versionView 共用的甘特行构建）；`panorama.ts` 复制函数改 re-export。
+- **D16 共享常量与 composables**：新增 `src/views/constants.ts`（conclusionMap/pushStatusMap/stageStatusTypeMap 等单一来源）；`src/composables/useStrategyPreview.ts`（防抖+seq 守卫+冲突弹框）；`src/composables/useGanttRows.ts`（plan/versionView 共用的甘特行构建）；`panorama.ts` 复制函数改 re-export。（2026-10-12 第二轮：甘特/全景等页面下线后 `useGanttRows.ts`、`panorama.ts` 与 constants 中相应死符号已删除，现行 composables 为 useStrategyPreview/useReportForm/useStrategyOptions/useBranchColors。）
 - **D17 安全与细节**：mock `enableProd` 关闭；登录表单预填口令仅开发环境（`import.meta.env.DEV`）；`el-switch` 改 `:model-value` + 失败回滚；BOM 清理；错别字修复；`execution/index.vue` 轮询加页面隐藏暂停与失败退避；welcome 页替换为业务概览入口卡片。
 - **D18 死代码清理**：删除 `components/gantt/GanttChart.vue`、`business.ts` 死函数、`branch-config` 的 `openPermDialog`；`api/user.ts` 保留基座必需项并注明原因。
 - **D19 大文件拆分**：`admin/index.vue` 按 Tab 拆为 `components/`（VersionsTab/UsersTab/TemplatesTab/ConfigTab/StrategiesTab）；`report/detail.vue` 抽 `composables/useReportForm.ts`（表单状态机/发布流程/截图校验）+ 演示假数据移入开发环境分支。拆分后行为不变，靠既有交互路径 + 新增单测守护。

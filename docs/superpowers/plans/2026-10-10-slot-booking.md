@@ -1,5 +1,7 @@
 # 时段抢占模块实施计划
 
+> **状态（2026-10-12 补记）**：本计划所述功能已全部实施合入（2026-10-10/11 提交 ae69610…4ec2477、e4d9a05 等），下方 checkbox 为执行期未及时回填的历史状态，不再维护；现行行为以设计文档与代码为准。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 新增「时段抢占」模块：管理员预配置时间段模板（时段配置页），全员在月历页按月查看每天各时段占用状态，点击空闲时段弹窗抢占（关联版本/分支必填），先到先得，唯一约束兜底并发双抢（40904），本人/admin 可释放。

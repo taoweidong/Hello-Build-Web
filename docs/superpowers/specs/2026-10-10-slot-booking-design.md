@@ -79,7 +79,7 @@ SlotBooking（抢占记录）
 ├── template           FK(SlotTemplate, PROTECT, related_name="bookings")
 ├── start_snapshot     TimeField                  模板开始时间快照
 ├── end_snapshot       TimeField                  模板结束时间快照
-├── status             CharField(10)              reserved / released / expired
+├── status             CharField(10)              reserved / released（过期不落库：date<today 的 reserved 由前端按日期惰性置灰，无 expired 枚举值；2026-10-12 移除死枚举）
 ├── user               FK(User, PROTECT, related_name="slot_bookings")   抢占人
 ├── purpose            CharField(200)             用途说明（2~200 字）
 ├── version            FK(Version, PROTECT, related_name="slot_bookings")  必填
