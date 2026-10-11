@@ -3,7 +3,7 @@
 输入：`docs/code-quality-assessment-2026-10-12.md`（问题编号沿用该报告）。
 原则：每阶段独立可提交；**任一阶段完成后必须全量跑通该侧单元测试才进入下一阶段**；行为变化同步更新本文档与测试；模型改动出迁移文件。
 
-> **进度（2026-10-12 回填）**：阶段一 = 820ddcc、阶段二/三 = 063d99b + a62bb9d（后端测试 198 → 279 全绿）；阶段四 = dc6fc89、阶段五主体 = e02d0d9 + 7c32038（含 weekly 载荷补 push_mode 后端项；前端 vitest/typecheck/build 全绿）。阶段六主体 = 9815ea4（前端测试 57 → 104 全绿；`utils/file.ts` 抽取项未完成）；阶段五 F-P2-10/11/12 等余项进行中，对应 checkbox 由实施方完成后勾选。阶段七文档同步已大部完成：AGENTS.md、README 及 slot-booking/borrow-flow/weekly-new(push_mode)/verification-report/django-migration/concurrency-guard/build-strategy-web/round1 设计各文档已按实际行为回写（2026-10-12 docs 提交）；阶段八/九待收尾。
+> **进度（2026-10-12 回填）**：阶段一 = 820ddcc、阶段二/三 = 063d99b + a62bb9d（后端测试 198 → 279 全绿）；阶段四 = dc6fc89、阶段五主体 = e02d0d9 + 7c32038（含 weekly 载荷补 push_mode 后端项；前端 vitest/typecheck/build 全绿）。阶段六主体 = 9815ea4（前端测试 57 → 104 全绿；`utils/file.ts` 抽取项未完成）；阶段五 F-P2-10/11/12 等余项进行中，对应 checkbox 由实施方完成后勾选。阶段七文档同步已完成：AGENTS.md、README 及 slot-booking/borrow-flow/weekly-new(push_mode)/verification-report/django-migration/concurrency-guard/build-strategy-web/round1 设计各文档已按实际行为回写（2026-10-12 docs 提交）；阶段八/九完成情况见文末「实施记录」。
 
 ## 阶段一：后端 P0 修复
 
