@@ -28,8 +28,10 @@ export function getStrategies(params?: {
   return http.get("/strategies", { params });
 }
 
-/** 保存前预览：时间线排布 + 冲突检测（不落库） */
-export function previewStrategy(data: StrategyForm): Promise<PreviewResult> {
+/** 保存前预览：时间线排布 + 冲突检测（不落库）；编辑态传 id 以排除自身冲突 */
+export function previewStrategy(
+  data: StrategyForm & { id?: number }
+): Promise<PreviewResult> {
   return http.post("/strategies/preview", data);
 }
 

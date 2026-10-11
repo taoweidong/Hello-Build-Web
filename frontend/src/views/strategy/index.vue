@@ -53,8 +53,16 @@ const editingId = ref<number | null>(null);
 const isEditing = computed(() => editingId.value !== null);
 
 // ---- 实时预览（防抖 + 过期响应守卫，composable 共用实现）----
-const { preview, schedule: schedulePreview, reset: resetPreview } =
-  useStrategyPreview(() => (form.branch_id && form.template_id ? form : null));
+// 编辑态透传 id，预览接口据此排除被编辑策略自身，避免原时间未变时误报自冲突
+const {
+  preview,
+  schedule: schedulePreview,
+  reset: resetPreview
+} = useStrategyPreview(() =>
+  form.branch_id && form.template_id
+    ? { ...form, id: editingId.value ?? undefined }
+    : null
+);
 
 // 切换分支/模板时自动生成默认名称（若名称未手工修改）
 function onBranchTemplateChange() {
@@ -82,14 +90,19 @@ async function loadMeta() {
     const plan = await getPlan({ date: dayjs().format("YYYY-MM-DD") });
     const v = plan.find(item => item.version_id === boundVersionId);
     if (v) {
-      branchOptions.value = v.branches.map(b => ({ id: b.branch_id, name: b.branch_name }));
+      branchOptions.value = v.branches.map(b => ({
+        id: b.branch_id,
+        name: b.branch_name
+      }));
     }
   } catch {
     branchOptions.value = [];
   }
   // 模板列表：优先 /admin/templates，失败降级从现有策略提取
   try {
-    templateOptions.value = (await http.get("/admin/templates")) as TemplateItem[];
+    templateOptions.value = (await http.get(
+      "/admin/templates"
+    )) as TemplateItem[];
   } catch {
     const set = new Map<number, TemplateItem>();
     strategyList.value.forEach(s => {
@@ -107,7 +120,13 @@ async function loadMeta() {
 }
 
 watch(
-  () => [form.branch_id, form.template_id, form.build_start_time, form.push_mode, form.push_start_time],
+  () => [
+    form.branch_id,
+    form.template_id,
+    form.build_start_time,
+    form.push_mode,
+    form.push_start_time
+  ],
   schedulePreview
 );
 
@@ -145,11 +164,11 @@ async function onSave() {
     );
     return;
   }
-  await ElMessageBox.confirm(
-    "确认保存该策略配置？",
-    "保存策略",
-    { type: "warning", confirmButtonText: "确认保存", cancelButtonText: "取消" }
-  );
+  await ElMessageBox.confirm("确认保存该策略配置？", "保存策略", {
+    type: "warning",
+    confirmButtonText: "确认保存",
+    cancelButtonText: "取消"
+  });
   const payload = {
     ...form,
     push_start_time: form.push_start_time || null
@@ -204,7 +223,13 @@ const previewPhases = computed(() => {
     start: x.t.start,
     end: x.t.end,
     left: ((new Date(x.t.start).getTime() - startMs) / total) * 100,
-    width: (Math.max(new Date(x.t.end).getTime() - new Date(x.t.start).getTime(), 1) / total) * 100,
+    width:
+      (Math.max(
+        new Date(x.t.end).getTime() - new Date(x.t.start).getTime(),
+        1
+      ) /
+        total) *
+      100,
     color: STAGE_COLORS[x.stage]
   }));
 });
@@ -233,10 +258,14 @@ onMounted(async () => {
     <!-- 上半区：本版本策略列表 -->
     <div class="section biz-card">
       <div class="row-head biz-card-head">
-        <span class="section-title biz-card-title">本版本策略列表（{{ boundVersionName }}）</span>
-        <el-button type="primary" size="small" @click="startNew">新建策略</el-button>
+        <span class="section-title biz-card-title"
+          >本版本策略列表（{{ boundVersionName }}）</span
+        >
+        <el-button type="primary" size="small" @click="startNew"
+          >新建策略</el-button
+        >
       </div>
-      <el-table :data="strategyList" v-loading="loading" style="width: 100%">
+      <el-table v-loading="loading" :data="strategyList" style="width: 100%">
         <el-table-column prop="name" label="策略名称" min-width="180" />
         <el-table-column prop="branch_name" label="分支" width="110" />
         <el-table-column prop="template_name" label="模板" width="130" />
@@ -257,7 +286,12 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column label="操作" width="90">
           <template #default="{ row }">
-            <el-button type="primary" link size="small" @click="startEdit(row as StrategyItem)">
+            <el-button
+              type="primary"
+              link
+              size="small"
+              @click="startEdit(row as StrategyItem)"
+            >
               编辑
             </el-button>
           </template>
@@ -267,20 +301,44 @@ onMounted(async () => {
 
     <!-- 下半区：策略编辑表单 + 时间线预览 -->
     <div class="section biz-card">
-      <div class="form-title biz-card-title">{{ isEditing ? "编辑策略" : "新建策略" }}</div>
+      <div class="form-title biz-card-title">
+        {{ isEditing ? "编辑策略" : "新建策略" }}
+      </div>
       <el-form :model="form" label-width="110px" class="strategy-form">
         <el-form-item label="策略分支">
-          <el-select v-model="form.branch_id" style="width: 240px" @change="onBranchTemplateChange">
-            <el-option v-for="b in branchOptions" :key="b.id" :label="b.name" :value="b.id" />
+          <el-select
+            v-model="form.branch_id"
+            style="width: 240px"
+            @change="onBranchTemplateChange"
+          >
+            <el-option
+              v-for="b in branchOptions"
+              :key="b.id"
+              :label="b.name"
+              :value="b.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="策略模板">
-          <el-select v-model="form.template_id" style="width: 240px" @change="onBranchTemplateChange">
-            <el-option v-for="t in templateOptions" :key="t.id" :label="t.name" :value="t.id" />
+          <el-select
+            v-model="form.template_id"
+            style="width: 240px"
+            @change="onBranchTemplateChange"
+          >
+            <el-option
+              v-for="t in templateOptions"
+              :key="t.id"
+              :label="t.name"
+              :value="t.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="策略名称">
-          <el-input v-model="form.name" style="width: 360px" placeholder="策略名称" />
+          <el-input
+            v-model="form.name"
+            style="width: 360px"
+            placeholder="策略名称"
+          />
         </el-form-item>
         <el-form-item label="构建开始时间">
           <el-time-picker
@@ -308,7 +366,9 @@ onMounted(async () => {
             style="width: 160px"
             @change="schedulePreview"
           />
-          <span class="form-tip">（设置后固定在该时间推送，可与其它策略重叠）</span>
+          <span class="form-tip"
+            >（设置后固定在该时间推送，可与其它策略重叠）</span
+          >
         </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="form.enabled" />
@@ -323,7 +383,11 @@ onMounted(async () => {
             v-for="p in previewPhases"
             :key="p.stage"
             class="preview-phase"
-            :style="{ left: p.left + '%', width: p.width + '%', background: p.color }"
+            :style="{
+              left: p.left + '%',
+              width: p.width + '%',
+              background: p.color
+            }"
             :title="`${p.label} ${fmtPreview(p.start)} ~ ${fmtPreview(p.end)}`"
           >
             <span class="preview-phase-label">{{ p.label }}</span>
@@ -332,7 +396,7 @@ onMounted(async () => {
         <div v-else class="preview-empty">填写分支/模板/时间后自动预览</div>
         <div v-if="previewPhases.length" class="preview-legend">
           <span v-for="p in previewPhases" :key="p.stage" class="p-legend-item">
-            <i class="p-dot" :style="{ background: p.color }"></i>
+            <i class="p-dot" :style="{ background: p.color }" />
             {{ p.label }}：{{ fmtPreview(p.start) }}~{{ fmtPreview(p.end) }}
           </span>
         </div>

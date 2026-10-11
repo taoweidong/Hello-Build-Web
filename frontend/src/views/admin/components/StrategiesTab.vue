@@ -31,12 +31,15 @@ const adminDialogVersionId = ref<number | undefined>(undefined);
 const loading = ref(false);
 
 // 弹窗策略预览（防抖 + 过期守卫，与 PM 策略页共用实现）
+// 编辑态透传 id，预览接口据此排除被编辑策略自身，避免原时间未变时误报自冲突
 const {
   preview: adminPreview,
   schedule: scheduleAdminPreview,
   reset: resetAdminPreview
 } = useStrategyPreview(() =>
-  adminStrategyForm.branch_id && adminStrategyForm.template_id ? adminStrategyForm : null
+  adminStrategyForm.branch_id && adminStrategyForm.template_id
+    ? { ...adminStrategyForm, id: adminEditingId.value ?? undefined }
+    : null
 );
 
 /** 弹窗分支选项：基于弹窗内所选版本 */
@@ -100,14 +103,27 @@ function openAdminStrategy(s?: StrategyItem) {
 }
 
 async function saveAdminStrategy() {
-  if (!adminStrategyForm.branch_id) { ElMessage.warning("请选择策略分支"); return; }
-  if (!adminStrategyForm.template_id) { ElMessage.warning("请选择策略模板"); return; }
-  if (!adminStrategyForm.name) { ElMessage.warning("请输入策略名称"); return; }
+  if (!adminStrategyForm.branch_id) {
+    ElMessage.warning("请选择策略分支");
+    return;
+  }
+  if (!adminStrategyForm.template_id) {
+    ElMessage.warning("请选择策略模板");
+    return;
+  }
+  if (!adminStrategyForm.name) {
+    ElMessage.warning("请输入策略名称");
+    return;
+  }
   if (adminPreview.value?.conflict) {
-    ElMessageBox.alert(adminPreview.value.conflict.message || "存在时间冲突", "策略时间冲突", {
-      type: "error",
-      confirmButtonText: "知道了"
-    });
+    ElMessageBox.alert(
+      adminPreview.value.conflict.message || "存在时间冲突",
+      "策略时间冲突",
+      {
+        type: "error",
+        confirmButtonText: "知道了"
+      }
+    );
     return;
   }
   const payload = {
@@ -161,23 +177,52 @@ onMounted(loadAdminStrategies);
 <template>
   <div>
     <div class="toolbar">
-      <el-select v-model="adminVersionId" placeholder="全部版本" clearable style="width: 160px" @change="onAdminVersionChange">
-        <el-option v-for="v in versions" :key="v.id" :label="v.name" :value="v.id" />
+      <el-select
+        v-model="adminVersionId"
+        placeholder="全部版本"
+        clearable
+        style="width: 160px"
+        @change="onAdminVersionChange"
+      >
+        <el-option
+          v-for="v in versions"
+          :key="v.id"
+          :label="v.name"
+          :value="v.id"
+        />
       </el-select>
-      <el-select v-model="adminBranchId" placeholder="全部分支" clearable style="width: 160px" :disabled="!adminVersionId" @change="loadAdminStrategies">
-        <el-option v-for="b in adminFilterBranchOptions" :key="b.id" :label="b.name" :value="b.id" />
+      <el-select
+        v-model="adminBranchId"
+        placeholder="全部分支"
+        clearable
+        style="width: 160px"
+        :disabled="!adminVersionId"
+        @change="loadAdminStrategies"
+      >
+        <el-option
+          v-for="b in adminFilterBranchOptions"
+          :key="b.id"
+          :label="b.name"
+          :value="b.id"
+        />
       </el-select>
-      <el-button type="primary" size="small" @click="loadAdminStrategies">查询</el-button>
-      <el-button type="primary" size="small" @click="openAdminStrategy()">新建策略</el-button>
+      <el-button type="primary" size="small" @click="loadAdminStrategies"
+        >查询</el-button
+      >
+      <el-button type="primary" size="small" @click="openAdminStrategy()"
+        >新建策略</el-button
+      >
     </div>
-    <el-table :data="adminStrategies" v-loading="loading" style="width: 100%">
+    <el-table v-loading="loading" :data="adminStrategies" style="width: 100%">
       <el-table-column prop="name" label="策略名称" min-width="180" />
       <el-table-column prop="version_name" label="版本" width="90" />
       <el-table-column prop="branch_name" label="分支" width="100" />
       <el-table-column prop="template_name" label="模板" width="120" />
       <el-table-column prop="build_start_time" label="构建开始" width="100" />
       <el-table-column label="推送" width="110">
-        <template #default="{ row }"> {{ row.push_start_time || "结论后推导" }} </template>
+        <template #default="{ row }">
+          {{ row.push_start_time || "结论后推导" }}
+        </template>
       </el-table-column>
       <el-table-column label="启用" width="80">
         <template #default="{ row }">
@@ -190,41 +235,105 @@ onMounted(loadAdminStrategies);
       </el-table-column>
       <el-table-column label="操作" width="140">
         <template #default="{ row }">
-          <el-button type="primary" link size="small" @click="openAdminStrategy(row as StrategyItem)">编辑</el-button>
-          <el-button type="danger" link size="small" @click="deleteAdminStrategy(row as StrategyItem)">删除</el-button>
+          <el-button
+            type="primary"
+            link
+            size="small"
+            @click="openAdminStrategy(row as StrategyItem)"
+            >编辑</el-button
+          >
+          <el-button
+            type="danger"
+            link
+            size="small"
+            @click="deleteAdminStrategy(row as StrategyItem)"
+            >删除</el-button
+          >
         </template>
       </el-table-column>
     </el-table>
 
     <!-- 策略编辑弹窗（管理员） -->
-    <el-dialog v-model="adminStrategyDialog" :title="adminEditingId ? '编辑策略' : '新建策略'" width="480px" @closed="resetAdminPreview">
+    <el-dialog
+      v-model="adminStrategyDialog"
+      :title="adminEditingId ? '编辑策略' : '新建策略'"
+      width="480px"
+      @closed="resetAdminPreview"
+    >
       <el-form :model="adminStrategyForm" label-width="110px">
         <el-form-item label="策略版本">
-          <el-select v-model="adminDialogVersionId" style="width: 100%" @change="adminStrategyForm.branch_id = 0; scheduleAdminPreview()">
-            <el-option v-for="v in versions" :key="v.id" :label="v.name" :value="v.id" />
+          <el-select
+            v-model="adminDialogVersionId"
+            style="width: 100%"
+            @change="
+              adminStrategyForm.branch_id = 0;
+              scheduleAdminPreview();
+            "
+          >
+            <el-option
+              v-for="v in versions"
+              :key="v.id"
+              :label="v.name"
+              :value="v.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="策略分支">
-          <el-select v-model="adminStrategyForm.branch_id" style="width: 100%" @change="scheduleAdminPreview">
-            <el-option v-for="b in adminBranchOptions" :key="b.id" :label="b.name" :value="b.id" />
+          <el-select
+            v-model="adminStrategyForm.branch_id"
+            style="width: 100%"
+            @change="scheduleAdminPreview"
+          >
+            <el-option
+              v-for="b in adminBranchOptions"
+              :key="b.id"
+              :label="b.name"
+              :value="b.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="策略模板">
-          <el-select v-model="adminStrategyForm.template_id" style="width: 100%" @change="scheduleAdminPreview">
-            <el-option v-for="t in templates" :key="t.id" :label="t.name" :value="t.id" />
+          <el-select
+            v-model="adminStrategyForm.template_id"
+            style="width: 100%"
+            @change="scheduleAdminPreview"
+          >
+            <el-option
+              v-for="t in templates"
+              :key="t.id"
+              :label="t.name"
+              :value="t.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="策略名称">
           <el-input v-model="adminStrategyForm.name" placeholder="策略名称" />
         </el-form-item>
         <el-form-item label="构建开始时间">
-          <el-time-picker v-model="adminStrategyForm.build_start_time" value-format="HH:mm" format="HH:mm" style="width: 160px" @change="scheduleAdminPreview" />
+          <el-time-picker
+            v-model="adminStrategyForm.build_start_time"
+            value-format="HH:mm"
+            format="HH:mm"
+            style="width: 160px"
+            @change="scheduleAdminPreview"
+          />
         </el-form-item>
         <el-form-item label="推送时间（可空）">
-          <el-time-picker v-model="adminStrategyForm.push_start_time" value-format="HH:mm" format="HH:mm" placeholder="留空=结论后推导" clearable style="width: 160px" @change="scheduleAdminPreview" />
+          <el-time-picker
+            v-model="adminStrategyForm.push_start_time"
+            value-format="HH:mm"
+            format="HH:mm"
+            placeholder="留空=结论后推导"
+            clearable
+            style="width: 160px"
+            @change="scheduleAdminPreview"
+          />
         </el-form-item>
         <el-form-item label="推送模式">
-          <el-radio-group v-model="adminStrategyForm.push_mode" @change="scheduleAdminPreview">
+          <el-radio-group
+            v-model="adminStrategyForm.push_mode"
+            @change="scheduleAdminPreview"
+          >
             <el-radio value="normal">正常流程推送</el-radio>
             <el-radio value="sync">同步推送冒烟</el-radio>
           </el-radio-group>
@@ -233,12 +342,19 @@ onMounted(loadAdminStrategies);
           <el-switch v-model="adminStrategyForm.enabled" />
         </el-form-item>
         <el-form-item v-if="adminPreview?.conflict" label="冲突">
-          <span class="preview-conflict"> {{ adminPreview.conflict.message || "存在时间冲突" }} </span>
+          <span class="preview-conflict">
+            {{ adminPreview.conflict.message || "存在时间冲突" }}
+          </span>
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="adminStrategyDialog = false">取消</el-button>
-        <el-button type="primary" :disabled="!!adminPreview?.conflict" @click="saveAdminStrategy">保存</el-button>
+        <el-button
+          type="primary"
+          :disabled="!!adminPreview?.conflict"
+          @click="saveAdminStrategy"
+          >保存</el-button
+        >
       </template>
     </el-dialog>
   </div>

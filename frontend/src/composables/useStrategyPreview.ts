@@ -6,8 +6,11 @@ import {
   type StrategyForm
 } from "@/api/strategy";
 
+/** 编辑态透传 id，预览时后端据此排除被编辑策略自身，避免自冲突误报 */
+export type StrategyPreviewForm = StrategyForm & { id?: number };
+
 export function useStrategyPreview(
-  getForm: () => StrategyForm | null,
+  getForm: () => StrategyPreviewForm | null,
   debounceMs = 400
 ) {
   const preview = shallowRef<PreviewResult | null>(null);
@@ -17,7 +20,8 @@ export function useStrategyPreview(
   /** 表单变化后调度防抖预览；分支/模板/时间未选齐时跳过 */
   function schedule() {
     const form = getForm();
-    if (!form?.branch_id || !form?.template_id || !form?.build_start_time) return;
+    if (!form?.branch_id || !form?.template_id || !form?.build_start_time)
+      return;
     if (timer) clearTimeout(timer);
     timer = setTimeout(run, debounceMs);
   }

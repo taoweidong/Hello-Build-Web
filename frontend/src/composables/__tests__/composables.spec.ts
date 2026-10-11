@@ -9,7 +9,10 @@ import { buildPlanRows } from "@/composables/useGanttRows";
 
 describe("views/constants 展示映射", () => {
   it("轮次结论：命中与兜底", () => {
-    expect(roundConclusionMeta("pass")).toEqual({ text: "通过", type: "success" });
+    expect(roundConclusionMeta("pass")).toEqual({
+      text: "通过",
+      type: "success"
+    });
     expect(roundConclusionMeta("fail").type).toBe("danger");
     expect(roundConclusionMeta("pending").text).toBe("待录");
     expect(roundConclusionMeta("unknown")).toEqual({
@@ -27,7 +30,10 @@ describe("views/constants 展示映射", () => {
   });
 
   it("推送状态：命中与兜底", () => {
-    expect(pushStatusMeta("success")).toEqual({ text: "成功", type: "success" });
+    expect(pushStatusMeta("success")).toEqual({
+      text: "成功",
+      type: "success"
+    });
     expect(pushStatusMeta("failed").type).toBe("danger");
     expect(pushStatusMeta("")).toEqual({ text: "-", type: "info" });
   });
@@ -54,9 +60,18 @@ describe("useGanttRows 行构建逻辑（纯函数部分）", () => {
               conflict: true,
               timeline: {
                 push: null,
-                build: { start: "2026-10-11T22:00:00", end: "2026-10-11T22:30:00" },
-                smoke: { start: "2026-10-11T22:30:00", end: "2026-10-12T06:30:00" },
-                analysis: { start: "2026-10-12T06:30:00", end: "2026-10-12T08:30:00" }
+                build: {
+                  start: "2026-10-11T22:00:00",
+                  end: "2026-10-11T22:30:00"
+                },
+                smoke: {
+                  start: "2026-10-11T22:30:00",
+                  end: "2026-10-12T06:30:00"
+                },
+                analysis: {
+                  start: "2026-10-12T06:30:00",
+                  end: "2026-10-12T08:30:00"
+                }
               }
             },
             {
@@ -68,10 +83,22 @@ describe("useGanttRows 行构建逻辑（纯函数部分）", () => {
               enabled: true,
               conflict: false,
               timeline: {
-                push: { start: "2026-10-11T22:10:00", end: "2026-10-11T22:30:00" },
-                build: { start: "2026-10-11T23:00:00", end: "2026-10-11T23:30:00" },
-                smoke: { start: "2026-10-11T23:30:00", end: "2026-10-12T07:30:00" },
-                analysis: { start: "2026-10-12T07:30:00", end: "2026-10-12T09:30:00" }
+                push: {
+                  start: "2026-10-11T22:10:00",
+                  end: "2026-10-11T22:30:00"
+                },
+                build: {
+                  start: "2026-10-11T23:00:00",
+                  end: "2026-10-11T23:30:00"
+                },
+                smoke: {
+                  start: "2026-10-11T23:30:00",
+                  end: "2026-10-12T07:30:00"
+                },
+                analysis: {
+                  start: "2026-10-12T07:30:00",
+                  end: "2026-10-12T09:30:00"
+                }
               }
             }
           ]
@@ -127,8 +154,13 @@ describe("useStrategyPreview 守卫逻辑", () => {
     vi.doMock("@/api/strategy", () => ({
       previewStrategy
     }));
-    const { useStrategyPreview } = await import("@/composables/useStrategyPreview");
-    const form: any = { branch_id: 0, template_id: 0, build_start_time: "22:00" };
+    const { useStrategyPreview } =
+      await import("@/composables/useStrategyPreview");
+    const form: any = {
+      branch_id: 0,
+      template_id: 0,
+      build_start_time: "22:00"
+    };
     const { schedule, run } = useStrategyPreview(() => form, 5);
     schedule();
     await new Promise(r => setTimeout(r, 30));
@@ -140,10 +172,36 @@ describe("useStrategyPreview 守卫逻辑", () => {
     await new Promise(r => setTimeout(r, 40));
     expect(previewStrategy).toHaveBeenCalledTimes(1);
     expect(previewStrategy).toHaveBeenCalledWith(
-      expect.objectContaining({ branch_id: 1, template_id: 2, push_start_time: null })
+      expect.objectContaining({
+        branch_id: 1,
+        template_id: 2,
+        push_start_time: null
+      })
     );
     run();
     await Promise.resolve();
     expect(previewStrategy).toHaveBeenCalledTimes(2);
+  });
+
+  it("编辑态透传 id，预览请求排除被编辑策略自身", async () => {
+    const previewStrategy = vi.fn().mockResolvedValue({ timeline: {} });
+    vi.doMock("@/api/strategy", () => ({
+      previewStrategy
+    }));
+    vi.resetModules(); // 清除上一用例的模块缓存，确保本次 doMock 生效
+    const { useStrategyPreview } =
+      await import("@/composables/useStrategyPreview");
+    const form: any = {
+      id: 7,
+      branch_id: 1,
+      template_id: 2,
+      build_start_time: "22:00"
+    };
+    const { schedule } = useStrategyPreview(() => form, 5);
+    schedule();
+    await new Promise(r => setTimeout(r, 40));
+    expect(previewStrategy).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 7, branch_id: 1 })
+    );
   });
 });
