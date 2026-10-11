@@ -7,6 +7,7 @@ import { getExecutions, submitConclusion } from "@/api/execution";
 import type { RoundItem } from "@/api/types";
 import { getCurrentUser, timeToMs, dayjs, formatTime } from "@/utils/business";
 import { pollDelay, shouldNotify } from "@/utils/polling";
+import { pushStatusMeta, roundConclusionMeta } from "@/views/constants";
 
 defineOptions({ name: "ExecutionIndex" });
 
@@ -159,26 +160,6 @@ function phaseRange(r: RoundItem, key: "build" | "smoke" | "analysis") {
   const [s, e] = map[key];
   return `${formatTime(s, "HH:mm")}-${formatTime(e, "HH:mm")}`;
 }
-
-function conclusionTag(r: RoundItem): {
-  type: "success" | "danger" | "info";
-  label: string;
-} {
-  if (r.conclusion === "pass") return { type: "success", label: "通过" };
-  if (r.conclusion === "fail") return { type: "danger", label: "不通过" };
-  return { type: "info", label: "待录" };
-}
-
-const pushStatusMap: Record<
-  string,
-  { type: "primary" | "success" | "warning" | "info" | "danger"; label: string }
-> = {
-  pending: { type: "info", label: "待推送" },
-  running: { type: "primary", label: "推送中" },
-  success: { type: "success", label: "推送成功" },
-  failed: { type: "danger", label: "推送失败" },
-  skipped: { type: "warning", label: "跳过" }
-};
 </script>
 
 <template>
@@ -277,24 +258,20 @@ const pushStatusMap: Record<
             </el-button>
             <el-tag
               v-else
-              :type="conclusionTag(row as RoundItem).type"
+              :type="roundConclusionMeta((row as RoundItem).conclusion).type"
               size="small"
             >
-              {{ conclusionTag(row as RoundItem).label }}
+              {{ roundConclusionMeta((row as RoundItem).conclusion).text }}
             </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="推送" min-width="120">
           <template #default="{ row }">
             <el-tag
-              :type="
-                (pushStatusMap[row.push_status] || pushStatusMap.pending).type
-              "
+              :type="pushStatusMeta((row as RoundItem).push_status).type"
               size="small"
             >
-              {{
-                (pushStatusMap[row.push_status] || pushStatusMap.pending).label
-              }}
+              {{ pushStatusMeta((row as RoundItem).push_status).text }}
             </el-tag>
           </template>
         </el-table-column>

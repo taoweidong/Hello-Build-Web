@@ -8,6 +8,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from ..api import err, ok
+from ..errors import CODE_FORBIDDEN, CODE_NOT_FOUND, CODE_STATUS, CODE_UNPROCESSABLE
 from ..models import Branch, Strategy, StrategyTemplate
 from ..services.config import get_config
 from ..services.strategies import (
@@ -36,14 +37,15 @@ def _check_pm_bound(user, branch):
     if user.role == "admin":
         return None
     if user.role != "pm":
-        return fail_resp(40301, "无权限操作策略")
+        return fail_resp(CODE_FORBIDDEN, "无权限操作策略")
     if branch.version.pm_user_id != user.id:
-        return fail_resp(40301, "仅可操作本版本分支")
+        return fail_resp(CODE_FORBIDDEN, "仅可操作本版本分支")
     return None
 
 
 def _validation_error(exc: StrategyValidationError):
-    return json_resp(err(exc.code, exc.message, exc.extra), status=409 if exc.code in (40901, 40902) else 422)
+    """StrategyValidationError → 统一错误响应；HTTP 状态由 CODE_STATUS 真源映射。"""
+    return json_resp(err(exc.code, exc.message, exc.extra), status=CODE_STATUS.get(exc.code, 422))
 
 
 def list_strategies(request):
@@ -55,7 +57,7 @@ def list_strategies(request):
     raw_branch_id = request.GET.get("branch_id")
     for name, raw in (("version_id", raw_version_id), ("branch_id", raw_branch_id)):
         if raw and parse_int(raw) is None:
-            return fail_resp(42201, f"{name} 应为整数")
+            return fail_resp(CODE_UNPROCESSABLE, f"{name} 应为整数")
     version_id = parse_int(raw_version_id)
     branch_id = parse_int(raw_branch_id)
     if version_id:
@@ -71,7 +73,7 @@ def list_strategies(request):
 
 def preview_strategy(request):
     if request.method != "POST":
-        return fail_resp(42201, "不支持的请求方法")
+        return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
     authed = _authed(request)
     if authed:
         return authed
@@ -79,11 +81,11 @@ def preview_strategy(request):
     branch_id = parse_int(body.get("branch_id"))
     template_id = parse_int(body.get("template_id"))
     if branch_id is None or template_id is None:
-        return fail_resp(42201, "branch_id / template_id 应为整数")
+        return fail_resp(CODE_UNPROCESSABLE, "branch_id / template_id 应为整数")
     branch = Branch.objects.filter(id=branch_id).first()
     template = StrategyTemplate.objects.filter(id=template_id).first()
     if not branch or not template:
-        return fail_resp(42201, "分支或模板不存在")
+        return fail_resp(CODE_UNPROCESSABLE, "分支或模板不存在")
     build_start_time = body.get("build_start_time", "22:00")
     push_start_time = body.get("push_start_time")
     push_mode = body.get("push_mode", "normal")
@@ -111,11 +113,11 @@ def create_strategy(request):
     branch_id = parse_int(body.get("branch_id"))
     template_id = parse_int(body.get("template_id"))
     if branch_id is None or template_id is None:
-        return fail_resp(42201, "branch_id / template_id 应为整数")
+        return fail_resp(CODE_UNPROCESSABLE, "branch_id / template_id 应为整数")
     branch = Branch.objects.filter(id=branch_id).first()
     template = StrategyTemplate.objects.filter(id=template_id).first()
     if not branch or not template:
-        return fail_resp(42201, "分支或模板不存在")
+        return fail_resp(CODE_UNPROCESSABLE, "分支或模板不存在")
     perr = _check_pm_bound(request.user, branch)
     if perr:
         return perr
@@ -138,7 +140,7 @@ def update_strategy(request, sid):
         return authed
     s = Strategy.objects.select_related("branch", "branch__version", "template").filter(id=sid).first()
     if not s:
-        return fail_resp(40401, "策略不存在")
+        return fail_resp(CODE_NOT_FOUND, "策略不存在")
     perr = _check_pm_bound(request.user, s.branch)
     if perr:
         return perr
@@ -155,7 +157,7 @@ def toggle_strategy(request, sid):
         return authed
     s = Strategy.objects.select_related("branch", "branch__version", "template").filter(id=sid).first()
     if not s:
-        return fail_resp(40401, "策略不存在")
+        return fail_resp(CODE_NOT_FOUND, "策略不存在")
     perr = _check_pm_bound(request.user, s.branch)
     if perr:
         return perr
@@ -170,7 +172,7 @@ def delete_strategy(request, sid):
         return authed
     s = Strategy.objects.filter(id=sid).first()
     if not s:
-        return fail_resp(40401, "策略不存在")
+        return fail_resp(CODE_NOT_FOUND, "策略不存在")
     perr = _check_pm_bound(request.user, s.branch)
     if perr:
         return perr
@@ -183,7 +185,7 @@ def strategies_view(request):
         return list_strategies(request)
     if request.method == "POST":
         return create_strategy(request)
-    return fail_resp(42201, "不支持的请求方法")
+    return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
 
 
 def strategy_detail_view(request, sid):
@@ -191,4 +193,4 @@ def strategy_detail_view(request, sid):
         return update_strategy(request, sid)
     if request.method == "DELETE":
         return delete_strategy(request, sid)
-    return fail_resp(42201, "不支持的请求方法")
+    return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")

@@ -5,6 +5,19 @@ from django.db import IntegrityError
 from django.db.models import ProtectedError
 
 from ..api import err, ok
+from ..errors import (
+    CODE_ASSOCIATION,
+    CODE_BAD_CREDENTIALS,
+    CODE_DUPLICATE,
+    CODE_FORBIDDEN,
+    CODE_NOT_FOUND,
+    CODE_RATE_LIMITED,
+    CODE_SLOT_CONFLICT,
+    CODE_STAGE_CONFLICT,
+    CODE_STATUS,
+    CODE_UNAUTHENTICATED,
+    CODE_UNPROCESSABLE,
+)
 from ..models import AdminOpLog, Branch, SecurityLog, Strategy, StrategyTemplate, Version
 from ..services.config import get_config, set_config
 from ..services.strategies import (
@@ -61,19 +74,19 @@ def create_version(user, body):
     name = body.get("name")
     pm_user_id = parse_int(body.get("pm_user_id"))
     if not name or pm_user_id is None:
-        return fail_resp(42201, "版本名与 PM 必填")
+        return fail_resp(CODE_UNPROCESSABLE, "版本名与 PM 必填")
     if Version.objects.filter(name=name).exists():
-        return fail_resp(40902, "版本号已存在")
+        return fail_resp(CODE_DUPLICATE, "版本号已存在")
     pm = User.objects.filter(id=pm_user_id).first()
     if not pm:
-        return fail_resp(42201, "PM 用户不存在")
+        return fail_resp(CODE_UNPROCESSABLE, "PM 用户不存在")
     status = body.get("status", "active")
     if status not in _VALID_STATUSES:
-        return fail_resp(42201, "非法状态")
+        return fail_resp(CODE_UNPROCESSABLE, "非法状态")
     try:
         v = Version.objects.create(name=name, pm_user=pm, status=status)
     except IntegrityError:
-        return fail_resp(40902, "版本号已存在")
+        return fail_resp(CODE_DUPLICATE, "版本号已存在")
     _admin_log(user, "create_version", target_type="version", target_id=v.id, detail=name)
     return json_resp(ok({"id": v.id, "name": v.name, "pm_user_id": v.pm_user_id, "status": v.status}))
 
@@ -89,7 +102,7 @@ def extra_view(request):
         return list_versions(user)
     if request.method == "POST":
         return create_version(user, parse_body(request))
-    return fail_resp(42201, "不支持的请求方法")
+    return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
 
 
 def update_version(request, vid):
@@ -101,29 +114,29 @@ def update_version(request, vid):
         return perr
     v = Version.objects.filter(id=vid).first()
     if not v:
-        return fail_resp(40401, "版本不存在")
+        return fail_resp(CODE_NOT_FOUND, "版本不存在")
     body = parse_body(request)
     if body.get("name") is not None:
         dup = Version.objects.filter(name=body["name"]).exclude(id=vid).exists()
         if dup:
-            return fail_resp(40902, "版本号已存在")
+            return fail_resp(CODE_DUPLICATE, "版本号已存在")
         v.name = body["name"]
     if body.get("pm_user_id") is not None:
         pm_id = parse_int(body["pm_user_id"])
         if pm_id is None:
-            return fail_resp(42201, "pm_user_id 应为整数")
+            return fail_resp(CODE_UNPROCESSABLE, "pm_user_id 应为整数")
         pm = User.objects.filter(id=pm_id).first()
         if not pm:
-            return fail_resp(42201, "PM 用户不存在")
+            return fail_resp(CODE_UNPROCESSABLE, "PM 用户不存在")
         v.pm_user = pm
     if body.get("status") is not None:
         if body["status"] not in _VALID_STATUSES:
-            return fail_resp(42201, "非法状态")
+            return fail_resp(CODE_UNPROCESSABLE, "非法状态")
         v.status = body["status"]
     try:
         v.save()
     except IntegrityError:
-        return fail_resp(40902, "版本号或 PM 已占用")
+        return fail_resp(CODE_DUPLICATE, "版本号或 PM 已占用")
     _admin_log(user, "update_version", target_type="version", target_id=vid)
     return json_resp(ok({"id": v.id, "name": v.name, "pm_user_id": v.pm_user_id, "status": v.status}))
 
@@ -137,17 +150,17 @@ def add_branch(request, vid):
         return perr
     v = Version.objects.filter(id=vid).first()
     if not v:
-        return fail_resp(40401, "版本不存在")
+        return fail_resp(CODE_NOT_FOUND, "版本不存在")
     body = parse_body(request)
     name = body.get("name")
     if not name:
-        return fail_resp(42201, "分支名必填")
+        return fail_resp(CODE_UNPROCESSABLE, "分支名必填")
     if Branch.objects.filter(version=v, name=name).exists():
-        return fail_resp(40902, "该版本下分支已存在")
+        return fail_resp(CODE_DUPLICATE, "该版本下分支已存在")
     try:
         b = Branch.objects.create(version=v, name=name)
     except IntegrityError:
-        return fail_resp(40902, "该版本下分支已存在")
+        return fail_resp(CODE_DUPLICATE, "该版本下分支已存在")
     _admin_log(user, "add_branch", target_type="branch", target_id=b.id, detail=f"{v.name}/{name}")
     return json_resp(ok({"id": b.id, "version_id": v.id, "name": b.name}))
 
@@ -172,21 +185,21 @@ def users_view(request):
         username = body.get("username")
         role = body.get("role", "builder")
         if not username:
-            return fail_resp(42201, "用户名必填")
+            return fail_resp(CODE_UNPROCESSABLE, "用户名必填")
         if role not in _VALID_ROLES:
-            return fail_resp(42201, "非法角色")
+            return fail_resp(CODE_UNPROCESSABLE, "非法角色")
         if User.objects.filter(username=username).exists():
-            return fail_resp(40902, "用户名已存在")
+            return fail_resp(CODE_DUPLICATE, "用户名已存在")
         try:
             u = User.objects.create_user(
                 username=username, password=body.get("password") or "123456",
                 role=role, display_name=body.get("display_name", ""),
             )
         except IntegrityError:
-            return fail_resp(40902, "用户名已存在")
+            return fail_resp(CODE_DUPLICATE, "用户名已存在")
         _admin_log(user, "create_user", target_type="user", target_id=u.id, detail=username)
         return json_resp(ok({"id": u.id, "username": u.username, "role": u.role}))
-    return fail_resp(42201, "不支持的请求方法")
+    return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
 
 
 def update_user(request, uid):
@@ -198,7 +211,7 @@ def update_user(request, uid):
         return perr
     u = User.objects.filter(id=uid).first()
     if not u:
-        return fail_resp(40401, "用户不存在")
+        return fail_resp(CODE_NOT_FOUND, "用户不存在")
     body = parse_body(request)
     # 记录变更前身份，用于"最后一个 admin"保护判定
     orig_role, orig_is_active = u.role, u.is_active
@@ -206,7 +219,7 @@ def update_user(request, uid):
         u.set_password(body["password"])
     if body.get("role") is not None:
         if body["role"] not in _VALID_ROLES:
-            return fail_resp(42201, "非法角色")
+            return fail_resp(CODE_UNPROCESSABLE, "非法角色")
         u.role = body["role"]
     if body.get("display_name") is not None:
         u.display_name = body["display_name"]
@@ -220,7 +233,7 @@ def update_user(request, uid):
     if losing_admin:
         others = User.objects.filter(role="admin", is_active=True).exclude(id=u.id).exists()
         if not others:
-            return fail_resp(40902, "系统至少保留一名启用状态的管理员")
+            return fail_resp(CODE_DUPLICATE, "系统至少保留一名启用状态的管理员")
     u.save()
     _admin_log(user, "update_user", target_type="user", target_id=uid)
     return json_resp(ok({"id": u.id, "username": u.username, "role": u.role, "is_active": u.is_active}))
@@ -233,7 +246,7 @@ def templates_view(request):
     if resp:
         return resp
     if user.role not in ("admin", "pm"):
-        return fail_resp(40301, "无权限操作模板")
+        return fail_resp(CODE_FORBIDDEN, "无权限操作模板")
     if request.method == "GET":
         qs = StrategyTemplate.objects.all()
         return json_resp(ok([{
@@ -247,7 +260,7 @@ def templates_view(request):
         body = parse_body(request)
         name = body.get("name")
         if not name:
-            return fail_resp(42201, "模板名必填")
+            return fail_resp(CODE_UNPROCESSABLE, "模板名必填")
         t = StrategyTemplate.objects.create(
             name=name,
             smoke_minutes=body.get("smoke_minutes", 0),
@@ -257,7 +270,7 @@ def templates_view(request):
         _admin_log(user, "create_template", target_type="template", target_id=t.id, detail=name)
         return json_resp(ok({"id": t.id, "name": t.name, "smoke_minutes": t.smoke_minutes,
                              "analysis_minutes": t.analysis_minutes, "description": t.description}))
-    return fail_resp(42201, "不支持的请求方法")
+    return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
 
 
 def _template_payload(t):
@@ -270,7 +283,7 @@ def _template_payload(t):
 def _get_template_or_404(tid):
     t = StrategyTemplate.objects.filter(id=tid).first()
     if not t:
-        return None, fail_resp(40401, "模板不存在")
+        return None, fail_resp(CODE_NOT_FOUND, "模板不存在")
     return t, None
 
 
@@ -306,7 +319,7 @@ def delete_template(request, user, tid):
         t.delete()
     except ProtectedError:
         # Strategy.template 为 PROTECT，被引用时抛 ProtectedError 而非 IntegrityError
-        return fail_resp(40903, "模板正在被策略引用，无法删除")
+        return fail_resp(CODE_ASSOCIATION, "模板正在被策略引用，无法删除")
     _admin_log(user, "delete_template", target_type="template", target_id=tid)
     return json_resp(ok())
 
@@ -319,7 +332,7 @@ def template_detail_view(request, tid):
         return update_template(request, user, tid)
     if request.method == "DELETE":
         return delete_template(request, user, tid)
-    return fail_resp(42201, "不支持的请求方法")
+    return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
 
 
 # ---------- 配置 ----------
@@ -352,10 +365,10 @@ def config_view(request):
                 try:
                     set_config(key, int(body[key]))
                 except (TypeError, ValueError):
-                    return fail_resp(42201, f"{key} 应为整数")
+                    return fail_resp(CODE_UNPROCESSABLE, f"{key} 应为整数")
         _admin_log(user, "update_config", target_type="config", detail=str(body))
         return json_resp(ok(_config_payload()))
-    return fail_resp(42201, "不支持的请求方法")
+    return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
 
 
 # ---------- 日志 ----------
@@ -399,8 +412,8 @@ def logs_view(request, kind):
 
 
 def _validation_error(exc):
-    """StrategyValidationError → 统一错误响应（40901/40902→409，其余→422）。"""
-    status = 409 if exc.code in (40901, 40902) else 422
+    """StrategyValidationError → 统一错误响应；HTTP 状态由 CODE_STATUS 真源映射。"""
+    status = CODE_STATUS.get(exc.code, 422)
     return json_resp(err(exc.code, exc.message, exc.extra), status=status)
 
 
@@ -410,7 +423,7 @@ def _list_admin_strategies(request):
     raw_branch_id = request.GET.get("branch_id")
     for name, raw in (("version_id", raw_version_id), ("branch_id", raw_branch_id)):
         if raw and parse_int(raw) is None:
-            return fail_resp(42201, f"{name} 应为整数")
+            return fail_resp(CODE_UNPROCESSABLE, f"{name} 应为整数")
     version_id = parse_int(raw_version_id)
     branch_id = parse_int(raw_branch_id)
     if version_id:
@@ -425,11 +438,11 @@ def _create_admin_strategy(request, user):
     branch_id = parse_int(body.get("branch_id"))
     template_id = parse_int(body.get("template_id"))
     if branch_id is None or template_id is None:
-        return fail_resp(42201, "branch_id / template_id 应为整数")
+        return fail_resp(CODE_UNPROCESSABLE, "branch_id / template_id 应为整数")
     branch = Branch.objects.filter(id=branch_id).first()
     template = StrategyTemplate.objects.filter(id=template_id).first()
     if not branch or not template:
-        return fail_resp(42201, "分支或模板不存在")
+        return fail_resp(CODE_UNPROCESSABLE, "分支或模板不存在")
     try:
         s = svc_create_strategy(
             branch, template, user, name=body.get("name"),
@@ -455,13 +468,13 @@ def admin_strategies_view(request):
         return _list_admin_strategies(request)
     if request.method == "POST":
         return _create_admin_strategy(request, user)
-    return fail_resp(42201, "不支持的请求方法")
+    return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
 
 
 def _update_admin_strategy(request, user, sid):
     s = Strategy.objects.select_related("branch", "branch__version", "template").filter(id=sid).first()
     if not s:
-        return fail_resp(40401, "策略不存在")
+        return fail_resp(CODE_NOT_FOUND, "策略不存在")
     body = parse_body(request)
     try:
         svc_update_strategy(s, body, user)
@@ -474,7 +487,7 @@ def _update_admin_strategy(request, user, sid):
 def _toggle_admin_strategy(request, user, sid):
     s = Strategy.objects.select_related("branch", "branch__version", "template").filter(id=sid).first()
     if not s:
-        return fail_resp(40401, "策略不存在")
+        return fail_resp(CODE_NOT_FOUND, "策略不存在")
     s.enabled = not s.enabled
     s.save()
     _admin_log(user, "toggle_strategy", target_type="strategy", target_id=sid)
@@ -484,7 +497,7 @@ def _toggle_admin_strategy(request, user, sid):
 def _delete_admin_strategy(request, user, sid):
     s = Strategy.objects.filter(id=sid).first()
     if not s:
-        return fail_resp(40401, "策略不存在")
+        return fail_resp(CODE_NOT_FOUND, "策略不存在")
     s.delete()
     _admin_log(user, "delete_strategy", target_type="strategy", target_id=sid)
     return json_resp(ok())
@@ -501,7 +514,7 @@ def admin_strategy_detail_view(request, sid):
         return _update_admin_strategy(request, user, sid)
     if request.method == "DELETE":
         return _delete_admin_strategy(request, user, sid)
-    return fail_resp(42201, "不支持的请求方法")
+    return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
 
 
 def admin_strategy_toggle_view(request, sid):
@@ -512,5 +525,5 @@ def admin_strategy_toggle_view(request, sid):
     if perr:
         return perr
     if request.method != "PATCH":
-        return fail_resp(42201, "不支持的请求方法")
+        return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
     return _toggle_admin_strategy(request, user, sid)

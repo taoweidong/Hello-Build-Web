@@ -7,6 +7,7 @@ import { ElMessage } from "element-plus";
 import { getWeekly } from "@/api/weekly";
 import type { WeeklyData, WeeklyStrategy } from "@/api/types";
 import { dayjs } from "@/utils/business";
+import { useBranchColors } from "@/composables/useBranchColors";
 
 defineOptions({ name: "WeeklyIndex" });
 
@@ -33,7 +34,9 @@ const selectedWeek = ref("");
 const versionOptions = computed(() => data.value?.versions ?? []);
 
 // 当前选中版本名（用于分支行展示；version 可能为 null）
-const currentVersionName = computed(() => data.value?.version?.version_name ?? "");
+const currentVersionName = computed(
+  () => data.value?.version?.version_name ?? ""
+);
 
 // ISO 周数（后端未返回 week_number）
 function isoWeek(date: Date): number {
@@ -57,6 +60,9 @@ function weekdayCN(en: string): string {
 }
 
 const branches = computed(() => data.value?.branches ?? []);
+
+// 分支配色：固定色板、按 branch_id 稳定取色（与 weekly-new 共用）
+const { branchColor } = useBranchColors(branches);
 
 const weekRangeText = computed(() => {
   const ws = data.value?.week_start;
@@ -88,27 +94,6 @@ const monthWeeks = computed(() => {
   }
   return result;
 });
-
-// 分支配色：固定色板；按 branch_id 稳定取色
-const BRANCH_PALETTE = [
-  "#3b82f6",
-  "#8b5cf6",
-  "#f59e0b",
-  "#10b981",
-  "#ef4444",
-  "#06b6d4"
-];
-// 分支配色映射：一次计算，避免模板内重复 O(n) 查找
-const branchColorMap = computed(() => {
-  const map = new Map<number, string>();
-  branches.value.forEach((b, idx) => {
-    map.set(b.branch_id, BRANCH_PALETTE[(idx + 1) % BRANCH_PALETTE.length]);
-  });
-  return map;
-});
-function branchColor(branchId: number) {
-  return branchColorMap.value.get(branchId) || BRANCH_PALETTE[0];
-}
 
 // 策略预分组：按 branch_id 过滤 + build_start_time 升序，避免 v-for 内重复计算
 const strategyMap = computed(() => {
@@ -194,7 +179,9 @@ onMounted(load);
             :label="v.version_name"
           />
         </el-select>
-        <el-button type="primary" :loading="loading" @click="load">查询</el-button>
+        <el-button type="primary" :loading="loading" @click="load"
+          >查询</el-button
+        >
       </div>
     </div>
 
@@ -216,7 +203,7 @@ onMounted(load);
     </div>
 
     <!-- 第三行：核心网格 -->
-    <div class="row-card row-3" v-loading="loading">
+    <div v-loading="loading" class="row-card row-3">
       <div class="grid-head">
         <div class="grid-corner">分支 / 时间</div>
         <div v-for="d in weekDays" :key="d.date" class="grid-col-head">
@@ -249,7 +236,10 @@ onMounted(load);
     <div class="row-card row-4">
       <span class="legend-label">图例</span>
       <span v-for="b in branches" :key="b.branch_id" class="legend-item">
-        <i class="legend-dot" :style="{ background: branchColor(b.branch_id) }"></i>
+        <i
+          class="legend-dot"
+          :style="{ background: branchColor(b.branch_id) }"
+        />
         {{ b.branch_name }}
       </span>
       <span v-if="branches.length === 0" class="legend-empty">暂无分支</span>

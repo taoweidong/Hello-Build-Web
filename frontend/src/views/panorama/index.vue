@@ -5,6 +5,7 @@ import { ref, reactive, computed, onMounted } from "vue";
 import { getStrategies, getExecutions, getRoundDetail } from "@/api/panorama";
 import type { StrategyItem, RoundItem, ExecutionLogItem } from "@/api/types";
 import { dayjs, timeToMs, formatTime } from "@/utils/business";
+import { pushStatusMeta, roundConclusionMeta } from "@/views/constants";
 
 defineOptions({ name: "PanoramaIndex" });
 
@@ -17,7 +18,10 @@ const selectedStrategy = ref<StrategyItem | null>(null);
 const filter = reactive({
   version_id: undefined as number | undefined,
   branch_id: undefined as number | undefined,
-  range: [dayjs().subtract(6, "day").format("YYYY-MM-DD"), dayjs().format("YYYY-MM-DD")] as string[]
+  range: [
+    dayjs().subtract(6, "day").format("YYYY-MM-DD"),
+    dayjs().format("YYYY-MM-DD")
+  ] as string[]
 });
 
 // 版本/分支选项（从策略数据提取）
@@ -104,18 +108,9 @@ async function openLog(round: RoundItem) {
 }
 
 // ---- 展示辅助 ----
-const pushStatusMap: Record<string, string> = {
-  pending: "待推送",
-  running: "推送中",
-  success: "成功",
-  failed: "失败",
-  skipped: "跳过"
-};
-const conclusionMap: Record<string, string> = {
-  pending: "待录",
-  pass: "通过",
-  fail: "不通过"
-};
+// 结论/推送文案统一走 views/constants（唯一来源），此处仅做取值适配
+const pushStatusText = (code: string) => pushStatusMeta(code).text;
+const conclusionText = (code: string) => roundConclusionMeta(code).text;
 
 function phaseShort(r: RoundItem, key: "build" | "smoke" | "analysis") {
   const map = {
@@ -142,7 +137,12 @@ onMounted(loadStrategies);
         style="width: 160px"
         @change="onVersionChange"
       >
-        <el-option v-for="v in versionOptions" :key="v.id" :label="v.name" :value="v.id" />
+        <el-option
+          v-for="v in versionOptions"
+          :key="v.id"
+          :label="v.name"
+          :value="v.id"
+        />
       </el-select>
       <el-select
         v-model="filter.branch_id"
@@ -152,7 +152,12 @@ onMounted(loadStrategies);
         style="width: 160px"
         @change="onBranchChange"
       >
-        <el-option v-for="b in branchOptions" :key="b.id" :label="b.name" :value="b.id" />
+        <el-option
+          v-for="b in branchOptions"
+          :key="b.id"
+          :label="b.name"
+          :value="b.id"
+        />
       </el-select>
       <el-date-picker
         v-model="filter.range"
@@ -164,7 +169,9 @@ onMounted(loadStrategies);
         style="width: 260px"
         @change="selectedStrategy && selectStrategy(selectedStrategy)"
       />
-      <el-button type="primary" :loading="loading" @click="loadStrategies">查询</el-button>
+      <el-button type="primary" :loading="loading" @click="loadStrategies"
+        >查询</el-button
+      >
     </div>
 
     <!-- ① 策略配置全景区 -->
@@ -191,7 +198,9 @@ onMounted(loadStrategies);
               <div class="card-meta">模板：{{ s.template_name }}</div>
               <div class="card-meta">构建开始：{{ s.build_start_time }}</div>
               <div class="card-meta">
-                推送模式：{{ s.push_mode === "sync" ? "同步推送冒烟" : "正常流程推送" }}
+                推送模式：{{
+                  s.push_mode === "sync" ? "同步推送冒烟" : "正常流程推送"
+                }}
               </div>
               <div class="card-meta">
                 状态：
@@ -202,7 +211,10 @@ onMounted(loadStrategies);
             </div>
           </div>
         </div>
-        <el-empty v-if="!loading && strategies.length === 0" description="暂无策略配置" />
+        <el-empty
+          v-if="!loading && strategies.length === 0"
+          description="暂无策略配置"
+        />
       </div>
     </div>
 
@@ -228,31 +240,45 @@ onMounted(loadStrategies);
           <template #default="{ row }">{{ row.exec_date }}</template>
         </el-table-column>
         <el-table-column label="构建" min-width="170">
-          <template #default="{ row }">{{ phaseShort(row as RoundItem, "build") }}</template>
+          <template #default="{ row }">{{
+            phaseShort(row as RoundItem, "build")
+          }}</template>
         </el-table-column>
         <el-table-column label="冒烟" min-width="170">
-          <template #default="{ row }">{{ phaseShort(row as RoundItem, "smoke") }}</template>
+          <template #default="{ row }">{{
+            phaseShort(row as RoundItem, "smoke")
+          }}</template>
         </el-table-column>
         <el-table-column label="分析" min-width="170">
-          <template #default="{ row }">{{ phaseShort(row as RoundItem, "analysis") }}</template>
+          <template #default="{ row }">{{
+            phaseShort(row as RoundItem, "analysis")
+          }}</template>
         </el-table-column>
         <el-table-column label="结论" width="90">
           <template #default="{ row }">
             <el-tag
-              :type="row.conclusion === 'pass' ? 'success' : row.conclusion === 'fail' ? 'danger' : 'info'"
+              :type="
+                row.conclusion === 'pass'
+                  ? 'success'
+                  : row.conclusion === 'fail'
+                    ? 'danger'
+                    : 'info'
+              "
               size="small"
             >
-              {{ conclusionMap[row.conclusion] }}
+              {{ conclusionText((row as RoundItem).conclusion) }}
             </el-tag>
           </template>
         </el-table-column>
         <el-table-column label="推送" width="90">
           <template #default="{ row }">
-            {{ pushStatusMap[row.push_status] || row.push_status }}
+            {{ pushStatusText((row as RoundItem).push_status) }}
           </template>
         </el-table-column>
         <el-table-column label="备注" min-width="140">
-          <template #default="{ row }">{{ row.conclusion_note || "-" }}</template>
+          <template #default="{ row }">{{
+            row.conclusion_note || "-"
+          }}</template>
         </el-table-column>
       </el-table>
     </div>
@@ -262,8 +288,8 @@ onMounted(loadStrategies);
       <template v-if="drawerRound">
         <div class="drawer-round">
           <div>执行日期：{{ drawerRound.exec_date }}</div>
-          <div>结论：{{ conclusionMap[drawerRound.conclusion] }}</div>
-          <div>推送：{{ pushStatusMap[drawerRound.push_status] }}</div>
+          <div>结论：{{ conclusionText(drawerRound.conclusion) }}</div>
+          <div>推送：{{ pushStatusText(drawerRound.push_status) }}</div>
         </div>
       </template>
       <el-timeline v-if="drawerLogs.length">

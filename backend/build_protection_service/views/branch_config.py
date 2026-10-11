@@ -211,7 +211,12 @@ class BranchViewSet(
 
     @action(detail=True, methods=["get"])
     def instances(self, request, pk=None):
-        """实例轮询：返回此分支全部关联工程的最新实例（读取时推进状态）。"""
+        """实例轮询：返回此分支全部关联工程的最新实例（读取时惰性推进状态）。
+
+        惰性推进是既定设计（与 slot_booking 的惰性过期同款，不依赖定时任务）；
+        但 GET 内多次写库必须包事务：中途异常会导致部分实例推进、部分未推进，
+        下次轮询虽可自愈，但期间前端拿到的是不一致的中间状态。
+        """
         user, error = authed_user(request)
         if error:
             return error
@@ -220,18 +225,19 @@ class BranchViewSet(
             return resp_err
         latest_by_bp = latest_instances_for_branch(branch)
         rows = []
-        for bp in branch.branch_projects.select_related("project").all():
-            inst = latest_by_bp.get(bp.id)
-            if inst:
-                advance(inst)
-            rows.append(
-                {
-                    "branch_project_id": bp.id,
-                    "project_id": bp.project_id,
-                    "project_name": bp.project.name,
-                    "instance": serialize_instance(inst) if inst else None,
-                }
-            )
+        with transaction.atomic():
+            for bp in branch.branch_projects.select_related("project").all():
+                inst = latest_by_bp.get(bp.id)
+                if inst:
+                    advance(inst)
+                rows.append(
+                    {
+                        "branch_project_id": bp.id,
+                        "project_id": bp.project_id,
+                        "project_name": bp.project.name,
+                        "instance": serialize_instance(inst) if inst else None,
+                    }
+                )
         return json_resp(ok(rows))
 
 

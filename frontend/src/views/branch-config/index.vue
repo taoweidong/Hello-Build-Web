@@ -3,8 +3,16 @@
     <!-- 左侧：分支列表 -->
     <aside class="branch-side">
       <div class="side-toolbar">
-        <el-input v-model="keyword" size="small" placeholder="搜索分支" clearable style="flex: 1" />
-        <el-button size="small" type="primary" @click="openNewDialog">＋ 新建</el-button>
+        <el-input
+          v-model="keyword"
+          size="small"
+          placeholder="搜索分支"
+          clearable
+          style="flex: 1"
+        />
+        <el-button size="small" type="primary" @click="openNewDialog"
+          >＋ 新建</el-button
+        >
       </div>
       <div class="branch-list">
         <div
@@ -15,9 +23,15 @@
           @click="selectBranch(b.id)"
         >
           <div class="branch-name">{{ b.version_name }} / {{ b.name }}</div>
-          <div v-if="b.repository_url" class="branch-url">{{ b.repository_url }}</div>
+          <div v-if="b.repository_url" class="branch-url">
+            {{ b.repository_url }}
+          </div>
         </div>
-        <el-empty v-if="!filteredBranches.length" description="暂无分支，点击新建" :image-size="60" />
+        <el-empty
+          v-if="!filteredBranches.length"
+          description="暂无分支，点击新建"
+          :image-size="60"
+        />
       </div>
     </aside>
 
@@ -46,7 +60,9 @@
           >
             ＋ 添加授权
           </el-button>
-          <span class="perm-myrole">我的角色：{{ permLabel(config.my_role) }}</span>
+          <span class="perm-myrole"
+            >我的角色：{{ permLabel(config.my_role) }}</span
+          >
         </div>
 
         <el-tabs v-model="activeTab" class="detail-tabs">
@@ -90,20 +106,38 @@
     <el-dialog v-model="newDialogVisible" title="新建分支" width="440px">
       <el-form label-width="80px" size="small">
         <el-form-item label="版本">
-          <el-select v-model="newForm.version_id" filterable placeholder="选择版本" style="width: 100%">
-            <el-option v-for="v in versionOptions" :key="v.version_id" :label="v.version_name" :value="v.version_id" />
+          <el-select
+            v-model="newForm.version_id"
+            filterable
+            placeholder="选择版本"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="v in versionOptions"
+              :key="v.version_id"
+              :label="v.version_name"
+              :value="v.version_id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="分支名">
           <el-input v-model="newForm.name" placeholder="如 master / TR5" />
         </el-form-item>
         <el-form-item label="仓库地址">
-          <el-input v-model="newForm.repository_url" placeholder="可选，如 https://git.local/27A.git" />
+          <el-input
+            v-model="newForm.repository_url"
+            placeholder="可选，如 https://git.local/27A.git"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="newDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="creatingBranch" @click="createBranch">创建</el-button>
+        <el-button
+          type="primary"
+          :loading="creatingBranch"
+          @click="createBranch"
+          >创建</el-button
+        >
       </template>
     </el-dialog>
 
@@ -111,7 +145,12 @@
     <el-dialog v-model="permDialogVisible" title="添加授权" width="420px">
       <el-form label-width="60px" size="small">
         <el-form-item label="用户">
-          <el-select v-model="permForm.user_id" filterable placeholder="选择用户" style="width: 100%">
+          <el-select
+            v-model="permForm.user_id"
+            filterable
+            placeholder="选择用户"
+            style="width: 100%"
+          >
             <el-option
               v-for="u in config?.available_users ?? []"
               :key="u.id"
@@ -131,7 +170,9 @@
       </el-form>
       <template #footer>
         <el-button @click="permDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="savingPerm" @click="savePermission">确定</el-button>
+        <el-button type="primary" :loading="savingPerm" @click="savePermission"
+          >确定</el-button
+        >
       </template>
     </el-dialog>
   </div>
@@ -177,7 +218,9 @@ const filteredBranches = computed(() => {
   const kw = keyword.value.trim().toLowerCase();
   if (!kw) return branches.value;
   return branches.value.filter(
-    b => b.name.toLowerCase().includes(kw) || b.version_name.toLowerCase().includes(kw)
+    b =>
+      b.name.toLowerCase().includes(kw) ||
+      b.version_name.toLowerCase().includes(kw)
   );
 });
 
@@ -212,17 +255,27 @@ async function loadConfig() {
 // ---------- 实例轮询（仅当前分支，5s） ----------
 const instanceRows = ref<InstanceRow[]>([]);
 let pollTimer: number | null = null;
+// 过期响应守卫：切分支时作废在途请求，防止 A 分支的响应晚于 B 返回、
+// 把 B 的实例列表覆盖成 A 的（视图与数据错配，要等下一轮轮询才被纠正）
+let pollSeq = 0;
 
 async function pollInstances() {
-  if (!selectedId.value) return;
+  const branchId = selectedId.value;
+  if (!branchId) return;
+  const cur = ++pollSeq;
   try {
-    instanceRows.value = await getBranchInstances(selectedId.value);
+    const rows = await getBranchInstances(branchId);
+    if (cur === pollSeq && branchId === selectedId.value) {
+      instanceRows.value = rows;
+    }
   } catch {
     /* 轮询失败静默，等待下一周期 */
   }
 }
 
 watch(selectedId, id => {
+  // 主动作废所有在途请求
+  pollSeq++;
   if (pollTimer !== null) {
     window.clearInterval(pollTimer);
     pollTimer = null;
@@ -243,7 +296,11 @@ onBeforeUnmount(() => {
 // ---------- 新建分支 ----------
 const newDialogVisible = ref(false);
 const creatingBranch = ref(false);
-const newForm = reactive<{ version_id: number | undefined; name: string; repository_url: string }>({
+const newForm = reactive<{
+  version_id: number | undefined;
+  name: string;
+  repository_url: string;
+}>({
   version_id: undefined,
   name: "",
   repository_url: ""
@@ -254,7 +311,10 @@ async function openNewDialog() {
   const today = new Date().toISOString().slice(0, 10);
   try {
     const plan = await getPlan({ date: today });
-    versionOptions.value = plan.map(p => ({ version_id: p.version_id, version_name: p.version_name }));
+    versionOptions.value = plan.map(p => ({
+      version_id: p.version_id,
+      version_name: p.version_name
+    }));
   } catch {
     versionOptions.value = [];
   }
@@ -293,7 +353,10 @@ async function addProject(projectId: number) {
   if (!selectedId.value) return;
   addingProject.value = true;
   try {
-    await addBranchProject(selectedId.value, { project_id: projectId, enabled: true });
+    await addBranchProject(selectedId.value, {
+      project_id: projectId,
+      enabled: true
+    });
     ElMessage.success("工程已关联");
     await loadConfig();
   } finally {
@@ -303,9 +366,13 @@ async function addProject(projectId: number) {
 
 async function removeProject(bpId: number) {
   try {
-    await ElMessageBox.confirm("移除该工程关联？其启动配置与实例记录将一并删除", "提示", {
-      type: "warning"
-    });
+    await ElMessageBox.confirm(
+      "移除该工程关联？其启动配置与实例记录将一并删除",
+      "提示",
+      {
+        type: "warning"
+      }
+    );
   } catch {
     return; // 用户取消
   }
@@ -382,7 +449,9 @@ const permForm = reactive<{ user_id: number | undefined; role: BranchRole }>({
   role: "OPERATOR"
 });
 
-const grantedUserIds = computed(() => (config.value?.permissions ?? []).map(p => p.user_id));
+const grantedUserIds = computed(() =>
+  (config.value?.permissions ?? []).map(p => p.user_id)
+);
 
 async function savePermission() {
   if (!selectedId.value || !permForm.user_id) {
@@ -391,7 +460,10 @@ async function savePermission() {
   }
   savingPerm.value = true;
   try {
-    await addBranchPermission(selectedId.value, { user_id: permForm.user_id, role: permForm.role });
+    await addBranchPermission(selectedId.value, {
+      user_id: permForm.user_id,
+      role: permForm.role
+    });
     ElMessage.success("授权已保存");
     permDialogVisible.value = false;
     await loadConfig();
@@ -402,7 +474,9 @@ async function savePermission() {
 
 async function removePermission(perm: PermissionItem) {
   try {
-    await ElMessageBox.confirm(`移除用户 ${perm.username} 的授权？`, "提示", { type: "warning" });
+    await ElMessageBox.confirm(`移除用户 ${perm.username} 的授权？`, "提示", {
+      type: "warning"
+    });
   } catch {
     return;
   }

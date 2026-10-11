@@ -160,6 +160,7 @@ import ArrowLeft from "~icons/ep/arrow-left";
 import ArrowRight from "~icons/ep/arrow-right";
 import { getWeekly } from "@/api/weekly";
 import type { WeeklyData } from "@/api/types";
+import { useBranchColors } from "@/composables/useBranchColors";
 import {
   getSlotCalendar,
   type CalendarDayCell,
@@ -180,16 +181,6 @@ const today = dayjs().format("YYYY-MM-DD");
 const thisWeekMonday = dayjs(today)
   .subtract((dayjs(today).day() + 6) % 7, "day")
   .format("YYYY-MM-DD");
-
-// 分支配色与周视图保持一致
-const BRANCH_PALETTE = [
-  "#3b82f6",
-  "#8b5cf6",
-  "#f59e0b",
-  "#10b981",
-  "#ef4444",
-  "#06b6d4"
-];
 
 // ---- 周选择 ----
 const weekStart = ref(thisWeekMonday);
@@ -274,6 +265,9 @@ const currentVersionName = computed(() => {
 const branches = computed(() => weekly.value?.branches ?? []);
 const strategies = computed(() => weekly.value?.strategies ?? []);
 
+// 分支配色：固定色板、按 branch_id 稳定取色（与 weekly 共用）
+const { branchColor } = useBranchColors(branches);
+
 /** 列头 7 天：星期转中文 */
 const weekDays = computed(() =>
   (weekly.value?.days ?? []).map(d => ({
@@ -281,17 +275,6 @@ const weekDays = computed(() =>
     weekday: WEEKDAY_CN[d.weekday] ?? d.weekday
   }))
 );
-
-const branchColorMap = computed(() => {
-  const map = new Map<number, string>();
-  branches.value.forEach((b, idx) => {
-    map.set(b.branch_id, BRANCH_PALETTE[(idx + 1) % BRANCH_PALETTE.length]);
-  });
-  return map;
-});
-function branchColor(branchId: number) {
-  return branchColorMap.value.get(branchId) ?? BRANCH_PALETTE[0];
-}
 
 /** 首屏是否已完成首次 versionId 选定：用于避免初始化阶段的重复请求 */
 const initializing = ref(true);
