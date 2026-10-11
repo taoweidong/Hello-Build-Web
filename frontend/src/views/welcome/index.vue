@@ -38,11 +38,11 @@ const entries = [
       <div
         v-for="e in entries"
         :key="e.path"
-        class="card"
+        class="card biz-card biz-clickable"
         @click="router.push(e.path)"
       >
         <div class="card-title">{{ e.title }}</div>
-        <div class="card-desc">{{ e.desc }}</div>
+        <div class="card-desc biz-tip">{{ e.desc }}</div>
       </div>
     </div>
   </div>
@@ -50,14 +50,14 @@ const entries = [
 
 <style scoped>
 .welcome {
-  padding: 24px;
+  /* 布局 .main-content 已提供 24px 外边距，此处不再叠加 */
 }
 .title {
-  color: #303133;
+  color: var(--el-text-color-primary);
   margin-bottom: 4px;
 }
 .sub {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   margin-bottom: 20px;
 }
 .cards {
@@ -66,23 +66,11 @@ const entries = [
   gap: 16px;
 }
 .card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
   padding: 18px;
-  cursor: pointer;
-  transition: box-shadow 0.2s;
-}
-.card:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
 }
 .card-title {
-  color: #303133;
+  color: var(--el-text-color-primary);
   font-weight: 600;
   margin-bottom: 6px;
-}
-.card-desc {
-  color: #909399;
-  font-size: 13px;
 }
 </style>

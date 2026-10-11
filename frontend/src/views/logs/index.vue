@@ -117,7 +117,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="logs-page">
+  <div class="logs-page biz-card">
     <el-tabs v-model="activeTab" @tab-change="onTabChange">
       <!-- Tab1 执行日志 -->
       <el-tab-pane label="执行日志" name="execution">
@@ -243,12 +243,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.logs-page {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 16px;
-}
+/* 页面容器复用全局 .biz-card；筛选行统一 12px 下边距 */
 .filter-bar {
   display: flex;
   align-items: center;
@@ -257,13 +252,13 @@ onMounted(async () => {
   margin-bottom: 12px;
 }
 .old {
-  color: #ef4444;
+  color: var(--el-color-danger);
 }
 .new {
-  color: #10b981;
+  color: var(--el-color-success);
 }
 .arrow {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   margin: 0 6px;
 }
 </style>

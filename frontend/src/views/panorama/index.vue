@@ -126,10 +126,10 @@ onMounted(loadStrategies);
 </script>
 
 <template>
-  <div class="panorama-page">
+  <div class="panorama-page biz-page">
     <!-- 筛选栏 -->
-    <div class="filter-bar">
-      <span class="filter-title">筛选</span>
+    <div class="biz-filter-bar">
+      <span class="filter-title biz-sub">筛选</span>
       <el-select
         v-model="filter.version_id"
         placeholder="全部版本"
@@ -175,8 +175,8 @@ onMounted(loadStrategies);
     </div>
 
     <!-- ① 策略配置全景区 -->
-    <div class="section">
-      <div class="section-title">策略配置全景</div>
+    <div class="section biz-card">
+      <div class="section-title biz-card-title">策略配置全景</div>
       <div v-loading="loading" class="strategy-area">
         <!-- 每一行 = 一个版本：左侧版本徽章，右侧该版本各分支策略卡片横向铺满 -->
         <div v-for="g in grouped" :key="g.version" class="version-row">
@@ -187,7 +187,7 @@ onMounted(loadStrategies);
             <div
               v-for="s in g.list"
               :key="s.id"
-              class="strategy-card"
+              class="strategy-card biz-card biz-clickable"
               :class="{ active: selectedStrategy?.id === s.id }"
               @click="selectStrategy(s)"
             >
@@ -219,10 +219,10 @@ onMounted(loadStrategies);
     </div>
 
     <!-- ② 执行实践全景区 -->
-    <div class="section">
-      <div class="section-title">
+    <div class="section biz-card">
+      <div class="section-title biz-card-title">
         执行实践全景区
-        <span v-if="selectedStrategy" class="section-sub">
+        <span v-if="selectedStrategy" class="section-sub biz-sub">
           —— {{ selectedStrategy.name }}
         </span>
       </div>
@@ -308,42 +308,10 @@ onMounted(loadStrategies);
 </template>
 
 <style scoped>
-.panorama-page {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.filter-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 12px 16px;
-}
-.filter-title {
-  color: #909399;
-  font-size: 13px;
-}
-.section {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 16px;
-}
+/* 页面容器 / 筛选栏 / 卡片容器 / 标题 / 可点击态复用全局 .biz-* 类 */
 .section-title {
-  color: #303133;
-  font-weight: 600;
   margin-bottom: 12px;
 }
-.section-sub {
-  color: #909399;
-  font-weight: 400;
-  font-size: 13px;
-}
-/* 策略区：每行一个版本，纵向堆叠 */
 .strategy-area {
   display: flex;
   flex-direction: column;
@@ -353,8 +321,8 @@ onMounted(loadStrategies);
   display: flex;
   align-items: stretch;
   gap: 12px;
-  background: #f5f7fa;
-  border: 1px solid #ebeef5;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
   padding: 12px;
 }
@@ -365,9 +333,9 @@ onMounted(loadStrategies);
   padding-top: 6px;
 }
 .version-badge {
-  background: #eff6ff;
-  color: #3b82f6;
-  border: 1px solid #bfdbfe;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  border: 1px solid var(--el-color-primary-light-7);
   border-radius: 4px;
   padding: 2px 10px;
   font-size: 13px;
@@ -382,46 +350,39 @@ onMounted(loadStrategies);
 }
 .card-branch {
   margin-left: 6px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
   font-weight: 400;
-  background: #f2f3f5;
+  background: var(--el-fill-color);
   border-radius: 4px;
   padding: 1px 6px;
 }
 .strategy-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
   padding: 12px;
-  cursor: pointer;
-  transition: border-color 0.2s;
 }
-.strategy-card:hover {
-  border-color: #3b82f6;
-}
+/* 选中态：主色描边 + 1px 光环，悬停态由 .biz-clickable 统一提供 */
 .strategy-card.active {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 1px #3b82f6;
+  border-color: var(--el-color-primary);
+  box-shadow: 0 0 0 1px var(--el-color-primary);
 }
 .card-name {
-  color: #303133;
+  color: var(--el-text-color-primary);
   font-weight: 600;
   margin-bottom: 8px;
 }
 .card-meta {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
   line-height: 1.8;
 }
 .drawer-round {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 13px;
   line-height: 1.9;
   margin-bottom: 12px;
 }
 .log-detail {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
   margin-top: 2px;
 }

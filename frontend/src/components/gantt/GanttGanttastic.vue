@@ -119,10 +119,11 @@ function onBarClick({ bar }: { bar: GanttBarObject }) {
 </template>
 
 <style scoped>
+/* 甘特外层容器颜色映射 EP 变量（暗色自适应）；阶段色/主题色板为业务语义色保持不变 */
 .gantt-ggt-wrap {
   width: 100%;
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -133,7 +134,7 @@ function onBarClick({ bar }: { bar: GanttBarObject }) {
   white-space: nowrap;
 }
 .upper-day-label {
-  color: #303133;
+  color: var(--el-text-color-primary);
   font-size: 14px;
   font-weight: 600;
   white-space: nowrap;

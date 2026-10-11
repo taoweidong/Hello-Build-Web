@@ -1,0 +1,106 @@
+/* 业务页面通用样式层
+ * 目标：统一各业务页的卡片容器、筛选栏、标题层级、间距与悬停/选中态，
+ * 颜色全部映射 Element Plus 语义变量（--el-*），暗色模式自动适配。
+ * 约定：页面内禁止再复制这些容器的重复样式，直接复用 .biz-* 类。 */
+
+:root {
+  /* 业务卡片描边色：跟随 EP 边框语义变量 */
+  --biz-card-border: var(--el-border-color-lighter);
+  /* 业务卡片圆角 */
+  --biz-card-radius: 8px;
+}
+
+/* 页面纵向容器：区块间距统一 12px */
+.biz-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 通用卡片容器（表格区 / 表单区 / 详情区） */
+.biz-card {
+  background: var(--el-bg-color);
+  border: 1px solid var(--biz-card-border);
+  border-radius: var(--biz-card-radius);
+  padding: 16px;
+}
+
+/* 筛选栏：控件组与次要操作左右分布，窄屏自动换行 */
+.biz-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: var(--el-bg-color);
+  border: 1px solid var(--biz-card-border);
+  border-radius: var(--biz-card-radius);
+  padding: 12px 16px;
+}
+
+/* 筛选栏内控件组 */
+.biz-filter-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* 卡片头：标题居左、操作居右 */
+.biz-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+/* 区块标题（一级） */
+.biz-card-title {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
+
+/* 次要说明文字（13px） */
+.biz-sub {
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
+
+/* 辅助提示文字（12px，弱化） */
+.biz-tip {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+/* 统计卡片网格：宽屏 4 列，中屏 2 列，窄屏 1 列 */
+.biz-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+
+  @media (width <= 1200px) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  @media (width <= 640px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 可点击卡片：悬停 / 键盘焦点态统一 */
+.biz-clickable {
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+
+  &:hover {
+    border-color: var(--el-color-primary);
+    box-shadow: var(--el-box-shadow-light);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--el-color-primary);
+    outline-offset: 2px;
+  }
+}

@@ -229,11 +229,11 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="strategy-page">
+  <div class="strategy-page biz-page">
     <!-- 上半区：本版本策略列表 -->
-    <div class="section">
-      <div class="row-head">
-        <span class="section-title">本版本策略列表（{{ boundVersionName }}）</span>
+    <div class="section biz-card">
+      <div class="row-head biz-card-head">
+        <span class="section-title biz-card-title">本版本策略列表（{{ boundVersionName }}）</span>
         <el-button type="primary" size="small" @click="startNew">新建策略</el-button>
       </div>
       <el-table :data="strategyList" v-loading="loading" style="width: 100%">
@@ -266,8 +266,8 @@ onMounted(async () => {
     </div>
 
     <!-- 下半区：策略编辑表单 + 时间线预览 -->
-    <div class="section">
-      <div class="section-title">{{ isEditing ? "编辑策略" : "新建策略" }}</div>
+    <div class="section biz-card">
+      <div class="form-title biz-card-title">{{ isEditing ? "编辑策略" : "新建策略" }}</div>
       <el-form :model="form" label-width="110px" class="strategy-form">
         <el-form-item label="策略分支">
           <el-select v-model="form.branch_id" style="width: 240px" @change="onBranchTemplateChange">
@@ -356,48 +356,32 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.strategy-page {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.section {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 16px;
-}
-.row-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+/* 卡片容器 / 区块标题 / 卡片头样式复用全局 .biz-card / .biz-card-title / .biz-card-head */
+.form-title {
+  display: block;
   margin-bottom: 12px;
 }
-.section-title {
-  color: #303133;
-  font-weight: 600;
-}
 .form-tip {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
   margin-left: 8px;
 }
 .preview-block {
   margin-top: 8px;
-  background: #f5f7fa;
-  border: 1px solid #e5e7eb;
+  background: var(--el-fill-color-light);
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
   padding: 14px;
 }
 .preview-title {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 13px;
   margin-bottom: 10px;
 }
 .preview-bar {
   position: relative;
   height: 40px;
-  background: #eef1f6;
+  background: var(--el-fill-color);
   border-radius: 6px;
   overflow: hidden;
 }
@@ -418,7 +402,7 @@ onMounted(async () => {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
 }
 .preview-empty {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
   padding: 12px 0;
 }
@@ -427,7 +411,7 @@ onMounted(async () => {
   flex-wrap: wrap;
   gap: 12px;
   margin-top: 10px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 .p-legend-item {
@@ -443,10 +427,10 @@ onMounted(async () => {
 }
 .preview-conflict {
   margin-top: 10px;
-  color: #ef4444;
+  color: var(--el-color-danger);
   font-size: 13px;
-  background: rgba(239, 68, 68, 0.12);
-  border: 1px solid rgba(239, 68, 68, 0.4);
+  background: var(--el-color-danger-light-9);
+  border: 1px solid var(--el-color-danger-light-5);
   border-radius: 6px;
   padding: 8px 12px;
 }

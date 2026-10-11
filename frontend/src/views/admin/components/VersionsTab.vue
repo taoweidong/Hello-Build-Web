@@ -207,7 +207,7 @@ async function addBranch() {
   padding: 8px 24px;
 }
 .branch-title {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 13px;
   margin-bottom: 8px;
 }

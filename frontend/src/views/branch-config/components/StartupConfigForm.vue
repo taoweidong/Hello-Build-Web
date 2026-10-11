@@ -126,7 +126,8 @@ function removeEnv(idx: number) {
   align-items: center;
 }
 .raw-json {
-  background: #f5f7fa;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-regular);
   padding: 8px;
   border-radius: 4px;
   font-size: 12px;

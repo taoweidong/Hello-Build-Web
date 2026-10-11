@@ -179,10 +179,10 @@ onMounted(load);
 </script>
 
 <template>
-  <div class="plan-page">
+  <div class="plan-page biz-page">
     <!-- 筛选栏 -->
-    <div class="filter-bar">
-      <div class="filter-left">
+    <div class="biz-filter-bar">
+      <div class="biz-filter-left">
         <el-date-picker
           v-model="filter.date"
           type="date"
@@ -253,8 +253,8 @@ onMounted(load);
     </div>
 
     <!-- 策略详情面板 -->
-    <div v-if="selectedStrategy" class="detail-panel">
-      <div class="detail-head">
+    <div v-if="selectedStrategy" class="detail-panel biz-card">
+      <div class="detail-head biz-card-head">
         <span class="detail-title">策略详情：{{ selectedStrategyName }}</span>
         <span class="detail-sub">{{ selectedVersionName }} / {{ selectedBranchName }}</span>
         <el-button size="small" text @click="closeDetail">关闭</el-button>
@@ -296,37 +296,15 @@ onMounted(load);
 </template>
 
 <style scoped>
-.plan-page {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.filter-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 12px 16px;
-}
-.filter-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
 .legend {
   display: flex;
   align-items: center;
   gap: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 .legend-label {
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 .legend-item {
   display: inline-flex;
@@ -355,25 +333,13 @@ onMounted(load);
 }
 
 /* ---- 策略详情面板 ---- */
-.detail-panel {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 16px;
-}
-.detail-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-}
 .detail-title {
   font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .detail-sub {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 13px;
 }
 .detail-desc {
@@ -382,7 +348,7 @@ onMounted(load);
 .detail-sec-title {
   font-size: 14px;
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
   margin: 12px 0 8px;
 }
 .detail-timeline {
@@ -396,7 +362,7 @@ onMounted(load);
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .dt-dot {
   display: inline-block;
@@ -405,7 +371,7 @@ onMounted(load);
   border-radius: 50%;
 }
 .detail-empty {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 13px;
   padding: 8px 0;
 }

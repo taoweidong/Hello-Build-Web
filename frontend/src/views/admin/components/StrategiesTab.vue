@@ -249,7 +249,7 @@ onMounted(loadAdminStrategies);
   margin-bottom: 12px;
 }
 .preview-conflict {
-  color: #ef4444;
+  color: var(--el-color-danger);
   font-size: 13px;
 }
 </style>

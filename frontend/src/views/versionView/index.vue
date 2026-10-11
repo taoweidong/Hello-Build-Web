@@ -82,11 +82,11 @@ onMounted(load);
 </script>
 
 <template>
-  <div class="version-view-page">
+  <div class="version-view-page biz-page">
     <!-- 筛选栏 -->
-    <div class="filter-bar">
-      <div class="filter-left">
-        <span class="filter-title">时间</span>
+    <div class="biz-filter-bar">
+      <div class="biz-filter-left">
+        <span class="filter-title biz-sub">时间</span>
         <el-date-picker
           v-model="filter.date"
           type="date"
@@ -119,10 +119,10 @@ onMounted(load);
     </div>
 
     <!-- 执行历史联动区 -->
-    <div class="section">
-      <div class="section-title">
+    <div class="section biz-card">
+      <div class="section-title biz-card-title">
         执行历史
-        <span v-if="selectedStrategyName" class="section-sub">
+        <span v-if="selectedStrategyName" class="section-sub biz-sub">
           —— {{ selectedStrategyName }}
         </span>
       </div>
@@ -175,37 +175,12 @@ onMounted(load);
 </template>
 
 <style scoped>
-.version-view-page {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.filter-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 12px 16px;
-}
-.filter-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.filter-title {
-  color: #909399;
-  font-size: 13px;
-}
+/* 页面容器 / 筛选栏 / 卡片容器 / 标题复用全局 .biz-* 类 */
 .legend {
   display: flex;
   align-items: center;
   gap: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 .legend-item {
@@ -230,20 +205,7 @@ onMounted(load);
   position: relative;
   min-height: 200px;
 }
-.section {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 16px;
-}
 .section-title {
-  color: #303133;
-  font-weight: 600;
   margin-bottom: 12px;
-}
-.section-sub {
-  color: #909399;
-  font-weight: 400;
-  font-size: 13px;
 }
 </style>

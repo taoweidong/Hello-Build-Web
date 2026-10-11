@@ -163,9 +163,9 @@ function phaseRange(r: RoundItem, key: "build" | "smoke" | "analysis") {
 </script>
 
 <template>
-  <div class="execution-page">
+  <div class="execution-page biz-page">
     <!-- 统计卡片 -->
-    <div class="stat-cards">
+    <div class="stat-cards biz-stat-grid">
       <div
         v-for="c in statCards"
         :key="c.label"
@@ -178,9 +178,9 @@ function phaseRange(r: RoundItem, key: "build" | "smoke" | "analysis") {
     </div>
 
     <!-- 轮次表格 -->
-    <div v-loading="loading" class="table-card">
-      <div class="table-head">
-        <span class="table-title">今日执行轮次</span>
+    <div v-loading="loading" class="table-card biz-card">
+      <div class="table-head biz-card-head">
+        <span class="table-title biz-card-title">今日执行轮次</span>
         <el-button size="small" @click="() => load()">刷新</el-button>
       </div>
       <el-table :data="roundList" style="width: 100%">
@@ -312,19 +312,10 @@ function phaseRange(r: RoundItem, key: "build" | "smoke" | "analysis") {
 </template>
 
 <style scoped>
-.execution-page {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.stat-cards {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-}
+/* 页面容器 / 统计网格 / 卡片容器 / 卡片头复用全局 .biz-* 类 */
 .stat-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
   padding: 16px;
   border-left: 4px solid var(--accent);
@@ -336,28 +327,12 @@ function phaseRange(r: RoundItem, key: "build" | "smoke" | "analysis") {
 }
 .stat-label {
   margin-top: 4px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 13px;
-}
-.table-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 16px;
-}
-.table-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.table-title {
-  color: #303133;
-  font-weight: 600;
 }
 .phase-time {
   margin-left: 8px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
 }
 </style>

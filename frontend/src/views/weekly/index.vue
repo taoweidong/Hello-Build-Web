@@ -275,14 +275,15 @@ onMounted(load);
 </template>
 
 <style scoped>
+/* 页面容器间距复用全局 .biz-page；row-card 统一卡片外观（颜色映射 EP 变量，暗色自适应） */
 .weekly-page {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 .row-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--el-bg-color);
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
   padding: 12px 16px;
 }
@@ -301,15 +302,15 @@ onMounted(load);
 }
 .week-title {
   font-size: 15px;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .week-title b {
-  color: #3b82f6;
+  color: var(--el-color-primary);
   font-size: 18px;
   margin: 0 2px;
 }
 .weekday-placeholder {
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 .row-1-controls {
   display: flex;
@@ -327,7 +328,7 @@ onMounted(load);
 }
 .row-2-label {
   font-size: 13px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   margin-right: 4px;
 }
 .branch-tag {
@@ -335,7 +336,7 @@ onMounted(load);
   color: var(--tag-color);
 }
 .row-2-empty {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 13px;
 }
 
@@ -349,20 +350,20 @@ onMounted(load);
 .grid-head {
   display: grid;
   grid-template-columns: 140px repeat(7, 1fr);
-  border-bottom: 1px solid #e5e7eb;
-  background: #fafafa;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-light);
 }
 .grid-corner {
   padding: 10px;
   font-size: 13px;
   font-weight: 600;
-  color: #303133;
-  border-right: 1px solid #e5e7eb;
+  color: var(--el-text-color-primary);
+  border-right: 1px solid var(--el-border-color-lighter);
 }
 .grid-col-head {
   padding: 10px;
   text-align: center;
-  border-right: 1px solid #f0f0f0;
+  border-right: 1px solid var(--el-border-color-extra-light);
 }
 .grid-col-head:last-child {
   border-right: none;
@@ -370,11 +371,11 @@ onMounted(load);
 .col-weekday {
   font-size: 14px;
   font-weight: 600;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .col-date {
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
   margin-top: 2px;
 }
 .grid-row {
@@ -382,15 +383,15 @@ onMounted(load);
   grid-template-columns: 140px repeat(7, 1fr);
 }
 .grid-row + .grid-row {
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--el-border-color-extra-light);
 }
 .grid-branch {
   padding: 10px;
   font-size: 13px;
   font-weight: 600;
-  color: #303133;
-  background: #fafafa;
-  border-right: 1px solid #e5e7eb;
+  color: var(--el-text-color-primary);
+  background: var(--el-fill-color-light);
+  border-right: 1px solid var(--el-border-color-lighter);
   display: flex;
   align-items: center;
 }
@@ -400,7 +401,7 @@ onMounted(load);
   display: flex;
   flex-direction: column;
   gap: 6px;
-  border-right: 1px solid #f0f0f0;
+  border-right: 1px solid var(--el-border-color-extra-light);
 }
 .grid-cell:last-child {
   border-right: none;
@@ -438,14 +439,14 @@ onMounted(load);
 }
 .legend-label {
   font-size: 13px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 .legend-item {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   font-size: 13px;
-  color: #303133;
+  color: var(--el-text-color-primary);
 }
 .legend-dot {
   display: inline-block;
@@ -454,7 +455,7 @@ onMounted(load);
   border-radius: 3px;
 }
 .legend-empty {
-  color: #909399;
+  color: var(--el-text-color-secondary);
   font-size: 13px;
 }
 </style>

@@ -520,7 +520,7 @@ function permTagType(r: BranchRole): "info" | "primary" | "warning" {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: #fff;
+  background: var(--el-bg-color);
 }
 .side-toolbar {
   display: flex;
@@ -559,7 +559,7 @@ function permTagType(r: BranchRole): "info" | "primary" | "warning" {
   border: 1px solid var(--el-border-color-light);
   border-radius: 6px;
   padding: 12px;
-  background: #fff;
+  background: var(--el-bg-color);
   display: flex;
   flex-direction: column;
   min-width: 0;

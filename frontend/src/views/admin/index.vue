@@ -35,7 +35,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="admin-page">
+  <div class="admin-page biz-card">
     <el-tabs v-model="activeTab">
       <!-- Tab1 版本分支 -->
       <el-tab-pane label="版本分支" name="versions">
@@ -66,10 +66,5 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.admin-page {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 16px;
-}
+/* 页面容器复用全局 .biz-card */
 </style>

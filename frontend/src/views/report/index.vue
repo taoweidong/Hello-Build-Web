@@ -134,10 +134,10 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="report-page">
+  <div class="report-page biz-page">
     <!-- 筛选栏 -->
-    <div class="filter-bar">
-      <div class="filter-left">
+    <div class="biz-filter-bar">
+      <div class="biz-filter-left">
         <el-select
           v-model="filter.status"
           placeholder="全部状态"
@@ -180,7 +180,7 @@ onMounted(async () => {
     </div>
 
     <!-- 报告表格 -->
-    <div class="section">
+    <div class="section biz-card">
       <el-table :data="list" v-loading="loading" style="width: 100%">
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column label="标题" min-width="220">
@@ -283,35 +283,8 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.report-page {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.filter-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 12px 16px;
-}
-.filter-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.section {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 16px;
-}
+/* 页面容器 / 筛选栏 / 卡片容器复用全局 .biz-page / .biz-filter-bar / .biz-card */
 .no-link {
-  color: #c0c4cc;
+  color: var(--el-text-color-placeholder);
 }
 </style>
