@@ -74,6 +74,16 @@ class Strategy(models.Model):
 
     class Meta:
         ordering = ["build_start_time"]
+        constraints = [
+            # 并发兜底（见 specs/2026-10-11-strategy-concurrency-guard-design.md）：
+            # 同分支同一构建时刻至多一条启用策略（构建时长相同则区间必重叠，
+            # 业务上必然冲突）；跨分支互斥无法用等值约束表达，由事务串行化兜底。
+            models.UniqueConstraint(
+                fields=["branch", "build_start_time"],
+                condition=models.Q(enabled=True),
+                name="uniq_active_strategy_branch_time",
+            ),
+        ]
 
     def __str__(self) -> str:
         return self.name

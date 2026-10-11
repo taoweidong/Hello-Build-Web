@@ -2,9 +2,15 @@
 
 写路径统一包 transaction.atomic；校验失败抛 StrategyValidationError，
 由视图层转统一响应（code + message + extra 冲突详情）。
-"""
-from django.db import transaction
 
+并发兜底（三层，见 specs/2026-10-11-strategy-concurrency-guard-design.md）：
+1. settings 的 SQLite transaction_mode=IMMEDIATE 使「校验读→写入」串行；
+2. Strategy 的 uniq_active_strategy_branch_time 条件唯一约束（DB 层）；
+3. 本模块捕获 IntegrityError 转 40902，视图层映射 HTTP 409。
+"""
+from django.db import IntegrityError, transaction
+
+from ..errors import CODE_DUPLICATE
 from ..models import Strategy, StrategyChangeLog
 from .config import get_config
 from .conflict import detect_conflicts
@@ -119,14 +125,21 @@ def _change_desc(old: dict, body: dict) -> str:
 @transaction.atomic
 def create_strategy(branch, template, operator, *, name, build_start_time,
                     push_start_time=None, push_mode="normal", enabled=True):
-    """创建策略（含校验），供 PM 与 admin 两入口共用。"""
+    """创建策略（含校验），供 PM 与 admin 两入口共用。
+
+    校验竞态兜底：并发下另一事务可能在校验读之后、本事务写之前提交冲突策略，
+    唯一约束 uniq_active_strategy_branch_time 在 DB 层拦截，转 40902。
+    """
     validate_strategy(branch, template, build_start_time, push_start_time, push_mode=push_mode)
-    return Strategy.objects.create(
-        branch=branch, template=template, name=name,
-        build_start_time=build_start_time,
-        push_start_time=push_start_time or None,
-        push_mode=push_mode, enabled=enabled, created_by=operator,
-    )
+    try:
+        return Strategy.objects.create(
+            branch=branch, template=template, name=name,
+            build_start_time=build_start_time,
+            push_start_time=push_start_time or None,
+            push_mode=push_mode, enabled=enabled, created_by=operator,
+        )
+    except IntegrityError as exc:
+        _raise_conflict_or_reraise(exc, branch, build_start_time)
 
 
 @transaction.atomic
@@ -143,10 +156,29 @@ def update_strategy(strategy: Strategy, body: dict, operator):
     strategy.push_start_time = push_start_time or None
     strategy.push_mode = body.get("push_mode", strategy.push_mode)
     strategy.enabled = body.get("enabled", strategy.enabled)
-    strategy.save()
+    try:
+        strategy.save()
+    except IntegrityError as exc:
+        _raise_conflict_or_reraise(exc, strategy.branch, build_start_time)
     desc = _change_desc(old, body)
     StrategyChangeLog.objects.create(
         strategy=strategy, operator=operator,
         change_desc=(f"更新策略: {old['name']}（{desc}）" if desc else f"更新策略: {old['name']}")[:255],
     )
     return strategy
+
+
+def _raise_conflict_or_reraise(exc: IntegrityError, branch, build_start_time):
+    """按唯一约束语义转 40902；非本约束的 IntegrityError 原样抛出。
+
+    注意：SQLite 的 IntegrityError 消息只含字段名（UNIQUE constraint failed:
+    ...branch_id, build_start_time），不含约束名，故按字段组合匹配。
+    Strategy 表唯一约束仅此一个，两字段组合可精确定位。
+    """
+    msg = str(exc)
+    if "strategy.branch_id" in msg and "build_start_time" in msg:
+        raise StrategyValidationError(
+            CODE_DUPLICATE,
+            f"该分支已存在 {build_start_time} 开始的启用策略（并发提交冲突，请刷新后重试）",
+        ) from exc
+    raise exc

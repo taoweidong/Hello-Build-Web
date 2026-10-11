@@ -5,10 +5,17 @@
 """
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError
 from django.utils import timezone
 
 from ..api import err, ok
-from ..errors import CODE_FORBIDDEN, CODE_NOT_FOUND, CODE_STATUS, CODE_UNPROCESSABLE
+from ..errors import (
+    CODE_DUPLICATE,
+    CODE_FORBIDDEN,
+    CODE_NOT_FOUND,
+    CODE_STATUS,
+    CODE_UNPROCESSABLE,
+)
 from ..models import Branch, Strategy, StrategyTemplate
 from ..services.config import get_config
 from ..services.strategies import (
@@ -162,7 +169,18 @@ def toggle_strategy(request, sid):
     if perr:
         return perr
     s.enabled = not s.enabled
-    s.save()
+    try:
+        # 启用时可能撞 uniq_active_strategy_branch_time 约束（两条同刻策略
+        # 先后停用再先后启用的场景），服务层校验不含 toggle 路径，此处兜底。
+        # SQLite 的 IntegrityError 不含约束名，按字段组合匹配（见 services 层同款注释）。
+        s.save()
+    except IntegrityError as exc:
+        msg = str(exc)
+        if "strategy.branch_id" in msg and "build_start_time" in msg:
+            return fail_resp(
+                CODE_DUPLICATE, "该分支已存在同一构建时刻的启用策略，无法启用"
+            )
+        raise
     return json_resp(ok(strategy_payload(s)))
 
 
