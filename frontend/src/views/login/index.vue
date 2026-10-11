@@ -36,6 +36,9 @@ const { dataTheme, overallStyle, dataThemeChange } = useDataThemeChange();
 dataThemeChange(overallStyle.value);
 const { title } = useNav();
 
+// 快速登录仅开发环境可用（演示账号密码均为 seed 口令，生产构建不展示）
+const isDev = import.meta.env.DEV;
+
 const ruleForm = reactive({
   // 仅开发环境预填演示账号，生产构建不携带默认口令
   username: import.meta.env.DEV ? "admin" : "",
@@ -88,6 +91,26 @@ useEventListener(document, "keydown", ({ code }) => {
   )
     immediateDebounce();
 });
+
+// ---- 开发阶段快速登录：一键填充演示账号并登录（生产构建不渲染、口令字面量随死代码被摇树） ----
+const quickAccounts = isDev
+  ? [
+      { username: "admin", label: "管理员" },
+      { username: "pm27a", label: "27A PM" },
+      { username: "pm27b", label: "27B PM" },
+      { username: "pm26b", label: "26B PM" },
+      { username: "builder", label: "构建" },
+      { username: "tester", label: "测试" },
+      { username: "integrator", label: "集成" }
+    ]
+  : [];
+
+async function onQuickLogin(username: string) {
+  if (!isDev) return;
+  ruleForm.username = username;
+  ruleForm.password = "123456";
+  await onLogin(ruleFormRef.value);
+}
 </script>
 
 <template>
@@ -164,6 +187,23 @@ useEventListener(document, "keydown", ({ code }) => {
                 登录
               </el-button>
             </Motion>
+
+            <!-- 开发阶段快速登录：一键切换演示账号（生产构建不渲染） -->
+            <Motion :delay="300">
+              <div v-if="isDev" class="quick-login">
+                <span class="quick-label">快速登录：</span>
+                <el-button
+                  v-for="acc in quickAccounts"
+                  :key="acc.username"
+                  class="quick-btn"
+                  size="small"
+                  :disabled="disabled || loading"
+                  @click="onQuickLogin(acc.username)"
+                >
+                  {{ acc.label }}
+                </el-button>
+              </div>
+            </Motion>
           </el-form>
         </div>
       </div>
@@ -178,5 +218,23 @@ useEventListener(document, "keydown", ({ code }) => {
 <style lang="scss" scoped>
 :deep(.el-input-group__append, .el-input-group__prepend) {
   padding: 0;
+}
+
+.quick-login {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+
+  .quick-label {
+    font-size: 12px;
+    color: var(--el-text-color-placeholder);
+  }
+
+  .quick-btn {
+    margin: 0;
+    padding: 5px 10px;
+  }
 }
 </style>
