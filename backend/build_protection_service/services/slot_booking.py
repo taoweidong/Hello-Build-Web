@@ -175,7 +175,12 @@ def build_slot_calendar(month: str, user) -> tuple[Optional[dict], Optional[dict
 # ---------- 抢占 ----------
 
 def create_booking(user, payload: dict) -> tuple[Optional[dict], Optional[dict]]:
-    """抢占：校验链 → 落库；唯一约束兜底并发，冲突转 40904。"""
+    """抢占：校验链 → 落库；唯一约束兜底并发，冲突转 40904。
+
+    注意：purpose 长度与版本/分支归属校验与 SlotBookingCreateSerializer 双写
+    （服务层是唯一裁决点，序列化器仅为 API 路径提前拦截）；修改任一处校验
+    语义时必须同步另一处（2026-10-12 质量评估 B-P2-21 记录在案）。
+    """
     try:
         d = date_cls.fromisoformat(str(payload.get("date") or "").strip())
     except ValueError:

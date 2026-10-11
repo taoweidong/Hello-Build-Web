@@ -53,7 +53,12 @@ class SlotTemplateSerializer(serializers.ModelSerializer):
 
 
 class SlotBookingCreateSerializer(serializers.Serializer):
-    """抢占入参：全字段必填，用途 2~200 字，分支必须归属所选版本。"""
+    """抢占入参：全字段必填，用途 2~200 字，分支必须归属所选版本。
+
+    注意：purpose 长度与版本/分支归属校验在 services.slot_booking.create_booking
+    中有一份同口径实现（服务层是唯一裁决点，直调服务的路径也受保护）；
+    修改任一处校验语义时必须同步另一处（2026-10-12 质量评估 B-P2-21 记录在案）。
+    """
 
     date = serializers.DateField()
     template_id = serializers.IntegerField()

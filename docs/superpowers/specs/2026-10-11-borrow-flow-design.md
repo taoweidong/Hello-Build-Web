@@ -47,3 +47,11 @@
 - 后端 `tests_borrow_flow.py` 12 例：发起校验（同版本目标 42201 / 重复待审批 40903 / 时间格式 42201 / 未认证 401）、审批权限（非来源 PM 40301、来源 PM 与 admin 通过）、通过即建策略（名称后缀/模板/审批人）、冲突保持待审批（40901/40902 且不落策略）、重复处理 40903、驳回必填意见、列表状态过滤。
 - 前端 vitest：`formatBorrowFlowText` 3 例（待审批要素、已处理追加审批行、空原因占位）。
 - 浏览器实测：builder 借用 → 提交成功跳转审批页（无审批按钮）→ pm27a 通过 → 26B 全景出现借用策略卡片 → 复制内容与剪贴板一致；冲突申请被正确拦截（40901，电子流保持待审批）。
+
+
+## 修订记录（2026-10-12 第二轮质量优化）
+
+- **列表可见性收敛为「与我相关」**：admin 全量；pm = 自己发起 + 自己审批（被借策略所属版本 PM）；其余角色 = 自己发起。此前任意登录用户可见全量电子流（含他人申请理由与审批意见）。
+- **pending 唯一约束落 DB**：新增部分唯一约束 `uniq_pending_borrow_flow`（同策略 + 同借用人仅一条 pending，迁移 0012），并发重复发起由 IntegrityError → 40903 兜底，视图层预检查保留作友好路径。
+- **状态参数值域校验**：`GET /borrow-flows?status=` 仅接受 pending/approved/rejected。
+- **展示文案迁出 API 层**：状态文案唯一来源为 `frontend/src/views/constants.ts`（borrowStatusMeta），复制文案 `formatBorrowFlowText` 移至 `frontend/src/views/borrow-flow/format.ts`；复制降级弹框改用 VNode 文本渲染，消除 dangerouslyUseHTMLString 存储型 XSS。

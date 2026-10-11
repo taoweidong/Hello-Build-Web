@@ -58,3 +58,8 @@
 - 每阶段独立提交，出问题可按提交回滚。
 - 行为变化点（需在提交说明中注明）：plan/preview 默认日期从魔法日期改为当天；plan.conflict 从写死 false 改为真实计算；logout 后 token 立即失效；登录连续失败 5 次锁定 15 分钟；运行期配置重启不丢。
 - 迁移文件随阶段提交（仓库惯例）。
+
+
+## 修订记录（2026-10-12）
+
+第一轮优化后的全库复评见 `docs/code-quality-assessment-2026-10-12.md`，第二轮分阶段实施见 `2026-10-12-code-quality-optimization-round2-design.md`。

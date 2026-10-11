@@ -141,3 +141,10 @@ ReportPublishRecord（发布暨推送记录）
 **前端**：
 - `npm run typecheck` 通过
 - 浏览器手动联调：新建 → 保存草稿 → 编辑 → 发布（截图回显）→ 重新发布 → 复制链接 → 深链接直达；404 场景
+
+
+## 修订记录（2026-10-12 第二轮质量优化）
+
+- **publish_count 原子自增**：发布改用 `F("publish_count") + 1` 条件更新并整体包事务，消除并发双发布丢计数；create/update 的正文与修订留痕同事务，不再出现半套痕迹。
+- **列表可选分页**：`GET /reports` 携带 `page` 参数时返回 `{items,total,page,page_size}`（page_size 默认 20 最大 100）；不携带保持全量数组（向后兼容，前端下拉仍全量）。
+- **新建报告不再预填演示内容**：前端 `useReportForm.initNewForm` 移除 DEV 假数据（旧行为下「新建→直接发布」会落库假报告）。

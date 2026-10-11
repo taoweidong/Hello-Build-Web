@@ -72,3 +72,10 @@
 - 前端 `npm run test` / `npm run typecheck` 通过：新增 `canEditPanorama` 权限矩阵用例、`useStrategyPreview` 编辑态透传 id 用例（基线 ≥ 51 例）
 - 后端 `python manage.py test build_protection_service` 通过：新增 PM 登录载荷绑定版本回归测试（基线 ≥ 185 例）；seed 演示数据三版本饱满（SeedTests 精确断言 9 分支 / 23 策略）
 - 浏览器联调（三角色矩阵）：admin 全版本芯片可点击、编辑保存后网格与变更日志正确；pm27a 绑定版本 27A 可编辑、切 26B 只读；builder 全站只读（无点击光标）；策略配置页 / 系统管理策略 Tab 编辑预览不再自冲突
+
+
+## 修订记录（2026-10-12 第二轮质量优化）
+
+- **weekly 载荷策略项新增 `push_mode` 字段**：借用弹窗不再以 `push_start_time` 是否存在猜测推送模式（normal + 固定推送时间曾被误标为同步推送）。
+- **isoWeek 改本地日历算法**：原实现用 `getUTC*` 系列，在东八区把本地零点换算到前一日 16:00 UTC，导致周一被算进上一周、同一周序号跳变；函数已抽取至 `frontend/src/utils/week.ts` 并单测锁定（含 buildMonthWeeks）。
+- 月历/周纯函数抽取：`utils/week.ts`、`utils/slotCalendar.ts`（时段页），页面仅做接线。
