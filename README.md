@@ -1,203 +1,94 @@
-# 领域
+# 构建策略配置系统 · Hello-Build-Web
 
-构建：负责软件仓库构建，制作的二进制用于 防护网验证
-防护网：负责测试二进制的业务功能是否正确
-集成：负责将构建推送的代码进行集成，发布版本
+> 面向软件构建团队的**每日构建策略**可视化配置与调度全景系统：管理版本 / 分支的「构建 → 冒烟 → 人工分析 → 推送」全流程时间编排，提供调度全景、时段借用审批、验证报告与执行/变更日志留痕。
 
-# 关键操作说明
-代码构建：负责下载软件代码进行二进制编译
-冒烟：在真实环境上加载二进制并执行测试用例
-人工分析：对用例执行的结果进行人工分析  -- 人工分析耗时可变化
-推送：将软件仓库代码推送集成仓库
-构建策略：不同的流程场景，就是一种构建策略
-
-# 场景
-- 不同软件代码分支会有以下不同场景：常见得有master，TR5，TR6 等
-- 不同版本有不同的代码分支，版本命名为：27A,27B，26B等不同版本
-
-
-流程场景1：
-1、每天晚上构建定时进行代码构建(耗时：30min), 构建完毕后自动吊起 防护网 验证(称为：冒烟)，
-2、防护网验证开始验证，验证耗时约 8H, 验证完毕后，人工分析耗时 2H，给出结论
-3、构建收到防护网结论后，根据结论，推送时，将代码推送给集成（耗时约 20min）
-
-
-流程场景2：
-1、每天中午构建定时进行代码构建(耗时：30min), 构建完毕后自动吊起 防护网 验证(称为：2H冒烟)，
-2、防护网验证开始验证，验证耗时约 2H, 验证完毕后，人工分析耗时 1H，给出结论
-3、构建收到防护网结论后，根据结论，推送时，将代码推送给集成（耗时约 20min）
-
-
-流程场景3：
-1、每天下午16:30构建定时进行代码构建(耗时：30min), 构建完毕后自动吊起 防护网 验证(称为：16_30冒烟)，
-2、防护网验证开始验证，验证耗时约 1H, 验证完毕后，人工分析耗时 0.5H，给出结论
-3、构建收到防护网结论后，根据结论，推送时，将代码推送给集成（耗时约 20min）
-
-
-
-# 注意时间不能相互交错
-
-
-# 目标
-1、设计一个展示当前版本计划的页面，可以直观观测到不同版本，不同分支的构建策略，原始谁当前为模拟接口获取数据，后续从真实数据中获取
-2、支持修改或者变更某一个策略的时间，修改后，时间自动变更
-3、有日志可以展示每天的策略
-
-
-# 要求
-技术栈使用 vue3
+前后端分离 · 简体中文界面 · 当前为可运行的演示实现（外部 Git / 调度系统以模拟数据接入）。
 
 ---
 
-# 设计方案（完善版）
+## ✨ 核心功能
 
-## 一、架构选型
+| 模块 | 说明 |
+|---|---|
+| **版本策略全景(New)** | 「时间点 × 周一~周日」调度矩阵；对外只读查看、对内维护修改；已过期的历史任务自动置灰、仅可查看详情 |
+| **借用审批** | 非本版本人员借用某时段发起电子流，由来源版本负责人审批，通过即在目标分支按新时间建策略；支持一键复制转发 |
+| **策略配置** | 版本负责人维护本版本分支的构建策略（时间 / 模板 / 推送模式），实时时间线预览与时间冲突拦截 |
+| **时段抢占** | 冒烟测试时段的预约、释放与月历视图 |
+| **验证报告** | 冒烟验证结论记录与发布留痕 |
+| **分支配置 / 日志中心 / 系统管理** | 分支与工程关联配置、执行与变更日志、用户与运行参数管理 |
 
-采用前后端分离架构：
+角色体系：`admin` / `pm` / `builder` / `tester` / `integrator`，菜单可达性与接口写权限均按角色过滤。
 
-| 层 | 技术选型 | 说明 |
-|---|---|---|
-| 前端框架 | Vue 3 + Vite + TypeScript | 满足 vue3 技术要求，组合式 API |
-| UI 组件库 | Element Plus | 表格、表单、日期时间选择器等组件齐全，中文文档完善 |
-| 状态管理 | Pinia | 管理版本计划数据、登录态 |
-| 路由 | Vue Router | 登录页 / 计划页 / 日志页 |
-| HTTP 客户端 | Axios | 统一请求封装与错误处理 |
-| 后端框架 | Python FastAPI | 轻量高效，自带 OpenAPI 文档 |
-| ORM / 数据库 | SQLAlchemy + SQLite | 轻量部署，后续可平滑切换 PostgreSQL |
-| 鉴权 | JWT | 两种角色：管理员（可修改策略）、只读用户（仅查看） |
+## 🧱 技术栈
 
-### 甘特图渲染方式
+| 层 | 选型 |
+|---|---|
+| 前端 | Vue 3 · Vite · TypeScript · Element Plus（基于 pure-admin-thin v6.2.0）· Pinia · Vue Router |
+| 后端 | Django 5 · Django REST Framework · SimpleJWT · django-filter · django-cors-headers |
+| 数据库 | SQLite（开发 / 演示），可平滑迁移 PostgreSQL |
+| 测试 | 后端 Django TestCase（197 例）· 前端 Vitest（58 例） |
 
-采用**自绘 DIV/CSS 布局**方案：横轴固定为一天 00:00–24:00，各阶段色块按"开始时间 / 1440 分钟"换算为百分比定位。
+统一响应契约 `{ code, message, data }`；时区 `Asia/Shanghai`；策略写路径经服务层统一校验（时间冲突 / 资源互斥）。
 
-选型理由：
-- 完全可控，交互（点击色块编辑、冲突高亮）实现直接；
-- 第三方甘特库（dhtmlxGantt / frappe-gantt）面向项目计划场景，对"每日循环构建策略"适配成本高、定制受限；
-- ECharts 自定义系列对"点击色块改时间"类交互支持不佳。
+## 🚀 快速开始
 
-## 二、数据模型
-
-```
-Version（版本：27A / 27B / 26B ...）
- └── Branch（分支：master / TR5 / TR6 ...）
-      └── Strategy（构建策略，对应一种流程场景）
-           └── Stage（阶段，按序排列）
-                1. 代码构建（30min）
-                2. 冒烟（8H / 2H / 1H，随场景不同）
-                3. 人工分析（2H / 1H / 0.5H）
-                4. 推送（20min）
+**后端**（`backend/`）
+```bash
+cd backend
+cp .env.example .env                      # 按需设置 JWT_SIGNING_KEY、CORS 等
+powershell -File scripts/prestart.ps1     # 生成迁移 + migrate + 种子数据
+python manage.py runserver                # http://localhost:8000 （API 前缀 /api）
 ```
 
-核心表设计：
-
-| 表 | 关键字段 | 说明 |
-|---|---|---|
-| `version` | id, name | 版本（27A、27B、26B） |
-| `branch` | id, version_id, name | 分支（master、TR5、TR6） |
-| `strategy` | id, branch_id, name, scene_type | 构建策略（对应流程场景1/2/3） |
-| `stage` | id, strategy_id, stage_type, sort_order, start_time, duration_minutes | 阶段定义：类型（构建/冒烟/人工分析/推送）、顺序、开始时间、耗时 |
-| `execution_log` | id, stage_id, exec_date, actual_start, actual_end, result, detail | 每日各阶段实际执行日志 |
-| `change_log` | id, stage_id, operator, old_start_time, new_start_time, changed_at | 策略时间变更日志 |
-| `user` | id, username, password_hash, role | 用户（admin 管理员 / viewer 只读） |
-
-### 模拟数据与真实数据切换
-
-- 内置三套流程场景的种子数据（对应流程场景1/2/3）；
-- 提供配置开关 `DATA_SOURCE = mock | real`，mock 模式返回内置种子数据，real 模式调用真实数据接口；
-- 两种模式下 API 契约保持一致，前端无需改动。
-
-## 三、核心业务逻辑
-
-### 1. 级联顺延
-
-修改某阶段时间后，同策略内后续阶段按序自动顺延：
-
-```
-后一阶段开始时间 = 前一阶段开始时间 + 前一阶段耗时
+**前端**（`frontend/`）
+```bash
+cd frontend
+npm install
+npm run dev                               # http://localhost:8848
 ```
 
-- 用户仅修改被点击阶段（代码构建）的开始时间或耗时；
-- 冒烟、人工分析、推送的开始时间由后端按上述公式自动重算；
-- 重算结果整体返回前端并刷新甘特图。
+默认演示账号 `admin` / `123456`；另有 `pm27a`、`pm27b`、`pm26b`、`builder`、`tester`、`integrator`（密码均 `123456`）。
 
-### 2. 冲突检测（允许保存但告警）
+常用命令：前端 `npm run test` / `npm run typecheck` / `npm run build`；后端 `python manage.py test build_protection_service`。
 
-- 保存时后端检测**同分支内不同策略**之间的时间交错（区间重叠）；
-- 冲突**不阻止保存**，但随保存响应返回冲突区间列表；
-- 前端在甘特图上用红色斜纹高亮冲突区间，并弹出告警提示；
-- 若级联顺延导致末阶段（推送）结束时间超出 24:00，同样不阻止保存但给出强告警。
+> 本地联调：前端直连 `http://localhost:8000/api`（无代理）；跨域可在 `backend/.env` 设 `CORS_ALLOW_ALL_ORIGINS=true`。
 
-### 3. 权限控制
-
-- 只读用户：可查看所有页面与日志，编辑入口不可用；
-- 管理员：可编辑策略时间，所有变更记录写入 `change_log`。
-
-## 四、页面规划
-
-### 1. 登录页
-- 账号密码登录，JWT 令牌存储于前端，请求头携带；
-- 路由守卫：未登录跳转登录页，角色不符时隐藏编辑能力。
-
-### 2. 版本计划页（主页）
-- **布局**：横轴 00:00–24:00 甘特时间轴（整点刻度 + 当前时间指示线），纵轴按"版本 → 分支"分组；
-- **色块**：每个策略的四个阶段用不同颜色区分（代码构建 / 冒烟 / 人工分析 / 推送），色块内显示阶段名与时间段；
-- **编辑**：管理员点击色块弹出编辑框，修改开始时间（时间选择器）或耗时，保存后级联重算并刷新；
-- **冲突展示**：冲突区间红色斜纹覆盖 + 告警提示；
-- **筛选**：支持按版本 / 分支筛选展示。
-
-### 3. 日志页
-- **执行日志 Tab**：按日期查询当天各策略各阶段的实际开始 / 结束时间与执行结果（成功 / 失败 / 进行中）；
-- **变更日志 Tab**：展示谁在什么时间、把哪个策略的哪个阶段从几点改到了几点；
-- 支持按日期范围、版本、分支筛选。
-
-## 五、日志设计
-
-| 日志类型 | 记录时机 | 记录内容 |
-|---|---|---|
-| 执行日志 | 每天各阶段实际执行完成（mock 模式下由种子数据模拟） | 日期、策略、阶段、实际开始/结束时间、结果、详情 |
-| 变更日志 | 管理员每次保存策略时间修改 | 操作人、时间、策略、阶段、修改前开始时间、修改后开始时间 |
-
-## 六、错误处理
-
-- API 统一错误码与错误响应结构（`code` + `message`）；
-- 前端 Axios 拦截器统一处理 401（跳登录）、403（权限不足提示）、5xx（错误提示）；
-- 时间越界（推送结束超出 24:00）与冲突：不阻止保存，但前端给出明确告警。
-
-## 七、测试策略
-
-| 范围 | 工具 | 覆盖内容 |
-|---|---|---|
-| 后端单元测试 | pytest | 级联顺延计算、冲突检测、越界检测、JWT 鉴权与角色权限 |
-| 后端接口测试 | pytest + httpx | 计划查询 / 修改 / 日志查询接口的契约与错误码 |
-| 前端单元测试 | Vitest | 甘特图时间 → 百分比定位计算、级联展示逻辑 |
-| 前端组件测试 | Vitest + Vue Test Utils | 编辑弹窗、冲突高亮渲染 |
-
-## 八、目录结构（规划）
+## 📁 项目结构
 
 ```
 Hello-Build-Web/
-├── frontend/                 # Vue 3 前端
-│   ├── src/
-│   │   ├── api/              # 接口封装
-│   │   ├── views/            # 登录页 / 版本计划页 / 日志页
-│   │   ├── components/       # 甘特图、色块、编辑弹窗等组件
-│   │   ├── stores/           # Pinia 状态
-│   │   ├── router/           # 路由与守卫
-│   │   └── utils/            # 时间换算、定位计算等工具
-│   └── package.json
-├── backend/                  # FastAPI 后端
-│   ├── app/
-│   │   ├── api/              # 路由层
-│   │   ├── models/           # SQLAlchemy 模型
-│   │   ├── services/         # 级联顺延 / 冲突检测等业务逻辑
-│   │   ├── schemas/          # Pydantic 契约
-│   │   └── mock/             # 模拟数据源（三套场景种子数据）
-│   └── requirements.txt
-└── README.md
+├── backend/                     # Django 后端（唯一业务 app：build_protection_service）
+│   ├── build_protection_service/
+│   │   ├── models/              # 按领域拆分（版本/分支/策略/报告/时段/借用…）
+│   │   ├── views/  services/    # 接口层 / 业务校验层
+│   │   └── management/commands/ # seed 等管理命令
+│   └── scripts/                 # prestart.ps1 · test.ps1
+├── frontend/                    # Vue 3 前端（业务页 src/views，API 封装 src/api）
+├── docs/                        # 设计与实施文档（见下）
+├── prototype/                   # 早期静态 HTML 原型
+└── 业务原始背景.md              # 领域与业务流程背景
 ```
 
-## 九、后续演进
+## 📚 文档
 
-- mock 模式切换为真实数据接口（构建系统 / 防护网回传执行结果）；
+详细设计（spec）与分阶段实施清单（plan）位于 [`docs/superpowers/`](./docs/superpowers/)，快速上手后按需深入：
+
+| 主题 | 设计文档 |
+|---|---|
+| 原始需求与背景 | [原始需求分析](./docs/原始需求分析-2026-10-11.md) · [业务原始背景](./业务原始背景.md) |
+| 构建策略 Web 初版 | [设计](./docs/superpowers/specs/2026-08-08-build-strategy-web-design.md) |
+| Django 迁移与周视图 | [设计](./docs/superpowers/specs/2026-08-10-django-migration-and-weekly-view-design.md) |
+| 版本策略全景(New) | [设计](./docs/superpowers/specs/2026-10-11-weekly-new-design.md) |
+| 借用电子流 | [设计](./docs/superpowers/specs/2026-10-11-borrow-flow-design.md) |
+| 时段抢占 | [设计](./docs/superpowers/specs/2026-10-10-slot-booking-design.md) |
+| 验证报告 | [设计](./docs/superpowers/specs/2026-08-15-verification-report-design.md) |
+| 分支配置管理 | [设计](./docs/superpowers/specs/2026-08-23-branch-config-management-design.md) |
+| 策略并发防护 / 日志分页 / 界面一致性 | [并发](./docs/superpowers/specs/2026-10-11-strategy-concurrency-guard-design.md) · [日志](./docs/superpowers/specs/2026-10-11-log-pagination-design.md) · [界面](./docs/superpowers/specs/2026-10-11-ui-visual-consistency-optimization.md) |
+
+开发约定、目录规范与易踩坑点见仓库根目录 [`AGENTS.md`](./AGENTS.md)。
+
+## 🗺️ 后续演进
+
+- 模拟数据切换为真实数据源（Git 仓库配置读写、防护网执行结论回传驱动推送）；
 - 数据库由 SQLite 升级 PostgreSQL；
-- 增加执行结果自动回写（防护网结论回传后自动驱动推送阶段）。
+- 调度变更与外部上库流程的双向同步。
