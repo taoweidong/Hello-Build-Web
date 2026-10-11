@@ -7,30 +7,30 @@
           <el-button
             class="nav-btn"
             circle
-            aria-label="前一天"
-            @click="shiftDate(-1)"
+            aria-label="上一周"
+            @click="shiftWeek(-1)"
           >
             <IconifyIconOffline
               :icon="ArrowLeft"
               style="width: 14px; height: 14px"
             />
           </el-button>
-          <span class="date-title">
-            {{ dateLabel }}
+          <span class="week-title">
+            {{ weekRangeText }}
             <el-tag
+              v-if="weekNumber > 0"
               size="small"
-              :type="isToday ? 'primary' : 'info'"
               effect="plain"
-              class="weekday-tag"
+              class="week-tag"
             >
-              {{ weekdayLabel }}
+              第{{ weekNumber }}周
             </el-tag>
           </span>
           <el-button
             class="nav-btn"
             circle
-            aria-label="后一天"
-            @click="shiftDate(1)"
+            aria-label="下一周"
+            @click="shiftWeek(1)"
           >
             <IconifyIconOffline
               :icon="ArrowRight"
@@ -41,17 +41,31 @@
             size="small"
             text
             type="primary"
-            :disabled="isToday"
-            @click="goToday"
+            :disabled="isCurrentWeek"
+            @click="goThisWeek"
           >
-            今天
+            本周
           </el-button>
+          <el-select
+            v-model="selectedWeek"
+            size="small"
+            placeholder="选择本周"
+            style="width: 210px; margin-left: 8px"
+            @change="value => (weekStart = value || thisWeekMonday)"
+          >
+            <el-option
+              v-for="w in monthWeeks"
+              :key="w.value"
+              :value="w.value"
+              :label="w.label"
+            />
+          </el-select>
           <el-select
             v-model="versionId"
             filterable
             size="small"
             placeholder="选择版本"
-            style="width: 150px; margin-left: 8px"
+            style="width: 140px"
           >
             <el-option
               v-for="v in versionOptions"
@@ -63,7 +77,7 @@
         </div>
         <div class="toolbar-right">
           <div class="toolbar-stats">
-            <span>本日任务 {{ stats.tasks }}</span>
+            <span>本周任务 {{ stats.tasks }}</span>
             <el-divider direction="vertical" />
             <span>已占 {{ stats.occupied }} 段</span>
             <el-divider direction="vertical" />
@@ -92,25 +106,27 @@
       </div>
     </el-card>
 
-    <!-- 无模板提示 -->
-    <el-alert
-      v-if="!calendarLoading && calendar && calendar.templates.length === 0"
-      title="暂无可抢占时段模板，请联系管理员在「时段配置」中添加"
-      type="info"
-      :closable="false"
-      show-icon
-    />
-
-    <!-- 24 小时网格 -->
+    <!-- 周视图网格 -->
     <el-card shadow="never" class="grid-card">
-      <div v-loading="loading">
+      <div v-loading="loading" class="grid-wrap">
         <el-empty v-if="!loading && !weekly" description="暂无数据" />
+        <el-empty
+          v-else-if="!loading && branches.length === 0"
+          description="该版本暂无分支，无法排布任务"
+        />
         <template v-else>
           <div class="grid-title">
-            {{ currentVersionName }} · {{ date }} 任务排布与时段抢占（00:00 –
-            24:00）
+            {{ currentVersionName }} · {{ weekRangeText }} 任务排布与时段抢占
+            <span class="grid-sub"
+              >（时间轴仅展示有排布的时段，按时间顺序排列）</span
+            >
           </div>
-          <HourGrid :rows="hourRows" :past="isPast" @slot-click="onSlotClick" />
+          <HourGrid
+            :days="weekDays"
+            :rows="hourRows"
+            :today="today"
+            @slot-click="onSlotClick"
+          />
         </template>
       </div>
     </el-card>
@@ -118,7 +134,7 @@
     <!-- 抢占弹窗（复用时段抢占） -->
     <BookingDialog
       v-model="bookingVisible"
-      :date="date"
+      :date="bookingDate"
       :template="bookingTemplate"
       :horizon-end="horizonEnd"
       @booked="onBooked"
@@ -126,13 +142,13 @@
     <!-- 时段详情（复用时段抢占） -->
     <SlotDetailDialog
       v-model="detailVisible"
-      :date="date"
+      :date="detailDate"
       :entry="detailEntry"
       :template="detailTemplate"
       @released="onReleased"
     />
     <!-- 我的抢占抽屉（复用时段抢占） -->
-    <MyBookingsDrawer v-model="drawerVisible" @changed="loadCalendar" />
+    <MyBookingsDrawer v-model="drawerVisible" @changed="loadCalendars" />
   </div>
 </template>
 
@@ -160,7 +176,11 @@ import HourGrid, {
 
 defineOptions({ name: "WeeklyNewIndex" });
 
-const WEEKDAY_CN = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+const today = dayjs().format("YYYY-MM-DD");
+const thisWeekMonday = dayjs(today)
+  .subtract((dayjs(today).day() + 6) % 7, "day")
+  .format("YYYY-MM-DD");
+
 // 分支配色与周视图保持一致
 const BRANCH_PALETTE = [
   "#3b82f6",
@@ -171,19 +191,80 @@ const BRANCH_PALETTE = [
   "#06b6d4"
 ];
 
-const today = dayjs().format("YYYY-MM-DD");
-const date = ref(today);
-const isToday = computed(() => date.value === today);
-const isPast = computed(() => date.value < today);
-const dateLabel = computed(() => dayjs(date.value).format("YYYY年M月D日"));
-const weekdayLabel = computed(() => WEEKDAY_CN[dayjs(date.value).day()]);
+// ---- 周选择 ----
+const weekStart = ref(thisWeekMonday);
+const isCurrentWeek = computed(() => weekStart.value === thisWeekMonday);
+const weekEnd = computed(() =>
+  weekDays.value.length
+    ? weekDays.value[6].date
+    : dayjs(weekStart.value).add(6, "day").format("YYYY-MM-DD")
+);
+const weekRangeText = computed(() => {
+  const s = dayjs(weekStart.value);
+  return `${s.format("YYYY年M月D日")} - ${dayjs(weekEnd.value).format("M月D日")}`;
+});
 
-// ---- 周视图数据源（版本/分支/策略）----
+function isoWeek(dateStr: string): number {
+  const d = dayjs(dateStr).toDate();
+  const n = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - n);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+}
+const weekNumber = computed(() =>
+  weekStart.value ? isoWeek(weekStart.value) : 0
+);
+
+function shiftWeek(delta: number) {
+  weekStart.value = dayjs(weekStart.value)
+    .add(delta * 7, "day")
+    .format("YYYY-MM-DD");
+}
+
+function goThisWeek() {
+  weekStart.value = thisWeekMonday;
+}
+
+/** 本月周列表（与原周视图同规则：本月第一个周一为第 1 周） */
+const monthWeeks = computed(() => {
+  const now = dayjs();
+  const startOfMonth = now.startOf("month");
+  const first =
+    startOfMonth.day() === 0 ? startOfMonth.add(1, "day") : startOfMonth.day(1);
+  const firstMonday =
+    first.month() === startOfMonth.month() ? first : first.add(7, "day");
+  const result: Array<{ value: string; label: string }> = [];
+  for (let i = 0; i < 6; i++) {
+    const monday = firstMonday.add(i * 7, "day");
+    if (monday.month() !== startOfMonth.month()) break;
+    result.push({
+      value: monday.format("YYYY-MM-DD"),
+      label: `第${i + 1}周（${monday.format("MM.DD")} - ${monday.add(6, "day").format("MM.DD")}）`
+    });
+  }
+  return result;
+});
+
+const selectedWeek = ref(thisWeekMonday);
+watch(selectedWeek, value => {
+  if (value && value !== weekStart.value) weekStart.value = value;
+});
+
+// ---- 周视图数据源（版本/分支/策略，与原周视图一致）----
 const weekly = ref<WeeklyData | null>(null);
 const weeklyLoading = ref(false);
 const versionId = ref<number | undefined>(undefined);
-const calendar = ref<SlotCalendarResponse | null>(null);
-const calendarLoading = ref(false);
+
+// 后端返回英文星期（Monday…Sunday），与原周视图一致地转中文展示
+const WEEKDAY_CN: Record<string, string> = {
+  Monday: "周一",
+  Tuesday: "周二",
+  Wednesday: "周三",
+  Thursday: "周四",
+  Friday: "周五",
+  Saturday: "周六",
+  Sunday: "周日"
+};
 
 const versionOptions = computed(() => weekly.value?.versions ?? []);
 const currentVersionName = computed(() => {
@@ -192,6 +273,14 @@ const currentVersionName = computed(() => {
 });
 const branches = computed(() => weekly.value?.branches ?? []);
 const strategies = computed(() => weekly.value?.strategies ?? []);
+
+/** 列头 7 天：星期转中文 */
+const weekDays = computed(() =>
+  (weekly.value?.days ?? []).map(d => ({
+    date: d.date,
+    weekday: WEEKDAY_CN[d.weekday] ?? d.weekday
+  }))
+);
 
 const branchColorMap = computed(() => {
   const map = new Map<number, string>();
@@ -208,9 +297,9 @@ async function loadWeekly() {
   weeklyLoading.value = true;
   try {
     weekly.value = await getWeekly({
+      week_start: weekStart.value,
       version_id: versionId.value
     });
-    // 后端未选版本时不返回策略：默认选中版本列表第一项
     if (!versionId.value && weekly.value.versions.length) {
       versionId.value = weekly.value.versions[0].version_id;
     }
@@ -221,11 +310,30 @@ async function loadWeekly() {
   }
 }
 
-// ---- 抢占状态数据源（与时段抢占页一致）----
-async function loadCalendar() {
+// ---- 抢占状态数据源：周可能跨月，按涉及月份合并拉取 ----
+const templates = ref<SlotTemplateItem[]>([]);
+const horizonDays = ref(60);
+const entriesByDate = ref<Map<string, Map<number, CalendarDayCell>>>(new Map());
+const calendarLoading = ref(false);
+
+async function loadCalendars() {
   calendarLoading.value = true;
   try {
-    calendar.value = await getSlotCalendar(date.value.slice(0, 7));
+    const months = [...new Set(weekDays.value.map(d => d.date.slice(0, 7)))];
+    const responses = await Promise.all(months.map(m => getSlotCalendar(m)));
+    const merged: Map<string, Map<number, CalendarDayCell>> = new Map();
+    let tpl: SlotTemplateItem[] = [];
+    for (const resp of responses as SlotCalendarResponse[]) {
+      horizonDays.value = resp.horizon_days;
+      if (!tpl.length) tpl = resp.templates;
+      for (const [dateKey, entries] of Object.entries(resp.days)) {
+        const map = new Map<number, CalendarDayCell>();
+        for (const e of entries) map.set(e.template_id, e);
+        merged.set(dateKey, map);
+      }
+    }
+    templates.value = tpl;
+    entriesByDate.value = merged;
   } catch {
     // 拦截器已提示
   } finally {
@@ -235,19 +343,8 @@ async function loadCalendar() {
 
 const loading = computed(() => weeklyLoading.value || calendarLoading.value);
 const horizonEnd = computed(() =>
-  dayjs()
-    .add(calendar.value?.horizon_days ?? 60, "day")
-    .format("YYYY-MM-DD")
+  dayjs().add(horizonDays.value, "day").format("YYYY-MM-DD")
 );
-
-/** 当日各模板状态（slot-calendar 仅返回适用模板条目） */
-const dayEntries = computed<Map<number, CalendarDayCell>>(() => {
-  const map = new Map<number, CalendarDayCell>();
-  for (const e of calendar.value?.days[date.value] ?? []) {
-    map.set(e.template_id, e);
-  }
-  return map;
-});
 
 function hourOf(hhmm: string) {
   return Number(hhmm.slice(0, 2));
@@ -258,45 +355,57 @@ function coversHour(t: SlotTemplateItem, h: number) {
   return hourOf(t.start_time) <= h && h < hourOf(t.end_time);
 }
 
-/** 24 行小时网格数据：任务芯片 + 抢占芯片 */
+/** 任务芯片（策略每日循环排布，7 天一致；按小时归类） */
+function tasksAtHour(h: number): HourTaskItem[] {
+  const tasks: HourTaskItem[] = [];
+  for (const s of strategies.value) {
+    if (hourOf(s.build_start_time) === h) {
+      tasks.push({
+        key: `b-${s.strategy_id}`,
+        kind: "build",
+        stageLabel: "构建",
+        name: s.strategy_name,
+        time: s.build_start_time,
+        title: `构建 · ${s.strategy_name} · ${s.branch_name} · ${s.build_start_time}`,
+        color: branchColor(s.branch_id)
+      });
+    }
+    if (s.push_start_time && hourOf(s.push_start_time) === h) {
+      tasks.push({
+        key: `p-${s.strategy_id}`,
+        kind: "push",
+        stageLabel: "推送",
+        name: s.strategy_name,
+        time: s.push_start_time,
+        title: `推送 · ${s.strategy_name} · ${s.branch_name} · ${s.push_start_time}`,
+        color: branchColor(s.branch_id)
+      });
+    }
+  }
+  return tasks;
+}
+
+/** 仅保留有内容的小时行：任务芯片或任意一天的抢占条目 */
 const hourRows = computed(() => {
-  const rows: { hour: number; tasks: HourTaskItem[]; slots: HourSlotItem[] }[] =
-    [];
-  const list = strategies.value;
+  const rows: {
+    hour: number;
+    cells: { date: string; tasks: HourTaskItem[]; slots: HourSlotItem[] }[];
+  }[] = [];
   for (let h = 0; h < 24; h++) {
-    const tasks: HourTaskItem[] = [];
-    for (const s of list) {
-      if (hourOf(s.build_start_time) === h) {
-        tasks.push({
-          key: `b-${s.strategy_id}`,
-          kind: "build",
-          stageLabel: "构建",
-          name: s.strategy_name,
-          time: s.build_start_time,
-          title: `构建 · ${s.strategy_name} · ${s.branch_name} · ${s.build_start_time}`,
-          color: branchColor(s.branch_id)
-        });
+    const tasks = tasksAtHour(h);
+    const cells = weekDays.value.map(d => {
+      const slots: HourSlotItem[] = [];
+      const dayEntries = entriesByDate.value.get(d.date);
+      for (const t of templates.value) {
+        if (!coversHour(t, h)) continue;
+        const entry = dayEntries?.get(t.id);
+        if (!entry) continue;
+        slots.push({ entry, template: t });
       }
-      if (s.push_start_time && hourOf(s.push_start_time) === h) {
-        tasks.push({
-          key: `p-${s.strategy_id}`,
-          kind: "push",
-          stageLabel: "推送",
-          name: s.strategy_name,
-          time: s.push_start_time,
-          title: `推送 · ${s.strategy_name} · ${s.branch_name} · ${s.push_start_time}`,
-          color: branchColor(s.branch_id)
-        });
-      }
-    }
-    const slots: HourSlotItem[] = [];
-    for (const t of calendar.value?.templates ?? []) {
-      if (!coversHour(t, h)) continue;
-      const entry = dayEntries.value.get(t.id);
-      if (!entry) continue; // 该日不适用（weekdays/生效期）
-      slots.push({ entry, template: t });
-    }
-    rows.push({ hour: h, tasks, slots });
+      return { date: d.date, tasks, slots };
+    });
+    const hasContent = tasks.length > 0 || cells.some(c => c.slots.length > 0);
+    if (hasContent) rows.push({ hour: h, cells });
   }
   return rows;
 });
@@ -304,66 +413,63 @@ const hourRows = computed(() => {
 const stats = computed(() => {
   let occupied = 0;
   let mine = 0;
-  for (const e of dayEntries.value.values()) {
-    if (e.status === "reserved") {
-      occupied += 1;
-      if (e.booking?.is_mine) mine += 1;
+  for (const d of weekDays.value) {
+    for (const e of entriesByDate.value.get(d.date)?.values() ?? []) {
+      if (e.status === "reserved") {
+        occupied += 1;
+        if (e.booking?.is_mine) mine += 1;
+      }
     }
   }
   return { tasks: strategies.value.length, occupied, mine };
 });
 
-// ---- 日期导航 ----
-function shiftDate(delta: number) {
-  date.value = dayjs(date.value).add(delta, "day").format("YYYY-MM-DD");
+// ---- 数据加载联动 ----
+// 日历拉取依赖 weekDays（来自 weekly 响应），必须先等周数据返回
+async function reloadAll() {
+  await loadWeekly();
+  await loadCalendars();
 }
 
-function goToday() {
-  date.value = today;
-}
-
-// 跨月切换日期时重拉月历
-watch(
-  () => date.value.slice(0, 7),
-  () => loadCalendar()
-);
-
-// 版本切换重拉周视图数据
+watch(weekStart, () => {
+  selectedWeek.value = weekStart.value;
+  reloadAll();
+});
 watch(versionId, value => {
   if (value) loadWeekly();
 });
 
-// ---- 抢占交互（与时段抢占页同款）----
+// ---- 抢占交互（与时段抢占页同款，作用到具体日期）----
 const bookingVisible = ref(false);
+const bookingDate = ref(today);
 const bookingTemplate = ref<SlotTemplateItem | null>(null);
 
 const detailVisible = ref(false);
+const detailDate = ref(today);
 const detailEntry = ref<CalendarDayCell | null>(null);
 const detailTemplate = ref<SlotTemplateItem | null>(null);
 
 const drawerVisible = ref(false);
 
-function onSlotClick(_hour: number, entry: CalendarDayCell) {
-  if (isPast.value) {
+function onSlotClick(date: string, entry: CalendarDayCell) {
+  if (date < today) {
     ElMessage.info("该日期已过期，不可操作");
     return;
   }
-  const template = calendar.value?.templates.find(
-    t => t.id === entry.template_id
-  );
+  const template = templates.value.find(t => t.id === entry.template_id);
   if (!template) return;
   if (entry.status === "reserved") {
+    detailDate.value = date;
     detailEntry.value = entry;
     detailTemplate.value = template;
     detailVisible.value = true;
     return;
   }
-  if (date.value > horizonEnd.value) {
-    ElMessage.warning(
-      `超出可抢占窗口（最多提前 ${calendar.value?.horizon_days ?? 60} 天）`
-    );
+  if (date > horizonEnd.value) {
+    ElMessage.warning(`超出可抢占窗口（最多提前 ${horizonDays.value} 天）`);
     return;
   }
+  bookingDate.value = date;
   bookingTemplate.value = template;
   bookingVisible.value = true;
 }
@@ -371,17 +477,16 @@ function onSlotClick(_hour: number, entry: CalendarDayCell) {
 async function onBooked() {
   bookingVisible.value = false;
   ElMessage.success("抢占成功");
-  await loadCalendar();
+  await loadCalendars();
 }
 
 async function onReleased() {
   detailVisible.value = false;
   ElMessage.success("已释放");
-  await loadCalendar();
+  await loadCalendars();
 }
 
-loadWeekly();
-loadCalendar();
+reloadAll();
 </script>
 
 <style scoped lang="scss">
@@ -407,14 +512,14 @@ loadCalendar();
   flex-wrap: wrap;
 }
 
-.date-title {
-  min-width: 190px;
+.week-title {
+  min-width: 240px;
   text-align: center;
   font-size: 15px;
   font-weight: 600;
   color: var(--el-text-color-primary);
 
-  .weekday-tag {
+  .week-tag {
     margin-left: 4px;
   }
 }
@@ -477,10 +582,19 @@ loadCalendar();
   }
 }
 
+.grid-wrap {
+  overflow-x: auto;
+}
+
 .grid-title {
   margin-bottom: 8px;
   font-size: 13px;
   font-weight: 600;
   color: var(--el-text-color-regular);
+
+  .grid-sub {
+    font-weight: 400;
+    color: var(--el-text-color-placeholder);
+  }
 }
 </style>
