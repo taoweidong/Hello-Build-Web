@@ -1,6 +1,7 @@
 // utils/business.ts 单测：业务用户读取与时间解析
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  canApproveBorrowFlow,
   canEditPanorama,
   formatTime,
   getCurrentUser,
@@ -100,5 +101,29 @@ describe("utils/business", () => {
     it("无法解析的时间按未过期处理", () => {
       expect(isPastSlot("bad-date", "25:99", now)).toBe(false);
     });
+  });
+});
+
+describe("canApproveBorrowFlow", () => {
+  const flow = { source_version_id: 7 };
+
+  it("admin 可审批任意电子流", () => {
+    expect(canApproveBorrowFlow({ role: "admin" }, flow)).toBe(true);
+  });
+
+  it("pm 仅可审批来源版本为自己的电子流", () => {
+    expect(
+      canApproveBorrowFlow({ role: "pm", bound_version_id: 7 }, flow)
+    ).toBe(true);
+    expect(
+      canApproveBorrowFlow({ role: "pm", bound_version_id: 8 }, flow)
+    ).toBe(false);
+    expect(canApproveBorrowFlow({ role: "pm" }, flow)).toBe(false);
+  });
+
+  it("其余角色与未登录不可审批", () => {
+    expect(canApproveBorrowFlow({ role: "builder" }, flow)).toBe(false);
+    expect(canApproveBorrowFlow({ role: "tester" }, flow)).toBe(false);
+    expect(canApproveBorrowFlow(null, flow)).toBe(false);
   });
 });

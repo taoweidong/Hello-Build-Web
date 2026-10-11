@@ -35,6 +35,20 @@ export function isPastSlot(
   return Number.isNaN(ts) ? false : ts < now.getTime();
 }
 
+/**
+ * 借用电子流审批权限：admin 全部；pm 仅来源版本为自己的电子流。
+ * 与后端 views/borrow_flow._can_approve 同口径；从 borrow-flow 页抽出便于单测。
+ */
+export function canApproveBorrowFlow(
+  user: Pick<UserInfo, "role" | "bound_version_id"> | null,
+  flow: { source_version_id: number }
+): boolean {
+  if (user?.role === "admin") return true;
+  return (
+    user?.role === "pm" && user?.bound_version_id === flow.source_version_id
+  );
+}
+
 /** 获取当前登录用户信息（从业务存储读取，含绑定版本） */
 export function getCurrentUser(): UserInfo | null {
   try {

@@ -195,7 +195,7 @@ import {
 } from "@/api/borrowFlow";
 import { formatBorrowFlowText } from "./format";
 import { borrowStatusMeta } from "@/views/constants";
-import { getCurrentUser } from "@/utils/business";
+import { canApproveBorrowFlow, getCurrentUser } from "@/utils/business";
 import { copyText } from "@/utils/clipboard";
 
 defineOptions({ name: "BorrowFlowIndex" });
@@ -211,14 +211,9 @@ const onlyMine = ref(false);
 const detailVisible = ref(false);
 const detailFlow = ref<BorrowFlowItem | null>(null);
 
-/** 审批权限：admin 全部；pm 仅来源版本为自己的电子流 */
-function canApprove(flow: BorrowFlowItem): boolean {
-  if (currentUser?.role === "admin") return true;
-  return (
-    currentUser?.role === "pm" &&
-    currentUser?.bound_version_id === flow.source_version_id
-  );
-}
+// 审批权限判定唯一来源在 utils/business.canApproveBorrowFlow（与后端 _can_approve 同口径）
+const canApprove = (flow: BorrowFlowItem): boolean =>
+  canApproveBorrowFlow(currentUser, flow);
 
 const filteredFlows = computed(() =>
   onlyMine.value ? flows.value.filter(f => canApprove(f)) : flows.value

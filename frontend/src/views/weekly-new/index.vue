@@ -171,6 +171,7 @@ import { getWeekly } from "@/api/weekly";
 import { getStrategies } from "@/api/strategy";
 import type { WeeklyData, StrategyItem, WeeklyStrategy } from "@/api/types";
 import { canEditPanorama, getCurrentUser, isPastSlot } from "@/utils/business";
+import { buildMonthWeeks, isoWeek } from "@/utils/week";
 import { useBranchColors } from "@/composables/useBranchColors";
 import HourGrid, { type HourTaskItem } from "./components/HourGrid.vue";
 import StrategyEditDialog from "./components/StrategyEditDialog.vue";
@@ -197,13 +198,7 @@ const weekRangeText = computed(() => {
   return `${s.format("YYYY年M月D日")} - ${dayjs(weekEnd.value).format("M月D日")}`;
 });
 
-function isoWeek(dateStr: string): number {
-  const d = dayjs(dateStr).toDate();
-  const n = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - n);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-}
+// isoWeek/buildMonthWeeks 抽取到 utils/week（纯函数，单测锁定）
 const weekNumber = computed(() =>
   weekStart.value ? isoWeek(weekStart.value) : 0
 );
@@ -219,24 +214,7 @@ function goThisWeek() {
 }
 
 /** 本月周列表（与原周视图同规则：本月第一个周一为第 1 周） */
-const monthWeeks = computed(() => {
-  const now = dayjs();
-  const startOfMonth = now.startOf("month");
-  const first =
-    startOfMonth.day() === 0 ? startOfMonth.add(1, "day") : startOfMonth.day(1);
-  const firstMonday =
-    first.month() === startOfMonth.month() ? first : first.add(7, "day");
-  const result: Array<{ value: string; label: string }> = [];
-  for (let i = 0; i < 6; i++) {
-    const monday = firstMonday.add(i * 7, "day");
-    if (monday.month() !== startOfMonth.month()) break;
-    result.push({
-      value: monday.format("YYYY-MM-DD"),
-      label: `第${i + 1}周（${monday.format("MM.DD")} - ${monday.add(6, "day").format("MM.DD")}）`
-    });
-  }
-  return result;
-});
+const monthWeeks = computed(() => buildMonthWeeks());
 
 const selectedWeek = ref(thisWeekMonday);
 watch(selectedWeek, value => {

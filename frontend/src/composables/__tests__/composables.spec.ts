@@ -74,4 +74,27 @@ describe("useStrategyPreview 守卫逻辑", () => {
       expect.objectContaining({ id: 7, branch_id: 1 })
     );
   });
+
+  it("reset 作废在途响应：迟到结果不再写入 preview", async () => {
+    const previewStrategy = vi.fn().mockImplementation(
+      () =>
+        new Promise(resolve =>
+          setTimeout(() => resolve({ timeline: { late: true } }), 30)
+        )
+    );
+    vi.doMock("@/api/strategy", () => ({
+      previewStrategy
+    }));
+    vi.resetModules();
+    const { useStrategyPreview } =
+      await import("@/composables/useStrategyPreview");
+    const form: any = { branch_id: 1, template_id: 2, build_start_time: "22:00" };
+    const { preview, schedule, reset } = useStrategyPreview(() => form, 5);
+    schedule();
+    await new Promise(r => setTimeout(r, 15)); // run 已触发、请求在途
+    reset();
+    expect(preview.value).toBeNull();
+    await new Promise(r => setTimeout(r, 40)); // 迟到响应返回
+    expect(preview.value).toBeNull(); // seq 自增作废，不写入
+  });
 });

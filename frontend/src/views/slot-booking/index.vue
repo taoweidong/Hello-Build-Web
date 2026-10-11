@@ -143,6 +143,7 @@ import SlotDetailDialog from "./components/SlotDetailDialog.vue";
 import DayDetailDialog from "./components/DayDetailDialog.vue";
 import MyBookingsDrawer from "./components/MyBookingsDrawer.vue";
 import { getCurrentUser } from "@/utils/business";
+import { buildMonthCells, summarizeCalendar } from "@/utils/slotCalendar";
 
 defineOptions({ name: "SlotBookingIndex" });
 
@@ -177,39 +178,10 @@ const templateMap = computed<Record<number, SlotTemplateItem>>(() => {
   return map;
 });
 
-/** 月历 42 格（周一开头，含上下月补位） */
-const cells = computed(() => {
-  const first = dayjs(`${month.value}-01`);
-  if (!first.isValid()) return [];
-  const offset = (first.day() + 6) % 7; // day(): 0=周日 → 转周一开头
-  const start = first.subtract(offset, "day");
-  const list: { date: string; inMonth: boolean }[] = [];
-  for (let i = 0; i < 42; i++) {
-    const d = start.add(i, "day");
-    list.push({
-      date: d.format("YYYY-MM-DD"),
-      inMonth: d.format("YYYY-MM") === month.value
-    });
-  }
-  return list;
-});
+// 月历 42 格与统计逻辑抽取到 utils/slotCalendar（纯函数，单测锁定）
+const cells = computed(() => buildMonthCells(month.value));
 
-/** 工具栏统计：本月展示总段数 / 已占 / 我的 */
-const stats = computed(() => {
-  let total = 0;
-  let occupied = 0;
-  let mine = 0;
-  for (const entries of Object.values(calendar.value?.days ?? {})) {
-    for (const e of entries) {
-      total += 1;
-      if (e.status === "reserved") {
-        occupied += 1;
-        if (e.booking?.is_mine) mine += 1;
-      }
-    }
-  }
-  return { total, occupied, mine };
-});
+const stats = computed(() => summarizeCalendar(calendar.value?.days ?? {}));
 
 async function load() {
   loading.value = true;
