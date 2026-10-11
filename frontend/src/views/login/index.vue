@@ -44,37 +44,38 @@ const ruleForm = reactive({
 
 const onLogin = async (formEl: FormInstance | undefined) => {
   if (!formEl) return;
-  await formEl.validate(valid => {
-    if (valid) {
-      loading.value = true;
-      useUserStoreHook()
-        .loginByUsername({
-          username: ruleForm.username,
-          password: ruleForm.password
-        })
-        .then(res => {
-          if (res.success) {
-            // 获取后端路由
-            return initRouter().then(() => {
-              disabled.value = true;
-              router
-                .push(getTopMenu(true).path)
-                .then(() => {
-                  message("登录成功", { type: "success" });
-                })
-                .finally(() => (disabled.value = false));
-            });
-          } else {
-            message("登录失败", { type: "error" });
-          }
-        })
-        .finally(() => (loading.value = false));
+  const valid = await formEl.validate().catch(() => false);
+  if (!valid) return;
+  loading.value = true;
+  try {
+    const res = await useUserStoreHook().loginByUsername({
+      username: ruleForm.username,
+      password: ruleForm.password
+    });
+    if (!res.success) {
+      // 业务层已判定失败（如响应结构异常），补一条明确提示
+      message("登录失败", { type: "error" });
+      return;
     }
-  });
+    // 获取后端路由
+    await initRouter();
+    disabled.value = true;
+    await router.push(getTopMenu(true).path);
+    message("登录成功", { type: "success" });
+  } catch (e: any) {
+    // http 拦截器已对已知错误码弹提示，此处仅兜底未处理异常（如 500/断网）
+    if (e?.code === undefined && e?.response === undefined) {
+      message(e?.message || "登录失败，请检查账号密码", { type: "error" });
+    }
+  } finally {
+    disabled.value = false;
+    loading.value = false;
+  }
 };
 
-const immediateDebounce: any = debounce(
-  formRef => onLogin(formRef),
+// 回车触发登录：debounce 返回值类型要求无参，故用显式类型的包装函数
+const immediateDebounce = debounce(
+  () => onLogin(ruleFormRef.value),
   1000,
   true
 );
@@ -85,7 +86,7 @@ useEventListener(document, "keydown", ({ code }) => {
     !disabled.value &&
     !loading.value
   )
-    immediateDebounce(ruleFormRef.value);
+    immediateDebounce();
 });
 </script>
 

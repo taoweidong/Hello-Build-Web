@@ -7,7 +7,7 @@ from django.utils.timezone import now
 from ..api import err, ok
 from ..models import ExecutionRound
 from ..services.config import get_config
-from . import authed_user, fail_resp, first_error, fmt_dt, json_resp, parse_body
+from . import authed_user, fail_resp, first_error, fmt_dt, json_resp, parse_body, parse_int
 
 
 def _round_payload(r):
@@ -34,8 +34,11 @@ def executions_view(request):
     if user.role == "pm":
         qs = qs.filter(strategy__branch__version__pm_user=user)
     # 前端按策略/日期范围过滤（详情面板近 7 天历史、执行看板按日）
-    strategy_id = request.GET.get("strategy_id")
-    if strategy_id:
+    raw_strategy_id = request.GET.get("strategy_id")
+    if raw_strategy_id:
+        strategy_id = parse_int(raw_strategy_id)
+        if strategy_id is None:
+            return fail_resp(42201, "strategy_id 应为整数")
         qs = qs.filter(strategy_id=strategy_id)
     date_ = request.GET.get("date")
     if date_:

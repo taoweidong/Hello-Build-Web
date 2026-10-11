@@ -18,7 +18,7 @@ from ..services.strategies import (
     validate_strategy,
 )
 from ..services.timeline import build_timeline
-from . import authed_user, fail_resp, json_resp, parse_body
+from . import authed_user, fail_resp, json_resp, parse_body, parse_int
 
 User = get_user_model()
 
@@ -51,8 +51,13 @@ def list_strategies(request):
     if authed:
         return authed
     qs = Strategy.objects.select_related("branch", "branch__version", "template").all()
-    version_id = request.GET.get("version_id")
-    branch_id = request.GET.get("branch_id")
+    raw_version_id = request.GET.get("version_id")
+    raw_branch_id = request.GET.get("branch_id")
+    for name, raw in (("version_id", raw_version_id), ("branch_id", raw_branch_id)):
+        if raw and parse_int(raw) is None:
+            return fail_resp(42201, f"{name} 应为整数")
+    version_id = parse_int(raw_version_id)
+    branch_id = parse_int(raw_branch_id)
     if version_id:
         qs = qs.filter(branch__version_id=version_id)
     if branch_id:
@@ -71,8 +76,12 @@ def preview_strategy(request):
     if authed:
         return authed
     body = parse_body(request)
-    branch = Branch.objects.filter(id=body.get("branch_id")).first()
-    template = StrategyTemplate.objects.filter(id=body.get("template_id")).first()
+    branch_id = parse_int(body.get("branch_id"))
+    template_id = parse_int(body.get("template_id"))
+    if branch_id is None or template_id is None:
+        return fail_resp(42201, "branch_id / template_id 应为整数")
+    branch = Branch.objects.filter(id=branch_id).first()
+    template = StrategyTemplate.objects.filter(id=template_id).first()
     if not branch or not template:
         return fail_resp(42201, "分支或模板不存在")
     build_start_time = body.get("build_start_time", "22:00")
@@ -80,7 +89,7 @@ def preview_strategy(request):
     push_mode = body.get("push_mode", "normal")
     try:
         validate_strategy(branch, template, build_start_time, push_start_time,
-                          push_mode=push_mode, exclude_id=body.get("id"))
+                          push_mode=push_mode, exclude_id=parse_int(body.get("id")))
     except StrategyValidationError as exc:
         return json_resp(ok({"conflict": {"code": exc.code, "message": exc.message, **exc.extra}}))
     # 计算时间线供前端实时预览（与校验同一基准日期：当天）
@@ -99,8 +108,12 @@ def create_strategy(request):
     if authed:
         return authed
     body = parse_body(request)
-    branch = Branch.objects.filter(id=body.get("branch_id")).first()
-    template = StrategyTemplate.objects.filter(id=body.get("template_id")).first()
+    branch_id = parse_int(body.get("branch_id"))
+    template_id = parse_int(body.get("template_id"))
+    if branch_id is None or template_id is None:
+        return fail_resp(42201, "branch_id / template_id 应为整数")
+    branch = Branch.objects.filter(id=branch_id).first()
+    template = StrategyTemplate.objects.filter(id=template_id).first()
     if not branch or not template:
         return fail_resp(42201, "分支或模板不存在")
     perr = _check_pm_bound(request.user, branch)

@@ -13,7 +13,15 @@ from ..services.strategies import (
     strategy_payload,
     update_strategy as svc_update_strategy,
 )
-from . import authed_user, fail_resp, first_error, json_resp, parse_body, require_admin
+from . import (
+    authed_user,
+    fail_resp,
+    first_error,
+    json_resp,
+    parse_body,
+    parse_int,
+    require_admin,
+)
 
 User = get_user_model()
 
@@ -51,8 +59,8 @@ def list_versions(user):
 
 def create_version(user, body):
     name = body.get("name")
-    pm_user_id = body.get("pm_user_id")
-    if not name or not pm_user_id:
+    pm_user_id = parse_int(body.get("pm_user_id"))
+    if not name or pm_user_id is None:
         return fail_resp(42201, "版本名与 PM 必填")
     if Version.objects.filter(name=name).exists():
         return fail_resp(40902, "版本号已存在")
@@ -101,7 +109,10 @@ def update_version(request, vid):
             return fail_resp(40902, "版本号已存在")
         v.name = body["name"]
     if body.get("pm_user_id") is not None:
-        pm = User.objects.filter(id=body["pm_user_id"]).first()
+        pm_id = parse_int(body["pm_user_id"])
+        if pm_id is None:
+            return fail_resp(42201, "pm_user_id 应为整数")
+        pm = User.objects.filter(id=pm_id).first()
         if not pm:
             return fail_resp(42201, "PM 用户不存在")
         v.pm_user = pm
@@ -395,8 +406,13 @@ def _validation_error(exc):
 
 def _list_admin_strategies(request):
     qs = Strategy.objects.select_related("branch", "branch__version", "template").all()
-    version_id = request.GET.get("version_id")
-    branch_id = request.GET.get("branch_id")
+    raw_version_id = request.GET.get("version_id")
+    raw_branch_id = request.GET.get("branch_id")
+    for name, raw in (("version_id", raw_version_id), ("branch_id", raw_branch_id)):
+        if raw and parse_int(raw) is None:
+            return fail_resp(42201, f"{name} 应为整数")
+    version_id = parse_int(raw_version_id)
+    branch_id = parse_int(raw_branch_id)
     if version_id:
         qs = qs.filter(branch__version_id=version_id)
     if branch_id:
@@ -406,8 +422,12 @@ def _list_admin_strategies(request):
 
 def _create_admin_strategy(request, user):
     body = parse_body(request)
-    branch = Branch.objects.filter(id=body.get("branch_id")).first()
-    template = StrategyTemplate.objects.filter(id=body.get("template_id")).first()
+    branch_id = parse_int(body.get("branch_id"))
+    template_id = parse_int(body.get("template_id"))
+    if branch_id is None or template_id is None:
+        return fail_resp(42201, "branch_id / template_id 应为整数")
+    branch = Branch.objects.filter(id=branch_id).first()
+    template = StrategyTemplate.objects.filter(id=template_id).first()
     if not branch or not template:
         return fail_resp(42201, "分支或模板不存在")
     try:

@@ -25,6 +25,23 @@ def _err(code: int, message: str) -> dict:
     return {"code": code, "message": message}
 
 
+def _safe_int(value) -> Optional[int]:
+    """安全转 int：非数字返回 None，避免 filter(id="abc") 抛 ValueError 变成 500。
+
+    与 views.parse_int 保持同一语义（含全角数字拦截），避免两处实现行为分叉。
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text or not text.isascii() or not text.lstrip("-").isdigit():
+            return None
+        return int(text)
+    return None
+
+
 def _today() -> date_cls:
     return timezone.localdate()
 
@@ -178,7 +195,10 @@ def create_booking(user, payload: dict) -> tuple[Optional[dict], Optional[dict]]
     except ValueError:
         return None, _err(42201, "日期格式非法，应为 YYYY-MM-DD")
 
-    template = SlotTemplate.objects.filter(id=payload.get("template_id")).first()
+    template_id = _safe_int(payload.get("template_id"))
+    if template_id is None:
+        return None, _err(42201, "template_id 应为整数")
+    template = SlotTemplate.objects.filter(id=template_id).first()
     if template is None:
         return None, _err(40401, "时段模板不存在")
     if not template.enabled:
@@ -196,8 +216,12 @@ def create_booking(user, payload: dict) -> tuple[Optional[dict], Optional[dict]]
     if not 2 <= len(purpose) <= 200:
         return None, _err(42201, "用途说明需 2~200 字")
 
-    version = Version.objects.filter(id=payload.get("version_id")).first()
-    branch = Branch.objects.select_related("version").filter(id=payload.get("branch_id")).first()
+    version_id = _safe_int(payload.get("version_id"))
+    branch_id = _safe_int(payload.get("branch_id"))
+    if version_id is None or branch_id is None:
+        return None, _err(42201, "version_id / branch_id 应为整数")
+    version = Version.objects.filter(id=version_id).first()
+    branch = Branch.objects.select_related("version").filter(id=branch_id).first()
     if version is None or branch is None:
         return None, _err(42201, "版本或分支不存在")
     if branch.version_id != version.id:

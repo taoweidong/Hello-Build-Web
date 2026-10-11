@@ -153,7 +153,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import dayjs from "dayjs";
 import ArrowLeft from "~icons/ep/arrow-left";
@@ -292,6 +292,9 @@ const branchColorMap = computed(() => {
 function branchColor(branchId: number) {
   return branchColorMap.value.get(branchId) ?? BRANCH_PALETTE[0];
 }
+
+/** 首屏是否已完成首次 versionId 选定：用于避免初始化阶段的重复请求 */
+const initializing = ref(true);
 
 async function loadWeekly() {
   weeklyLoading.value = true;
@@ -436,7 +439,17 @@ watch(weekStart, () => {
   reloadAll();
 });
 watch(versionId, value => {
-  if (value) loadWeekly();
+  // 首屏由 reloadAll 负责串联加载；此处跳过，避免初始化二次请求
+  if (!value || initializing.value) return;
+  loadWeekly();
+});
+
+onMounted(async () => {
+  try {
+    await reloadAll();
+  } finally {
+    initializing.value = false;
+  }
 });
 
 // ---- 抢占交互（与时段抢占页同款，作用到具体日期）----

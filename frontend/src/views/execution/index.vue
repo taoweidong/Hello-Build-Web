@@ -6,6 +6,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { getExecutions, submitConclusion } from "@/api/execution";
 import type { RoundItem } from "@/api/types";
 import { getCurrentUser, timeToMs, dayjs, formatTime } from "@/utils/business";
+import { pollDelay, shouldNotify } from "@/utils/polling";
 
 defineOptions({ name: "ExecutionIndex" });
 
@@ -14,11 +15,14 @@ const loading = ref(false);
 const roundList = ref<RoundItem[]>([]);
 const now = ref(Date.now());
 
+// 轮询失败计数（退避用）：成功即重置为 0
+let consecutiveFailures = 0;
+
 // ---- 阶段状态推导（按当前时间与绝对区间比较）----
-function stageStatus(phase: {
-  start: string;
-  end: string;
-}): { type: "info" | "primary" | "success"; label: string } {
+function stageStatus(phase: { start: string; end: string }): {
+  type: "info" | "primary" | "success";
+  label: string;
+} {
   const start = timeToMs(phase.start);
   const end = timeToMs(phase.end);
   const t = now.value;
@@ -57,14 +61,16 @@ const statCards = computed(() => [
 ]);
 
 // ---- 数据加载 ----
-async function load() {
-  loading.value = true;
+// silent=true 用于轮询：不弹错误提示、不触发表格 loading 遮罩
+async function load(silent = false) {
+  if (!silent) loading.value = true;
   try {
     const today = dayjs().format("YYYY-MM-DD");
     roundList.value = await getExecutions({ date: today });
     now.value = Date.now();
+    consecutiveFailures = 0;
   } finally {
-    loading.value = false;
+    if (!silent) loading.value = false;
   }
 }
 
@@ -105,17 +111,42 @@ async function onConclusionSubmit() {
   load();
 }
 
-// ---- 30s 轮询 ----
-let timer: ReturnType<typeof setInterval> | null = null;
+// ---- 轮询：失败退避，避免后端故障时每 30s 弹一次错误并持续打点 ----
+// 正常 30s；连续失败按 30s→60s→120s→240s→300s 递增（上限 5min）；成功即重置。
+let timer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleNext() {
+  if (timer) clearTimeout(timer);
+  timer = setTimeout(tick, pollDelay(consecutiveFailures));
+}
+
+async function tick() {
+  // 页面隐藏时跳过本轮，等价于暂停；下次仍按当前退避间隔调度
+  if (document.hidden) {
+    scheduleNext();
+    return;
+  }
+  try {
+    await load(true);
+  } catch {
+    // 仅首次失败提示，后续静默，避免错误弹窗轰炸
+    if (shouldNotify(consecutiveFailures)) {
+      ElMessage.warning("执行数据刷新失败，将自动重试");
+    }
+    consecutiveFailures++;
+  } finally {
+    scheduleNext();
+  }
+}
+
 onMounted(() => {
-  load();
-  timer = setInterval(() => {
-    // 页面隐藏时跳过轮询，避免后台无谓请求堆积
-    if (!document.hidden) load().catch(() => {});
-  }, 30000);
+  load().catch(() => {
+    ElMessage.warning("执行数据加载失败，请稍后重试");
+  });
+  scheduleNext();
 });
 onUnmounted(() => {
-  if (timer) clearInterval(timer);
+  if (timer) clearTimeout(timer);
 });
 
 // 展示辅助
@@ -129,13 +160,19 @@ function phaseRange(r: RoundItem, key: "build" | "smoke" | "analysis") {
   return `${formatTime(s, "HH:mm")}-${formatTime(e, "HH:mm")}`;
 }
 
-function conclusionTag(r: RoundItem): { type: "success" | "danger" | "info"; label: string } {
+function conclusionTag(r: RoundItem): {
+  type: "success" | "danger" | "info";
+  label: string;
+} {
   if (r.conclusion === "pass") return { type: "success", label: "通过" };
   if (r.conclusion === "fail") return { type: "danger", label: "不通过" };
   return { type: "info", label: "待录" };
 }
 
-const pushStatusMap: Record<string, { type: "primary" | "success" | "warning" | "info" | "danger"; label: string }> = {
+const pushStatusMap: Record<
+  string,
+  { type: "primary" | "success" | "warning" | "info" | "danger"; label: string }
+> = {
   pending: { type: "info", label: "待推送" },
   running: { type: "primary", label: "推送中" },
   success: { type: "success", label: "推送成功" },
@@ -160,48 +197,89 @@ const pushStatusMap: Record<string, { type: "primary" | "success" | "warning" | 
     </div>
 
     <!-- 轮次表格 -->
-    <div class="table-card" v-loading="loading">
+    <div v-loading="loading" class="table-card">
       <div class="table-head">
         <span class="table-title">今日执行轮次</span>
-        <el-button size="small" @click="load">刷新</el-button>
+        <el-button size="small" @click="() => load()">刷新</el-button>
       </div>
       <el-table :data="roundList" style="width: 100%">
         <el-table-column prop="strategy_name" label="策略" min-width="160" />
         <el-table-column label="构建" min-width="150">
           <template #default="{ row }">
-            <el-tag :type="stageStatus({ start: row.build_start, end: row.build_end }).type" size="small">
-              {{ stageStatus({ start: row.build_start, end: row.build_end }).label }}
+            <el-tag
+              :type="
+                stageStatus({ start: row.build_start, end: row.build_end }).type
+              "
+              size="small"
+            >
+              {{
+                stageStatus({ start: row.build_start, end: row.build_end })
+                  .label
+              }}
             </el-tag>
-            <span class="phase-time">{{ phaseRange(row as RoundItem, "build") }}</span>
+            <span class="phase-time">{{
+              phaseRange(row as RoundItem, "build")
+            }}</span>
           </template>
         </el-table-column>
         <el-table-column label="冒烟" min-width="150">
           <template #default="{ row }">
-            <el-tag :type="stageStatus({ start: row.smoke_start, end: row.smoke_end }).type" size="small">
-              {{ stageStatus({ start: row.smoke_start, end: row.smoke_end }).label }}
+            <el-tag
+              :type="
+                stageStatus({ start: row.smoke_start, end: row.smoke_end }).type
+              "
+              size="small"
+            >
+              {{
+                stageStatus({ start: row.smoke_start, end: row.smoke_end })
+                  .label
+              }}
             </el-tag>
-            <span class="phase-time">{{ phaseRange(row as RoundItem, "smoke") }}</span>
+            <span class="phase-time">{{
+              phaseRange(row as RoundItem, "smoke")
+            }}</span>
           </template>
         </el-table-column>
         <el-table-column label="人工分析" min-width="150">
           <template #default="{ row }">
-            <el-tag :type="stageStatus({ start: row.analysis_start, end: row.analysis_end }).type" size="small">
-              {{ stageStatus({ start: row.analysis_start, end: row.analysis_end }).label }}
+            <el-tag
+              :type="
+                stageStatus({
+                  start: row.analysis_start,
+                  end: row.analysis_end
+                }).type
+              "
+              size="small"
+            >
+              {{
+                stageStatus({
+                  start: row.analysis_start,
+                  end: row.analysis_end
+                }).label
+              }}
             </el-tag>
-            <span class="phase-time">{{ phaseRange(row as RoundItem, "analysis") }}</span>
+            <span class="phase-time">{{
+              phaseRange(row as RoundItem, "analysis")
+            }}</span>
           </template>
         </el-table-column>
         <el-table-column label="结论" min-width="140">
           <template #default="{ row }">
             <el-button
-              v-if="row.conclusion === 'pending' && currentUser?.role === 'tester'"
+              v-if="
+                row.conclusion === 'pending' && currentUser?.role === 'tester'
+              "
               type="primary"
               size="small"
               @click="openConclusion(row as RoundItem)"
             >
               录入结论
             </el-button>
-            <el-tag v-else :type="conclusionTag(row as RoundItem).type" size="small">
+            <el-tag
+              v-else
+              :type="conclusionTag(row as RoundItem).type"
+              size="small"
+            >
               {{ conclusionTag(row as RoundItem).label }}
             </el-tag>
           </template>
@@ -209,10 +287,14 @@ const pushStatusMap: Record<string, { type: "primary" | "success" | "warning" | 
         <el-table-column label="推送" min-width="120">
           <template #default="{ row }">
             <el-tag
-              :type="(pushStatusMap[row.push_status] || pushStatusMap.pending).type"
+              :type="
+                (pushStatusMap[row.push_status] || pushStatusMap.pending).type
+              "
               size="small"
             >
-              {{ (pushStatusMap[row.push_status] || pushStatusMap.pending).label }}
+              {{
+                (pushStatusMap[row.push_status] || pushStatusMap.pending).label
+              }}
             </el-tag>
           </template>
         </el-table-column>
@@ -244,7 +326,9 @@ const pushStatusMap: Record<string, { type: "primary" | "success" | "warning" | 
       </el-form>
       <template #footer>
         <el-button @click="conclusionDialog = false">取消</el-button>
-        <el-button type="primary" @click="onConclusionSubmit">确认提交</el-button>
+        <el-button type="primary" @click="onConclusionSubmit"
+          >确认提交</el-button
+        >
       </template>
     </el-dialog>
   </div>

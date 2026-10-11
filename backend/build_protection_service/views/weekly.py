@@ -6,7 +6,7 @@ from django.utils import timezone
 
 from ..api import err, ok
 from ..models import Branch, Strategy, Version
-from . import authed_user, fail_resp, first_error, json_resp
+from . import authed_user, fail_resp, first_error, json_resp, parse_int
 
 
 _WEEKDAY_ZH = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
@@ -26,10 +26,14 @@ def weekly_view(request):
     if resp:
         return resp
     week_start = request.GET.get("week_start", _default_monday())
-    version_id = request.GET.get("version_id")
+    raw_version_id = request.GET.get("version_id")
     version = None
     versions = list(Version.objects.select_related("pm_user").all())
-    if version_id:
+    if raw_version_id:
+        # 非数字 version_id 直接 422，避免 filter(id="abc") 抛 ValueError 变成 500
+        version_id = parse_int(raw_version_id)
+        if version_id is None:
+            return fail_resp(42201, "version_id 应为整数")
         version = Version.objects.filter(id=version_id).first()
     try:
         days = _weekdays(week_start)
