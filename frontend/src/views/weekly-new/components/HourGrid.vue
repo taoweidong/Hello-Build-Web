@@ -2,7 +2,10 @@
   <div class="week-hour-grid">
     <!-- 表头：时段 + 周一~周日 -->
     <div class="grid-header">
-      <div class="corner-cell">时段</div>
+      <div class="corner-cell">
+        <span class="corner-title">时段</span>
+        <span class="corner-sub">0:00 - 23:59</span>
+      </div>
       <div
         v-for="d in days"
         :key="d.date"
@@ -20,62 +23,46 @@
         >
       </div>
     </div>
-    <!-- 行：小时段（仅保留有内容的行，按时间顺序） -->
-    <div v-for="row in rows" :key="row.hour" class="grid-row">
-      <div class="hour-label">
-        <span class="hour-start">{{ hh(row.hour) }}</span>
-        <span class="hour-end">–{{ hh(row.hour + 1) }}</span>
-      </div>
+    <!-- 行：任务时间点（仅保留有任务的行，按时间升序；行高自适应撑满视口） -->
+    <div v-for="row in rows" :key="row.time" class="grid-row">
+      <div class="time-label">{{ row.time }}</div>
       <div
         v-for="cell in row.cells"
         :key="cell.date"
         class="grid-cell"
-        :class="{ weekend: isWeekendOf(cell.date), past: cell.date < today }"
+        :class="{ weekend: isWeekendOf(cell.date) }"
       >
-        <span
-          v-if="!cell.tasks.length && !cell.slots.length"
-          class="cell-empty"
-        />
-        <!-- 任务芯片：构建（分支色实底）/ 推送（同色虚线描边） -->
+        <span v-if="!cell.tasks.length" class="cell-empty" />
+        <!-- 策略任务芯片：构建（分支色实底）/ 推送（同色虚线描边）；维护人员可点击编辑 -->
         <span
           v-for="task in cell.tasks"
           :key="task.key"
           class="task-chip"
-          :class="{ push: task.kind === 'push' }"
+          :class="{ push: task.kind === 'push', clickable: editable }"
           :style="
             task.kind === 'build'
               ? { background: task.color }
               : { borderColor: task.color, color: task.color }
           "
           :title="task.title"
+          @click="emit('task-click', task)"
         >
           <span class="task-stage">{{ task.stageLabel }}</span>
           <span class="task-name">{{ task.name }}</span>
           <span class="task-time">{{ task.time }}</span>
         </span>
-        <!-- 抢占芯片：该日覆盖此小时的模板（复用 SlotChip 四态） -->
-        <SlotChip
-          v-for="slot in cell.slots"
-          :key="'s-' + slot.entry.template_id"
-          :entry="slot.entry"
-          :template="slot.template"
-          :past="cell.date < today"
-          :aria-label="slotAria(cell.date, row.hour, slot)"
-          @click="emit('slot-click', cell.date, slot.entry)"
-        />
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { CalendarDayCell, SlotTemplateItem } from "@/api/slotBooking";
-import SlotChip from "@/views/slot-booking/components/SlotChip.vue";
-
 defineOptions({ name: "WeeklyNewHourGrid" });
 
 export interface HourTaskItem {
   key: string;
+  /** 所属策略 id（维护人员点击芯片进入编辑） */
+  strategyId: number;
   kind: "build" | "push";
   stageLabel: string;
   name: string;
@@ -84,31 +71,23 @@ export interface HourTaskItem {
   color: string;
 }
 
-export interface HourSlotItem {
-  entry: CalendarDayCell;
-  template: SlotTemplateItem;
-}
-
 export interface WeekCell {
   date: string;
   tasks: HourTaskItem[];
-  slots: HourSlotItem[];
 }
 
 defineProps<{
   days: { date: string; weekday: string }[];
-  /** 仅包含有内容的小时行（按时间升序） */
-  rows: { hour: number; cells: WeekCell[] }[];
+  /** 仅包含有任务的时间点行（0:00~23:59，按时间升序，非线性铺满） */
+  rows: { time: string; cells: WeekCell[] }[];
   today: string;
+  /** 当前用户是否可编辑（内部维护人员）：芯片显示可点击光标 */
+  editable?: boolean;
 }>();
 
 const emit = defineEmits<{
-  (e: "slot-click", date: string, entry: CalendarDayCell): void;
+  (e: "task-click", task: HourTaskItem): void;
 }>();
-
-function hh(h: number) {
-  return `${String(h % 24).padStart(2, "0")}:00`;
-}
 
 function weekdayIndex(dateStr: string) {
   return (new Date(`${dateStr}T00:00:00`).getDay() + 6) % 7; // 0=周一
@@ -121,43 +100,48 @@ function isWeekend(d: { date: string }) {
 function isWeekendOf(dateStr: string) {
   return weekdayIndex(dateStr) >= 5;
 }
-
-function slotAria(date: string, hour: number, slot: HourSlotItem): string {
-  const t = slot.template;
-  const range = `${hh(hour)}–${hh(hour + 1)}`;
-  if (slot.entry.status === "reserved" && slot.entry.booking) {
-    return `${date} ${range} ${t.name}，${slot.entry.booking.is_mine ? "我抢占的" : `已被 ${slot.entry.booking.user_name} 抢占`}`;
-  }
-  return `${date} ${range} ${t.name}，可抢占`;
-}
 </script>
 
 <style scoped lang="scss">
 .week-hour-grid {
   display: flex;
   flex-direction: column;
-  min-width: 900px;
+  min-height: 100%;
+  min-width: 760px;
 }
 
 .grid-header,
 .grid-row {
   display: grid;
-  grid-template-columns: 96px repeat(7, minmax(0, 1fr));
+  grid-template-columns: 64px repeat(7, minmax(0, 1fr));
 }
 
 .grid-header {
+  flex: 0 0 auto;
   border-bottom: 1px solid var(--el-border-color);
   background: var(--el-fill-color-light);
 }
 
 .corner-cell {
-  padding: 8px 10px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--el-text-color-regular);
+  padding: 6px 8px;
   border-right: 1px solid var(--el-border-color-lighter);
   display: flex;
+  flex-direction: column;
   align-items: center;
+  justify-content: center;
+  gap: 1px;
+
+  .corner-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--el-text-color-regular);
+  }
+
+  .corner-sub {
+    font-size: 10px;
+    color: var(--el-text-color-placeholder);
+    font-variant-numeric: tabular-nums;
+  }
 }
 
 .day-head {
@@ -198,34 +182,33 @@ function slotAria(date: string, hour: number, slot: HourSlotItem): string {
   }
 }
 
+/* 行：弹性拉伸分配剩余高度，少内容时撑满视口、多内容时按最小高度滚动 */
+.grid-row {
+  flex: 1 0 auto;
+  min-height: 40px;
+}
+
 .grid-row + .grid-row {
   border-top: 1px solid var(--el-border-color-lighter);
 }
 
-.hour-label {
-  padding: 6px 10px;
+/* 时段列：窄列单行居中显示精确时间点，不留空 */
+.time-label {
+  padding: 4px 4px;
   display: flex;
-  align-items: baseline;
-  gap: 2px;
+  align-items: center;
+  justify-content: center;
   background: var(--el-fill-color-light);
   border-right: 1px solid var(--el-border-color-lighter);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
   font-variant-numeric: tabular-nums;
-
-  .hour-start {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--el-text-color-primary);
-  }
-
-  .hour-end {
-    font-size: 11px;
-    color: var(--el-text-color-placeholder);
-  }
+  white-space: nowrap;
 }
 
 .grid-cell {
-  min-height: 52px;
-  padding: 5px 6px;
+  padding: 4px 6px;
   border-right: 1px solid var(--el-border-color-lighter);
   display: flex;
   flex-direction: column;
@@ -265,6 +248,14 @@ function slotAria(date: string, hour: number, slot: HourSlotItem): string {
   &.push {
     background: transparent;
     border-style: dashed;
+  }
+
+  &.clickable {
+    cursor: pointer;
+
+    &:hover {
+      opacity: 0.85;
+    }
   }
 
   .task-stage {

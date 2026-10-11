@@ -1,10 +1,26 @@
 // 业务共享工具：当前登录用户信息 + 时间解析
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat";
-import type { UserInfo } from "@/api/types";
+import type { Role, UserInfo } from "@/api/types";
 import { businessUserKey } from "@/store/constants";
 
 dayjs.extend(customParseFormat);
+
+/**
+ * 版本策略全景页的编辑权限：内部维护人员（admin 全部版本、pm 仅绑定版本）
+ * 可修改调度时间与信息；其余角色（builder/tester/integrator 等外部查看人员）只读。
+ * 与后端策略写路径的角色门槛（views/strategies.py _check_pm_bound）保持一致。
+ */
+export function canEditPanorama(
+  role: Role | undefined,
+  boundVersionId: number | undefined,
+  versionId: number | undefined
+): boolean {
+  if (!role || !versionId) return false;
+  if (role === "admin") return true;
+  if (role === "pm") return boundVersionId === versionId;
+  return false;
+}
 
 /** 获取当前登录用户信息（从业务存储读取，含绑定版本） */
 export function getCurrentUser(): UserInfo | null {

@@ -1,7 +1,7 @@
 <template>
   <div class="weekly-new">
-    <!-- 工具栏 -->
-    <el-card shadow="never" class="toolbar-card">
+    <el-card shadow="never" class="main-card">
+      <!-- 工具栏：周导航 + 版本选择 + 统计与图例（单行） -->
       <div class="toolbar">
         <div class="toolbar-left">
           <el-button
@@ -77,103 +77,69 @@
         </div>
         <div class="toolbar-right">
           <div class="toolbar-stats">
-            <span>本周任务 {{ stats.tasks }}</span>
+            <span>策略任务 {{ stats.tasks }}</span>
             <el-divider direction="vertical" />
-            <span>已占 {{ stats.occupied }} 段</span>
-            <el-divider direction="vertical" />
-            <span class="stat-mine">我的 {{ stats.mine }} 段</span>
+            <span>覆盖分支 {{ stats.branches }}</span>
           </div>
-          <el-button size="small" @click="drawerVisible = true"
-            >我的抢占</el-button
-          >
+          <el-divider direction="vertical" />
+          <div class="legend">
+            <span class="legend-label">图例:</span>
+            <span v-for="b in branches" :key="b.branch_id" class="legend-item">
+              <i
+                class="legend-dot"
+                :style="{ background: branchColor(b.branch_id) }"
+              />{{ b.branch_name }}
+            </span>
+            <span class="legend-item"
+              ><i class="legend-dot legend-push" />推送</span
+            >
+          </div>
         </div>
       </div>
-      <div class="legend">
-        <span class="legend-label">图例:</span>
-        <span v-for="b in branches" :key="b.branch_id" class="legend-item">
-          <i
-            class="legend-dot"
-            :style="{ background: branchColor(b.branch_id) }"
-          />{{ b.branch_name }}
-        </span>
-        <span class="legend-item"
-          ><i class="legend-dot legend-push" />推送</span
-        >
-        <el-divider direction="vertical" />
-        <span class="legend-item"><i class="dot dot-available" />空闲</span>
-        <span class="legend-item"><i class="dot dot-mine" />我的</span>
-        <span class="legend-item"><i class="dot dot-locked" />已抢占</span>
-      </div>
-    </el-card>
 
-    <!-- 周视图网格 -->
-    <el-card shadow="never" class="grid-card">
-      <div v-loading="loading" class="grid-wrap">
+      <!-- 策略网格：时间点 × 周一~周日，自适应撑满剩余视口 -->
+      <div v-loading="loading" class="grid-area">
         <el-empty v-if="!loading && !weekly" description="暂无数据" />
         <el-empty
           v-else-if="!loading && branches.length === 0"
           description="该版本暂无分支，无法排布任务"
         />
-        <template v-else>
-          <div class="grid-title">
-            {{ currentVersionName }} · {{ weekRangeText }} 任务排布与时段抢占
-            <span class="grid-sub"
-              >（时间轴仅展示有排布的时段，按时间顺序排列）</span
-            >
-          </div>
-          <HourGrid
-            :days="weekDays"
-            :rows="hourRows"
-            :today="today"
-            @slot-click="onSlotClick"
-          />
-        </template>
+        <HourGrid
+          v-else
+          :days="weekDays"
+          :rows="timeRows"
+          :today="today"
+          :editable="canEdit"
+          @task-click="openEditDialog"
+        />
       </div>
     </el-card>
 
-    <!-- 抢占弹窗（复用时段抢占） -->
-    <BookingDialog
-      v-model="bookingVisible"
-      :date="bookingDate"
-      :template="bookingTemplate"
-      :horizon-end="horizonEnd"
-      @booked="onBooked"
+    <!-- 策略编辑弹窗（仅内部维护人员可见点击入口） -->
+    <StrategyEditDialog
+      v-model="editVisible"
+      :strategy="editStrategy"
+      :branches="branches"
+      @saved="onStrategySaved"
     />
-    <!-- 时段详情（复用时段抢占） -->
-    <SlotDetailDialog
-      v-model="detailVisible"
-      :date="detailDate"
-      :entry="detailEntry"
-      :template="detailTemplate"
-      @released="onReleased"
-    />
-    <!-- 我的抢占抽屉（复用时段抢占） -->
-    <MyBookingsDrawer v-model="drawerVisible" @changed="loadCalendars" />
   </div>
 </template>
 
 <script setup lang="ts">
+// 版本策略全景(New)：以「本周 7 天为列、任务时间点为行」展示所选版本的策略排布全景
+// 外部人员只读查看；内部维护人员（admin / 绑定版本的 pm）可点击任务芯片修改时间与信息
+// 数据与周视图同源（GET /api/weekly），策略为每日循环，任务芯片 7 天一致
 import { computed, onMounted, ref, watch } from "vue";
-import { ElMessage } from "element-plus";
 import dayjs from "dayjs";
 import ArrowLeft from "~icons/ep/arrow-left";
 import ArrowRight from "~icons/ep/arrow-right";
 import { getWeekly } from "@/api/weekly";
-import type { WeeklyData } from "@/api/types";
+import { getStrategies } from "@/api/strategy";
+import type { WeeklyData, StrategyItem } from "@/api/types";
+import { canEditPanorama, getCurrentUser } from "@/utils/business";
 import { useBranchColors } from "@/composables/useBranchColors";
-import {
-  getSlotCalendar,
-  type CalendarDayCell,
-  type SlotCalendarResponse,
-  type SlotTemplateItem
-} from "@/api/slotBooking";
-import BookingDialog from "@/views/slot-booking/components/BookingDialog.vue";
-import SlotDetailDialog from "@/views/slot-booking/components/SlotDetailDialog.vue";
-import MyBookingsDrawer from "@/views/slot-booking/components/MyBookingsDrawer.vue";
-import HourGrid, {
-  type HourSlotItem,
-  type HourTaskItem
-} from "./components/HourGrid.vue";
+import HourGrid, { type HourTaskItem } from "./components/HourGrid.vue";
+import StrategyEditDialog from "./components/StrategyEditDialog.vue";
 
 defineOptions({ name: "WeeklyNewIndex" });
 
@@ -241,9 +207,9 @@ watch(selectedWeek, value => {
   if (value && value !== weekStart.value) weekStart.value = value;
 });
 
-// ---- 周视图数据源（版本/分支/策略，与原周视图一致）----
+// ---- 数据源（版本/分支/策略，与原周视图一致）----
 const weekly = ref<WeeklyData | null>(null);
-const weeklyLoading = ref(false);
+const loading = ref(false);
 const versionId = ref<number | undefined>(undefined);
 
 // 后端返回英文星期（Monday…Sunday），与原周视图一致地转中文展示
@@ -258,10 +224,6 @@ const WEEKDAY_CN: Record<string, string> = {
 };
 
 const versionOptions = computed(() => weekly.value?.versions ?? []);
-const currentVersionName = computed(() => {
-  const v = versionOptions.value.find(x => x.version_id === versionId.value);
-  return v?.version_name ?? "";
-});
 const branches = computed(() => weekly.value?.branches ?? []);
 const strategies = computed(() => weekly.value?.strategies ?? []);
 
@@ -276,11 +238,9 @@ const weekDays = computed(() =>
   }))
 );
 
-/** 首屏是否已完成首次 versionId 选定：用于避免初始化阶段的重复请求 */
-const initializing = ref(true);
-
+/** 首次加载未选版本时，后端返回空分支/策略；自动回填第一个版本后由 watcher 二次拉取 */
 async function loadWeekly() {
-  weeklyLoading.value = true;
+  loading.value = true;
   try {
     weekly.value = await getWeekly({
       week_start: weekStart.value,
@@ -292,62 +252,18 @@ async function loadWeekly() {
   } catch {
     // 拦截器已提示
   } finally {
-    weeklyLoading.value = false;
+    loading.value = false;
   }
 }
 
-// ---- 抢占状态数据源：周可能跨月，按涉及月份合并拉取 ----
-const templates = ref<SlotTemplateItem[]>([]);
-const horizonDays = ref(60);
-const entriesByDate = ref<Map<string, Map<number, CalendarDayCell>>>(new Map());
-const calendarLoading = ref(false);
-
-async function loadCalendars() {
-  calendarLoading.value = true;
-  try {
-    const months = [...new Set(weekDays.value.map(d => d.date.slice(0, 7)))];
-    const responses = await Promise.all(months.map(m => getSlotCalendar(m)));
-    const merged: Map<string, Map<number, CalendarDayCell>> = new Map();
-    let tpl: SlotTemplateItem[] = [];
-    for (const resp of responses as SlotCalendarResponse[]) {
-      horizonDays.value = resp.horizon_days;
-      if (!tpl.length) tpl = resp.templates;
-      for (const [dateKey, entries] of Object.entries(resp.days)) {
-        const map = new Map<number, CalendarDayCell>();
-        for (const e of entries) map.set(e.template_id, e);
-        merged.set(dateKey, map);
-      }
-    }
-    templates.value = tpl;
-    entriesByDate.value = merged;
-  } catch {
-    // 拦截器已提示
-  } finally {
-    calendarLoading.value = false;
-  }
-}
-
-const loading = computed(() => weeklyLoading.value || calendarLoading.value);
-const horizonEnd = computed(() =>
-  dayjs().add(horizonDays.value, "day").format("YYYY-MM-DD")
-);
-
-function hourOf(hhmm: string) {
-  return Number(hhmm.slice(0, 2));
-}
-
-/** 模板是否覆盖小时 h（模板强制同日 start<end） */
-function coversHour(t: SlotTemplateItem, h: number) {
-  return hourOf(t.start_time) <= h && h < hourOf(t.end_time);
-}
-
-/** 任务芯片（策略每日循环排布，7 天一致；按小时归类） */
-function tasksAtHour(h: number): HourTaskItem[] {
+/** 任务芯片（按精确时间点归类：构建/推送起始时间相等才落行） */
+function tasksAtTime(t: string): HourTaskItem[] {
   const tasks: HourTaskItem[] = [];
   for (const s of strategies.value) {
-    if (hourOf(s.build_start_time) === h) {
+    if (s.build_start_time === t) {
       tasks.push({
         key: `b-${s.strategy_id}`,
+        strategyId: s.strategy_id,
         kind: "build",
         stageLabel: "构建",
         name: s.strategy_name,
@@ -356,9 +272,10 @@ function tasksAtHour(h: number): HourTaskItem[] {
         color: branchColor(s.branch_id)
       });
     }
-    if (s.push_start_time && hourOf(s.push_start_time) === h) {
+    if (s.push_start_time && s.push_start_time === t) {
       tasks.push({
         key: `p-${s.strategy_id}`,
+        strategyId: s.strategy_id,
         kind: "push",
         stageLabel: "推送",
         name: s.strategy_name,
@@ -371,125 +288,104 @@ function tasksAtHour(h: number): HourTaskItem[] {
   return tasks;
 }
 
-/** 仅保留有内容的小时行：任务芯片或任意一天的抢占条目 */
-const hourRows = computed(() => {
-  const rows: {
-    hour: number;
-    cells: { date: string; tasks: HourTaskItem[]; slots: HourSlotItem[] }[];
-  }[] = [];
-  for (let h = 0; h < 24; h++) {
-    const tasks = tasksAtHour(h);
-    const cells = weekDays.value.map(d => {
-      const slots: HourSlotItem[] = [];
-      const dayEntries = entriesByDate.value.get(d.date);
-      for (const t of templates.value) {
-        if (!coversHour(t, h)) continue;
-        const entry = dayEntries?.get(t.id);
-        if (!entry) continue;
-        slots.push({ entry, template: t });
-      }
-      return { date: d.date, tasks, slots };
-    });
-    const hasContent = tasks.length > 0 || cells.some(c => c.slots.length > 0);
-    if (hasContent) rows.push({ hour: h, cells });
+/**
+ * 时间点行：0:00~23:59 内仅渲染有任务的时间点，按时间升序（非线性铺满，无任务时段省略）。
+ * 策略当前为每日循环，7 天共享同一组任务；结构按天独立，兼容将来每天时间点存在差异的情况。
+ */
+const timeRows = computed(() => {
+  const times = new Set<string>();
+  for (const s of strategies.value) {
+    times.add(s.build_start_time);
+    if (s.push_start_time) times.add(s.push_start_time);
   }
-  return rows;
+  return [...times].sort().map(t => ({
+    time: t,
+    cells: weekDays.value.map(d => ({ date: d.date, tasks: tasksAtTime(t) }))
+  }));
 });
 
-const stats = computed(() => {
-  let occupied = 0;
-  let mine = 0;
-  for (const d of weekDays.value) {
-    for (const e of entriesByDate.value.get(d.date)?.values() ?? []) {
-      if (e.status === "reserved") {
-        occupied += 1;
-        if (e.booking?.is_mine) mine += 1;
-      }
+const stats = computed(() => ({
+  tasks: strategies.value.length,
+  branches: branches.value.length
+}));
+
+// ---- 编辑能力：外部人员只读，内部维护人员（admin / 绑定版本的 pm）可修改任意时间与信息 ----
+const currentUser = getCurrentUser();
+const canEdit = computed(() =>
+  canEditPanorama(
+    currentUser?.role,
+    currentUser?.bound_version_id,
+    versionId.value
+  )
+);
+
+// 策略详情缓存（芯片点击时按需拉取 /strategies；weekly 契约不含 template_id/enabled）
+const strategyDetailList = ref<StrategyItem[] | null>(null);
+const editVisible = ref(false);
+const editStrategy = ref<StrategyItem | null>(null);
+
+async function openEditDialog(task: HourTaskItem) {
+  if (!canEdit.value || !versionId.value) return;
+  if (!strategyDetailList.value) {
+    try {
+      strategyDetailList.value = await getStrategies({
+        version_id: versionId.value
+      });
+    } catch {
+      return; // 拦截器已提示
     }
   }
-  return { tasks: strategies.value.length, occupied, mine };
-});
+  const detail =
+    strategyDetailList.value.find(x => x.id === task.strategyId) ?? null;
+  if (!detail) return;
+  editStrategy.value = detail;
+  editVisible.value = true;
+}
 
-// ---- 数据加载联动 ----
-// 日历拉取依赖 weekDays（来自 weekly 响应），必须先等周数据返回
-async function reloadAll() {
-  await loadWeekly();
-  await loadCalendars();
+function onStrategySaved() {
+  // 保存后详情缓存与周数据都需刷新（时间/启用状态可能变化）
+  strategyDetailList.value = null;
+  loadWeekly();
 }
 
 watch(weekStart, () => {
   selectedWeek.value = weekStart.value;
-  reloadAll();
-});
-watch(versionId, value => {
-  // 首屏由 reloadAll 负责串联加载；此处跳过，避免初始化二次请求
-  if (!value || initializing.value) return;
   loadWeekly();
 });
-
-onMounted(async () => {
-  try {
-    await reloadAll();
-  } finally {
-    initializing.value = false;
-  }
+watch(versionId, value => {
+  // 版本变化（含首屏自动回填）都重新拉取，保证拿到该版本的分支与策略
+  strategyDetailList.value = null;
+  if (value) loadWeekly();
 });
 
-// ---- 抢占交互（与时段抢占页同款，作用到具体日期）----
-const bookingVisible = ref(false);
-const bookingDate = ref(today);
-const bookingTemplate = ref<SlotTemplateItem | null>(null);
-
-const detailVisible = ref(false);
-const detailDate = ref(today);
-const detailEntry = ref<CalendarDayCell | null>(null);
-const detailTemplate = ref<SlotTemplateItem | null>(null);
-
-const drawerVisible = ref(false);
-
-function onSlotClick(date: string, entry: CalendarDayCell) {
-  if (date < today) {
-    ElMessage.info("该日期已过期，不可操作");
-    return;
-  }
-  const template = templates.value.find(t => t.id === entry.template_id);
-  if (!template) return;
-  if (entry.status === "reserved") {
-    detailDate.value = date;
-    detailEntry.value = entry;
-    detailTemplate.value = template;
-    detailVisible.value = true;
-    return;
-  }
-  if (date > horizonEnd.value) {
-    ElMessage.warning(`超出可抢占窗口（最多提前 ${horizonDays.value} 天）`);
-    return;
-  }
-  bookingDate.value = date;
-  bookingTemplate.value = template;
-  bookingVisible.value = true;
-}
-
-async function onBooked() {
-  bookingVisible.value = false;
-  ElMessage.success("抢占成功");
-  await loadCalendars();
-}
-
-async function onReleased() {
-  detailVisible.value = false;
-  ElMessage.success("已释放");
-  await loadCalendars();
-}
-
-reloadAll();
+onMounted(() => {
+  loadWeekly();
+});
 </script>
 
 <style scoped lang="scss">
 .weekly-new {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  /* 视口高度扣除：顶部导航+页签 81px、内容区上下边距 48px、页脚约 23px */
+  height: calc(100vh - 152px);
+  min-height: 520px;
+}
+
+.main-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+
+  :deep(.el-card__body) {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 12px 16px;
+  }
 }
 
 .toolbar {
@@ -498,6 +394,8 @@ reloadAll();
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
 }
 
 .toolbar-left,
@@ -523,18 +421,14 @@ reloadAll();
 .toolbar-stats {
   font-size: 13px;
   color: var(--el-text-color-secondary);
-
-  .stat-mine {
-    color: var(--el-color-primary);
-  }
+  white-space: nowrap;
 }
 
 .legend {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  margin-top: 10px;
+  gap: 10px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
 
@@ -555,42 +449,14 @@ reloadAll();
       border: 1px dashed var(--el-text-color-secondary);
     }
   }
-
-  .dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    display: inline-block;
-
-    &.dot-available {
-      background: var(--el-color-success-light-7);
-      border: 1px solid var(--el-color-success);
-    }
-
-    &.dot-mine {
-      background: var(--el-color-primary);
-    }
-
-    &.dot-locked {
-      background: var(--el-fill-color);
-      border: 1px solid var(--el-border-color);
-    }
-  }
 }
 
-.grid-wrap {
-  overflow-x: auto;
-}
-
-.grid-title {
-  margin-bottom: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--el-text-color-regular);
-
-  .grid-sub {
-    font-weight: 400;
-    color: var(--el-text-color-placeholder);
-  }
+.grid-area {
+  flex: 1;
+  min-height: 0;
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
 }
 </style>

@@ -285,7 +285,7 @@ export const asyncRoutes = [
     redirect: "/weekly-new/index",
     meta: {
       icon: "ep/timer",
-      title: "周视图(New)",
+      title: "版本策略全景(New)",
       rank: 13
     },
     children: [
@@ -294,7 +294,7 @@ export const asyncRoutes = [
         name: "WeeklyNewIndex",
         component: () => import("@/views/weekly-new/index.vue"),
         meta: {
-          title: "周视图(New)",
+          title: "版本策略全景(New)",
           roles: ALL_ROLES
         }
       }

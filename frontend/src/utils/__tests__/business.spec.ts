@@ -1,6 +1,7 @@
 // utils/business.ts 单测：业务用户读取与时间解析
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  canEditPanorama,
   formatTime,
   getCurrentUser,
   parseTime,
@@ -55,6 +56,30 @@ describe("utils/business", () => {
 
     it("formatTime 输出 MM-DD HH:mm", () => {
       expect(formatTime("2026-08-10T22:05:00")).toBe("08-10 22:05");
+    });
+  });
+
+  describe("canEditPanorama 全景编辑权限", () => {
+    it("admin 可编辑任意版本", () => {
+      expect(canEditPanorama("admin", undefined, 1)).toBe(true);
+      expect(canEditPanorama("admin", undefined, 2)).toBe(true);
+    });
+
+    it("pm 仅可编辑绑定版本", () => {
+      expect(canEditPanorama("pm", 1, 1)).toBe(true);
+      expect(canEditPanorama("pm", 1, 2)).toBe(false);
+      expect(canEditPanorama("pm", undefined, 1)).toBe(false);
+    });
+
+    it("其他角色（外部查看人员）只读", () => {
+      expect(canEditPanorama("builder", undefined, 1)).toBe(false);
+      expect(canEditPanorama("tester", undefined, 1)).toBe(false);
+      expect(canEditPanorama("integrator", undefined, 1)).toBe(false);
+    });
+
+    it("角色缺失或版本未选时不允许编辑", () => {
+      expect(canEditPanorama(undefined, 1, 1)).toBe(false);
+      expect(canEditPanorama("admin", undefined, undefined)).toBe(false);
     });
   });
 });
