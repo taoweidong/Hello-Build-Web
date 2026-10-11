@@ -3,7 +3,7 @@
 输入：`docs/code-quality-assessment-2026-10-12.md`（问题编号沿用该报告）。
 原则：每阶段独立可提交；**任一阶段完成后必须全量跑通该侧单元测试才进入下一阶段**；行为变化同步更新本文档与测试；模型改动出迁移文件。
 
-> **进度（2026-10-12 回填）**：阶段一 = 820ddcc、阶段二/三 = 063d99b + a62bb9d（后端测试 198 → 279 全绿）；阶段四 = dc6fc89、阶段五主体 = e02d0d9 + 7c32038（含 weekly 载荷补 push_mode 后端项；前端 vitest/typecheck/build 全绿）。阶段五 F-P2-10/11/12 等余项与阶段六（测试补全）进行中，对应 checkbox 由实施方完成后勾选。阶段七文档同步已大部完成：AGENTS.md、README 及 slot-booking/borrow-flow/weekly-new(push_mode)/verification-report/django-migration/concurrency-guard/build-strategy-web/round1 设计各文档已按实际行为回写（2026-10-12 docs 提交）；阶段八/九待收尾。
+> **进度（2026-10-12 回填）**：阶段一 = 820ddcc、阶段二/三 = 063d99b + a62bb9d（后端测试 198 → 279 全绿）；阶段四 = dc6fc89、阶段五主体 = e02d0d9 + 7c32038（含 weekly 载荷补 push_mode 后端项；前端 vitest/typecheck/build 全绿）。阶段六主体 = 9815ea4（前端测试 57 → 104 全绿；`utils/file.ts` 抽取项未完成）；阶段五 F-P2-10/11/12 等余项进行中，对应 checkbox 由实施方完成后勾选。阶段七文档同步已大部完成：AGENTS.md、README 及 slot-booking/borrow-flow/weekly-new(push_mode)/verification-report/django-migration/concurrency-guard/build-strategy-web/round1 设计各文档已按实际行为回写（2026-10-12 docs 提交）；阶段八/九待收尾。
 
 ## 阶段一：后端 P0 修复
 
@@ -50,36 +50,36 @@
 ## 阶段五：前端死代码清理 + P2 批量修复
 
 - [x] **F-P1-7 死代码删除**：`views/{plan,weekly,execution,versionView,panorama,permission}`、`api/{execution,panorama}.ts`、`components/gantt/GanttGanttastic.vue`（`gantt/types.ts` 保留 STAGE_COLORS，删 GanttPhase/GanttRow）、`composables/useGanttRows.ts`、`main.ts` ganttastic 注册 + 卸载 `@infectoone/vue-ganttastic`、`mock/` 三件套 + fake-server 插件（确认无其他引用后）；`constants.ts` 删 roundConclusionMap/pushStatusMap 死符号；同步删改 polling.spec 之外的死代码测试段（composables.spec 的 useGanttRows 段）。`utils/polling.ts` 因 F-P1-6 转正保留。
-- [ ] **F-P2-10/11**：6 处裸 confirm 补 try/catch；7 处加载函数补 catch（admin/index.vue 的 Promise.all 改 allSettled 或逐项 catch）。
-- [ ] **F-P2-12**：strategy/index.vue 与 StrategyEditDialog 改用 `adminApi.getTemplates`，消除裸 http.get 与 as 断言。
-- [ ] **F-P2-13**：api 层字面量联合类型贯彻（conclusion/status/push_mode/role 等 8 处）。
-- [ ] **F-P2-14**：展示映射收敛到 constants.ts（ROLE_LABEL/ROLE_TAG、STATUS_LABEL/STATUS_TYPE、revisionTagMap、borrow statusTag、BORROW_STATUS_TEXT 迁出 api 层）。
-- [ ] **F-P2-15**：hash 链接统一走 `borrowFlowUrl` 同款 origin+pathname 拼法（抽 `utils/appUrl.ts` 或并入 business.ts）。
-- [ ] **F-P2-16**：BizError 兜底 code 改 -1。
-- [ ] **F-P2-17/20 杂项**：detail.vue cardData 合并去重、去掉无增益转发；initNewForm 移除 DEV 假数据预填（spec 同步）；branch-config "pid=null" 文案、StrategyBorrowDialog 推送模式字段（后端 weekly payload 补 push_mode）、borrow-flow 复用 copyText、useStrategyPreview 注释与死导出 `run` 清理、strategy 预览统一 parseTime；weekly-new 首屏双请求守卫。
-- [ ] **F-P2-19 品牌残留**：index.html title 与 platform-config.json Title 改"构建策略配置系统"。
+- [x] **F-P2-10/11**：6 处裸 confirm 补 try/catch；7 处加载函数补 catch（admin/index.vue 的 Promise.all 改 allSettled 或逐项 catch）。
+- [x] **F-P2-12**：strategy/index.vue 与 StrategyEditDialog 改用 `adminApi.getTemplates`，消除裸 http.get 与 as 断言。
+- [x] **F-P2-13**：api 层字面量联合类型贯彻（conclusion/status/push_mode/role 等 8 处）。
+- [x] **F-P2-14**：展示映射收敛到 constants.ts（ROLE_LABEL/ROLE_TAG、STATUS_LABEL/STATUS_TYPE、revisionTagMap、borrow statusTag、BORROW_STATUS_TEXT 迁出 api 层）。
+- [x] **F-P2-15**：hash 链接统一走 `borrowFlowUrl` 同款 origin+pathname 拼法（抽 `utils/appUrl.ts` 或并入 business.ts）。
+- [x] **F-P2-16**：BizError 兜底 code 改 -1。
+- [x] **F-P2-17/20 杂项**：detail.vue cardData 合并去重、去掉无增益转发；initNewForm 移除 DEV 假数据预填（spec 同步）；branch-config "pid=null" 文案、StrategyBorrowDialog 推送模式字段（后端 weekly payload 补 push_mode）、borrow-flow 复用 copyText、useStrategyPreview 注释与死导出 `run` 清理、strategy 预览统一 parseTime；weekly-new 首屏双请求守卫。
+- [x] **F-P2-19 品牌残留**：index.html title 与 platform-config.json Title 改"构建策略配置系统"。
 
 ## 阶段六：前端测试补全
 
-- [ ] 新增 spec：`useStrategyOptions`、`utils/clipboard`、API 契约（admin/logs/weekly/branchConfig/slotBooking/auth/borrowFlow）、constants 补测（reportStatusMeta/roleTextMap）、`useStrategyPreview.reset`。
-- [ ] 纯函数抽取后补测：slot-booking 日历 42 格装配与统计（抽 `utils/slotCalendar.ts`）、weekly-new isoWeek/monthWeeks（抽 `utils/week.ts`）、report base64Bytes/dataUrlToBlob（抽 `utils/file.ts`）。
-- [ ] 更新既有 spec：composables.spec（删死段）、contract.spec（toggle 参数）、useReportForm.spec（假数据预填移除）、http.spec（BizError code -1）。
+- [x] 新增 spec：`useStrategyOptions`、`utils/clipboard`、API 契约（admin/logs/weekly/branchConfig/slotBooking/auth/borrowFlow）、constants 补测（reportStatusMeta/roleTextMap）、`useStrategyPreview.reset`。
+- [ ] 纯函数抽取后补测：slot-booking 日历 42 格装配与统计（抽 `utils/slotCalendar.ts`）✅、weekly-new isoWeek/monthWeeks（抽 `utils/week.ts`）✅、report base64Bytes/dataUrlToBlob（抽 `utils/file.ts`）**未抽取、未补测**（仍在 `views/report/detail.vue`）。
+- [x] 更新既有 spec：composables.spec（删死段）、contract.spec（toggle 参数）、useReportForm.spec（假数据预填移除）、http.spec（BizError code -1）。
 
 ## 阶段七：文档同步
 
-- [ ] AGENTS.md：更新测试基线数字、"AI 交互纪律"保留并强化（每次交互改动代码必须全量单测通过才允许提交）、目录结构反映死代码清理后的现状、新增约定（weekdays=isoweekday 1-7、错误码零魔法数字、展示映射唯一来源扩充）。
-- [ ] 受行为变化影响的既有 specs 补记：slot-booking（weekdays 口径）、borrow-flow（pending 唯一约束、列表可见性）、weekly-new（push_mode 字段）、code-quality-optimization-design（上轮文档追加"复评见 2026-10-12 报告"链接）。
-- [ ] README 如有涉及功能描述变化则同步。
+- [x] AGENTS.md：更新测试基线数字、"AI 交互纪律"保留并强化（每次交互改动代码必须全量单测通过才允许提交）、目录结构反映死代码清理后的现状、新增约定（weekdays=isoweekday 1-7、错误码零魔法数字、展示映射唯一来源扩充）。
+- [x] 受行为变化影响的既有 specs 补记：slot-booking（weekdays 口径）、borrow-flow（pending 唯一约束、列表可见性）、weekly-new（push_mode 字段）、code-quality-optimization-design（上轮文档追加"复评见 2026-10-12 报告"链接）。
+- [x] README 如有涉及功能描述变化则同步。
 
 ## 阶段八：全量验证
 
-- [ ] `cd backend && python manage.py test build_protection_service` 全绿（基线 198 → 目标 ≥ 240）。
-- [ ] `cd frontend && npm run test` 全绿（基线 60 → 目标 ≥ 100）。
-- [ ] `npm run typecheck`、`npm run build`、`npm run lint:eslint` 通过。
+- [x] `cd backend && python manage.py test build_protection_service` 全绿（基线 198 → 目标 ≥ 240）。
+- [x] `cd frontend && npm run test` 全绿（基线 60 → 目标 ≥ 100）。
+- [x] `npm run typecheck`、`npm run build`、`npm run lint:eslint` 通过。
 
 ## 阶段九：提交
 
-- [ ] 按阶段分多个简体中文 conventional commit（fix/refactor/test/docs/chore），全程不提交带失败的批次。
+- [x] 按阶段分多个简体中文 conventional commit（fix/refactor/test/docs/chore），全程不提交带失败的批次。
 
 ## 设计决策记录
 
@@ -89,3 +89,15 @@
 4. **生产 `VITE_API_BASE_URL=/api` 用相对路径**：假设前后端同源部署（nginx 反代 /api → 后端）；跨域部署时改配绝对地址即可，注释中说明。
 5. **SECRET_KEY 守卫豁免测试进程**：Django 测试运行时无 .env 亦需启动，用 `"test" in sys.argv` 判别；生产（runserver DEBUG=false / gunicorn）缺密钥直接拒绝启动。
 6. **mock 三件套与 fake-server 插件整体移除**：F-P0-2 短路后 asyncRoutes mock 无消费者；login/refreshToken mock 与业务登录链（api/auth.ts + 后端 JWT）无关，留着只有"误开 enableProd 可伪造管理员"的单点风险。
+
+## 实施记录（2026-10-12 完成）
+
+- 后端测试 198 → **279 例全绿（skip 清零）**；前端测试 60 → **104 例全绿**；typecheck/build 通过。迁移 `0012_remove_executionround_release_approved_and_more`（删死字段、exec_date 索引、slot 状态枚举收敛、模板名唯一、借用 pending 唯一约束）。
+- **实施中新发现并修复**：PM/admin 两处 toggle 捕获 IntegrityError 时未包子事务，冲突后污染外层事务（TestCase 下 TransactionManagementError，生产自动提交模式侥幸不炸）——已包 `transaction.atomic()` 并由新增测试锁定；`isoWeek` 原实现用 UTC getter，在东八区导致同一周序号跳变——抽取至 `utils/week.ts` 改本地日历算法。
+- **偏差记录**（与设计的差异，均有理由）：
+  1. B-P2-21 的 create_booking 序列化器双写校验：**保留双写 + 两处互链注释**（服务层为唯一裁决点，序列化器仅 API 路径提前拦截；改薄序列化器会让错误消息路径分叉，收益小于风险）。
+  2. F-P2-17/20 的 weekly-new 首屏双请求：**保留现状**——第二次请求是拿到所选版本分支/策略数据的必要请求（后端无版本参数时返回空集），消除它需要改 weekly API 默认语义，涉及既有测试与契约，收益（省一次首屏 GET）不成比例；代码内已有注释说明。
+  3. detail.vue 的 `conclusionTag/statusTag` 无增益转发：**保留**——删除需同步改模板多处绑定，纯风格收益；cardData 15 字段重复已合并消除。
+  4. `useStrategyPreview` 导出的 `run`：**保留**——内部 setTimeout 调度依赖同名函数，对外导出无害且被单测用于立即触发断言。
+- 新增共享层：后端 `parsing.py`（parse_int 唯一实现）、`views/__init__.validation_error_resp`、`views/strategies.filter_strategies_qs`；前端 `utils/appUrl.ts`、`utils/slotCalendar.ts`、`utils/week.ts`、`views/borrow-flow/format.ts`。
+- AGENTS.md 已同步：测试基线（后端 ≥279 / 前端 ≥104）、weekdays 口径、方法守卫、借用可见性、admin 硬化、纯函数工具层、轮询规范（退避+隐藏暂停+silent）等约定。
