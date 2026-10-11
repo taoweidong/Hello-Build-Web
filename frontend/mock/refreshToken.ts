@@ -1,6 +1,7 @@
 import { defineFakeRoute } from "vite-plugin-fake-server/client";
 
 // 模拟刷新token接口
+// ⚠️ 仅开发环境使用（enableProd 恒为 false），返回的 token 为格式占位假 JWT。
 export default defineFakeRoute([
   {
     url: "/refresh-token",

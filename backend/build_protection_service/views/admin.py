@@ -43,7 +43,7 @@ _VALID_STATUSES = {"active", "archived"}
 
 
 def _admin_log(user, action, target_type="", target_id="", detail=""):
-    """写管理员操作日志，异常仅告警（审计旁路不阻断业务）。"""
+    """写管理员操作日志，异常仅告警（审计旁路不阻断业务，但保留堆栈便于排查）。"""
     import logging
 
     try:
@@ -52,7 +52,7 @@ def _admin_log(user, action, target_type="", target_id="", detail=""):
             target_type=target_type, target_id=str(target_id), detail=detail,
         )
     except Exception:
-        logging.getLogger(__name__).warning(
+        logging.getLogger(__name__).exception(
             "管理操作日志写入失败：action=%s target=%s", action, target_id)
 
 

@@ -13,10 +13,11 @@ import {
   getReports,
   type ReportForm
 } from "@/api/report";
-import { getStrategies } from "@/api/strategy";
-import type { ReportItem, StrategyItem } from "@/api/types";
+import type { ReportItem } from "@/api/types";
 import { getCurrentUser, formatTime } from "@/utils/business";
 import { useReportForm } from "@/composables/useReportForm";
+import { useStrategyOptions } from "@/composables/useStrategyOptions";
+import { copyText } from "@/utils/clipboard";
 import { reportConclusionMeta, reportStatusMeta } from "@/views/constants";
 
 // 图标：~icons/ri（Remix Icon）+ ~icons/ep（Element Plus Icon）
@@ -69,7 +70,9 @@ function canEdit(row: ReportItem) {
   // 发布后仍可编辑（最终结论锁定），仅作者可编辑
   return canWrite.value && currentUser?.username === row.created_by_username;
 }
-const canEditCurrent = computed(() => (report.value ? canEdit(report.value) : false));
+const canEditCurrent = computed(() =>
+  report.value ? canEdit(report.value) : false
+);
 const canPublishCurrent = computed(() =>
   report.value ? canEdit(report.value) && !isNew.value : false
 );
@@ -88,23 +91,15 @@ const cardWrapRef = ref<HTMLElement | null>(null);
 const editing = ref(isNew.value); // 新建态初始为编辑态；详情默认只读
 
 // ---- 版本/策略选项（从全量策略推导，与列表页一致；报告存文本快照，按名称级联）----
-const allStrategies = ref<StrategyItem[]>([]);
-const versionOptions = computed(() => {
-  const names = new Set<string>();
-  allStrategies.value.forEach(s => {
-    if (s.version_name) names.add(s.version_name);
-  });
-  return Array.from(names, name => ({ name }));
-});
-const strategyOptions = computed(() =>
-  allStrategies.value.filter(s => s.version_name === form.version_name)
-);
+const { versionOptions, strategyOptions, loadStrategyOptions } =
+  useStrategyOptions(computed(() => form.version_name));
 function onVersionChange() {
   form.strategy_name = null;
 }
 
 // ---- 表单（状态机收敛在 useReportForm，纯逻辑可单测）----
-const { form, initNewForm, fillForm, validateForm, toPayload } = useReportForm();
+const { form, initNewForm, fillForm, validateForm, toPayload } =
+  useReportForm();
 if (isNew.value) initNewForm();
 
 function startEdit() {
@@ -133,9 +128,7 @@ const cardData = computed(() => {
       risks: form.risks,
       remark: form.remark,
       created_by_username:
-        base?.created_by_username ||
-        currentUser?.username ||
-        "",
+        base?.created_by_username || currentUser?.username || "",
       created_at: base?.created_at || new Date().toISOString(),
       published_at: base?.published_at || null,
       publish_count: base?.publish_count || 0,
@@ -259,7 +252,11 @@ async function onPublish() {
     await ElMessageBox.confirm(
       "发布后将模拟推送至「构建通知群」，并记录当前报告页面截图。确认发布？",
       "发布报告",
-      { type: "warning", confirmButtonText: "确认发布", cancelButtonText: "取消" }
+      {
+        type: "warning",
+        confirmButtonText: "确认发布",
+        cancelButtonText: "取消"
+      }
     );
   } catch {
     return; // 用户取消
@@ -345,21 +342,16 @@ async function copyReport() {
 }
 
 // ---- 复制链接 ----
-const reportLink = computed(() =>
-  `${window.location.origin}/#/report/detail/${routeId.value}`
+const reportLink = computed(
+  () => `${window.location.origin}/#/report/detail/${routeId.value}`
 );
 async function copyLink() {
-  try {
-    await navigator.clipboard.writeText(reportLink.value);
-  } catch {
-    const ta = document.createElement("textarea");
-    ta.value = reportLink.value;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand("copy");
-    document.body.removeChild(ta);
+  const ok = await copyText(reportLink.value);
+  if (ok) {
+    ElMessage.success("链接已复制");
+  } else {
+    ElMessage.error("复制失败，请手动复制地址栏链接");
   }
-  ElMessage.success("链接已复制");
 }
 
 // ---- 历史报告下拉（全部用户报告，选择后下方即切换展示）----
@@ -399,32 +391,38 @@ watch(
 onMounted(async () => {
   await loadReport();
   loadHistory();
-  try {
-    allStrategies.value = await getStrategies();
-  } catch {
-    allStrategies.value = [];
-  }
+  loadStrategyOptions();
 });
 </script>
 
 <template>
-  <div class="report-detail" v-loading="loading">
+  <div v-loading="loading" class="report-detail">
     <!-- 顶部操作栏：左侧新建/修改/发布/废弃，右侧历史报告下拉 + 复制链接（无 layout，页面自带导航入口） -->
     <div class="op-bar">
       <div class="op-left">
         <el-button class="op-back" @click="goBack">
-          <IconifyIconOffline :icon="ArrowLeft" style="width: 16px; height: 16px" />
+          <IconifyIconOffline
+            :icon="ArrowLeft"
+            style="width: 16px; height: 16px"
+          />
           返回列表
         </el-button>
-        <el-button v-if="canWrite" type="primary" @click="router.push('/report/detail/new')">
-          <IconifyIconOffline :icon="AddLine" style="width: 16px; height: 16px" />
+        <el-button
+          v-if="canWrite"
+          type="primary"
+          @click="router.push('/report/detail/new')"
+        >
+          <IconifyIconOffline
+            :icon="AddLine"
+            style="width: 16px; height: 16px"
+          />
           新建报告
         </el-button>
-        <el-button
-          v-if="canEditCurrent && !editing"
-          @click="startEdit"
-        >
-          <IconifyIconOffline :icon="EditLine" style="width: 16px; height: 16px" />
+        <el-button v-if="canEditCurrent && !editing" @click="startEdit">
+          <IconifyIconOffline
+            :icon="EditLine"
+            style="width: 16px; height: 16px"
+          />
           修改报告
         </el-button>
         <el-button
@@ -433,18 +431,32 @@ onMounted(async () => {
           :loading="publishing"
           @click="onPublish"
         >
-          <IconifyIconOffline :icon="SendPlane" style="width: 16px; height: 16px" />
+          <IconifyIconOffline
+            :icon="SendPlane"
+            style="width: 16px; height: 16px"
+          />
           发布报告
         </el-button>
       </div>
       <div class="op-right">
         <span v-if="!isNew && report" class="op-title">
-          <IconifyIconOffline :icon="FileText" style="width: 16px; height: 16px; vertical-align: -2px; margin-right: 4px" />
+          <IconifyIconOffline
+            :icon="FileText"
+            style="
+              width: 16px;
+              height: 16px;
+              vertical-align: -2px;
+              margin-right: 4px;
+            "
+          />
           报告 #{{ report.id }}
         </span>
         <el-dropdown trigger="click" @command="openHistory">
           <el-button>
-            <IconifyIconOffline :icon="HistoryLine" style="width: 16px; height: 16px; margin-right: 4px" />
+            <IconifyIconOffline
+              :icon="HistoryLine"
+              style="width: 16px; height: 16px; margin-right: 4px"
+            />
             历史报告<i class="el-icon--right">▾</i>
           </el-button>
           <template #dropdown>
@@ -465,12 +477,22 @@ onMounted(async () => {
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        <el-button v-if="!isNew && report && !editing" :loading="copying" @click="copyReport">
-          <IconifyIconOffline :icon="FileCopy" style="width: 16px; height: 16px" />
+        <el-button
+          v-if="!isNew && report && !editing"
+          :loading="copying"
+          @click="copyReport"
+        >
+          <IconifyIconOffline
+            :icon="FileCopy"
+            style="width: 16px; height: 16px"
+          />
           复制报告
         </el-button>
         <el-button v-if="!isNew && report" @click="copyLink">
-          <IconifyIconOffline :icon="LinkIcon" style="width: 16px; height: 16px" />
+          <IconifyIconOffline
+            :icon="LinkIcon"
+            style="width: 16px; height: 16px"
+          />
           复制链接
         </el-button>
       </div>
@@ -486,27 +508,49 @@ onMounted(async () => {
         <!-- 第 1 行：居中大标题 + 状态/结论徽章 -->
         <div class="card-head">
           <div class="card-head-badges">
-            <el-tag :type="statusTag(cardData.status).type" size="small" effect="dark">
+            <el-tag
+              :type="statusTag(cardData.status).type"
+              size="small"
+              effect="dark"
+            >
               {{ statusTag(cardData.status).text }}
             </el-tag>
-            <el-tag :type="conclusionTag(cardData.conclusion).type" size="small" effect="dark">
+            <el-tag
+              :type="conclusionTag(cardData.conclusion).type"
+              size="small"
+              effect="dark"
+            >
               <IconifyIconOffline
                 :icon="conclusionIcon(cardData.conclusion)"
-                style="width: 14px; height: 14px; vertical-align: -2px; margin-right: 3px"
+                style="
+                  width: 14px;
+                  height: 14px;
+                  vertical-align: -2px;
+                  margin-right: 3px;
+                "
               />
               {{ conclusionTag(cardData.conclusion).text }}
             </el-tag>
             <span v-if="cardData.is_updated" class="badge-updated">
-              <IconifyIconOffline :icon="RefreshLine" style="width: 13px; height: 13px; vertical-align: -1px" />
+              <IconifyIconOffline
+                :icon="RefreshLine"
+                style="width: 13px; height: 13px; vertical-align: -1px"
+              />
               已更新 {{ cardData.update_count }} 次
             </span>
           </div>
           <span class="card-title">{{ headTitle }}</span>
           <div class="card-head-meta">
-            <IconifyIconOffline :icon="TimeLine" style="width: 14px; height: 14px; vertical-align: -2px" />
+            <IconifyIconOffline
+              :icon="TimeLine"
+              style="width: 14px; height: 14px; vertical-align: -2px"
+            />
             创建于 {{ formatTime(cardData.created_at, "YYYY-MM-DD HH:mm") }}
-            <span v-if="cardData.status === 'published' && cardData.published_at">
-              · 发布于 {{ formatTime(cardData.published_at, "YYYY-MM-DD HH:mm") }}
+            <span
+              v-if="cardData.status === 'published' && cardData.published_at"
+            >
+              · 发布于
+              {{ formatTime(cardData.published_at, "YYYY-MM-DD HH:mm") }}
             </span>
           </div>
         </div>
@@ -546,9 +590,16 @@ onMounted(async () => {
                 clearable
                 @change="onVersionChange"
               >
-                <el-option v-for="v in versionOptions" :key="v.name" :label="v.name" :value="v.name" />
+                <el-option
+                  v-for="v in versionOptions"
+                  :key="v.name"
+                  :label="v.name"
+                  :value="v.name"
+                />
               </el-select>
-              <span v-else class="row-value">{{ cardData.version_name || "—" }}</span>
+              <span v-else class="row-value">{{
+                cardData.version_name || "—"
+              }}</span>
             </div>
             <div class="card-row">
               <span class="row-label">
@@ -562,9 +613,16 @@ onMounted(async () => {
                 clearable
                 :disabled="!form.version_name"
               >
-                <el-option v-for="s in strategyOptions" :key="s.name" :label="s.name" :value="s.name" />
+                <el-option
+                  v-for="s in strategyOptions"
+                  :key="s.name"
+                  :label="s.name"
+                  :value="s.name"
+                />
               </el-select>
-              <span v-else class="row-value">{{ cardData.strategy_name || "—" }}</span>
+              <span v-else class="row-value">{{
+                cardData.strategy_name || "—"
+              }}</span>
             </div>
             <div class="card-row">
               <span class="row-label">
@@ -576,11 +634,19 @@ onMounted(async () => {
                 v-model="form.environment"
                 placeholder="例：测试环境 / 生产预发"
               />
-              <span v-else class="row-value">{{ cardData.environment || "—" }}</span>
+              <span v-else class="row-value">{{
+                cardData.environment || "—"
+              }}</span>
             </div>
-            <div class="card-row conclusion-row" :class="`conclusion-${cardData.conclusion}`">
+            <div
+              class="card-row conclusion-row"
+              :class="`conclusion-${cardData.conclusion}`"
+            >
               <span class="row-label">
-                <IconifyIconOffline :icon="conclusionIcon(cardData.conclusion)" class="label-icon" />
+                <IconifyIconOffline
+                  :icon="conclusionIcon(cardData.conclusion)"
+                  class="label-icon"
+                />
                 验证结论
               </span>
               <el-radio-group
@@ -592,7 +658,10 @@ onMounted(async () => {
                 <el-radio value="fail">不通过</el-radio>
                 <el-radio value="risk">有风险</el-radio>
               </el-radio-group>
-              <span v-if="editing && conclusionLocked" class="conclusion-locked-hint">
+              <span
+                v-if="editing && conclusionLocked"
+                class="conclusion-locked-hint"
+              >
                 报告已发布，最终结论不可修改
               </span>
               <span v-else class="row-value conclusion-value">
@@ -600,7 +669,9 @@ onMounted(async () => {
                   :icon="conclusionIcon(cardData.conclusion)"
                   class="conclusion-icon"
                 />
-                {{ conclusionTag(cardData.conclusion).text }}（{{ cardData.conclusion }}）
+                {{ conclusionTag(cardData.conclusion).text }}（{{
+                  cardData.conclusion
+                }}）
               </span>
             </div>
           </div>
@@ -619,7 +690,9 @@ onMounted(async () => {
                 :rows="3"
                 placeholder="填写验证内容，将展示在报告单中"
               />
-              <span v-else class="row-value">{{ cardData.summary || "—" }}</span>
+              <span v-else class="row-value">{{
+                cardData.summary || "—"
+              }}</span>
             </div>
             <div class="card-row">
               <span class="row-label">
@@ -656,13 +729,30 @@ onMounted(async () => {
         <div class="card-foot">
           <div class="foot-left">
             <span class="foot-publisher">
-              <IconifyIconOffline :icon="UserLine" style="width: 15px; height: 15px; vertical-align: -2px; margin-right: 3px" />
+              <IconifyIconOffline
+                :icon="UserLine"
+                style="
+                  width: 15px;
+                  height: 15px;
+                  vertical-align: -2px;
+                  margin-right: 3px;
+                "
+              />
               {{ cardData.created_by_username || "—" }}
             </span>
-            <el-tag :type="conclusionTag(cardData.conclusion).type" size="small" class="foot-tag">
+            <el-tag
+              :type="conclusionTag(cardData.conclusion).type"
+              size="small"
+              class="foot-tag"
+            >
               <IconifyIconOffline
                 :icon="conclusionIcon(cardData.conclusion)"
-                style="width: 13px; height: 13px; vertical-align: -1px; margin-right: 3px"
+                style="
+                  width: 13px;
+                  height: 13px;
+                  vertical-align: -1px;
+                  margin-right: 3px;
+                "
               />
               核心结论：{{ conclusionTag(cardData.conclusion).text }}
             </el-tag>
@@ -678,8 +768,12 @@ onMounted(async () => {
               v-if="cardData.status === 'published' && cardData.published_at"
               class="foot-meta"
             >
-              <IconifyIconOffline :icon="TimeLine" style="width: 13px; height: 13px; vertical-align: -1px" />
-              发布于 {{ formatTime(cardData.published_at, "YYYY-MM-DD HH:mm") }}，共
+              <IconifyIconOffline
+                :icon="TimeLine"
+                style="width: 13px; height: 13px; vertical-align: -1px"
+              />
+              发布于
+              {{ formatTime(cardData.published_at, "YYYY-MM-DD HH:mm") }}，共
               {{ cardData.publish_count }} 次
               <el-tag
                 v-if="cardData.is_updated"
@@ -687,7 +781,10 @@ onMounted(async () => {
                 size="small"
                 class="foot-tag"
               >
-                <IconifyIconOffline :icon="RefreshLine" style="width: 12px; height: 12px; vertical-align: -1px" />
+                <IconifyIconOffline
+                  :icon="RefreshLine"
+                  style="width: 12px; height: 12px; vertical-align: -1px"
+                />
                 更新报告（已更新 {{ cardData.update_count }} 次）
               </el-tag>
             </span>
@@ -695,25 +792,48 @@ onMounted(async () => {
           <div class="foot-actions">
             <template v-if="editing">
               <el-button :loading="saving" @click="saveDraft">
-                <IconifyIconOffline :icon="SaveLine" style="width: 15px; height: 15px" />
+                <IconifyIconOffline
+                  :icon="SaveLine"
+                  style="width: 15px; height: 15px"
+                />
                 保存草稿
               </el-button>
-              <el-button type="success" :loading="publishing" @click="onPublish">
-                <IconifyIconOffline :icon="SendPlane" style="width: 15px; height: 15px" />
+              <el-button
+                type="success"
+                :loading="publishing"
+                @click="onPublish"
+              >
+                <IconifyIconOffline
+                  :icon="SendPlane"
+                  style="width: 15px; height: 15px"
+                />
                 发布
               </el-button>
               <el-button v-if="!isNew" @click="cancelEdit">
-                <IconifyIconOffline :icon="CloseLine" style="width: 15px; height: 15px" />
+                <IconifyIconOffline
+                  :icon="CloseLine"
+                  style="width: 15px; height: 15px"
+                />
                 取消
               </el-button>
             </template>
             <template v-else-if="canEditCurrent">
               <el-button @click="startEdit">
-                <IconifyIconOffline :icon="EditLine" style="width: 15px; height: 15px" />
+                <IconifyIconOffline
+                  :icon="EditLine"
+                  style="width: 15px; height: 15px"
+                />
                 编辑
               </el-button>
-              <el-button type="success" :loading="publishing" @click="onPublish">
-                <IconifyIconOffline :icon="SendPlane" style="width: 15px; height: 15px" />
+              <el-button
+                type="success"
+                :loading="publishing"
+                @click="onPublish"
+              >
+                <IconifyIconOffline
+                  :icon="SendPlane"
+                  style="width: 15px; height: 15px"
+                />
                 发布
               </el-button>
             </template>
@@ -724,8 +844,7 @@ onMounted(async () => {
 
     <!-- 空态：报告不存在（非新建且加载完成） -->
     <el-empty v-if="!report && !editing" description="报告不存在或已删除" />
-
-    </div>
+  </div>
 </template>
 
 <style scoped>

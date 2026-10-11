@@ -94,12 +94,23 @@ def fetch_by_id(model, raw_id, *, not_found="资源不存在", extra_queryset=No
     return obj, None
 
 
-def security_log(action, username="", detail=""):
-    """写安全日志；失败仅告警不阻断业务（审计旁路，不能影响主流程）。"""
+def security_log(action, username="", detail="", request=None):
+    """写安全日志；失败仅告警不阻断业务（审计旁路，不能影响主流程）。
+
+    request 传入时自动附加客户端 IP 与 User-Agent 到 detail —— 登录类事件
+    （成功/失败/锁定）依赖它做溯源，业务操作日志的 detail 已含业务上下文可不传。
+    """
+    meta = ""
+    if request is not None:
+        ip = request.META.get("REMOTE_ADDR", "") or request.META.get("HTTP_X_FORWARDED_FOR", "")
+        ua = (request.META.get("HTTP_USER_AGENT", "") or "")[:200]
+        meta = f"ip={ip} ua={ua}"
+        detail = f"{detail}; {meta}" if detail else meta
     try:
         SecurityLog.objects.create(username=username or "", action=action, detail=detail or "")
     except Exception:
-        logger.warning("安全日志写入失败：action=%s username=%s", action, username)
+        # exception 保留完整堆栈：审计旁路若静默失败，没有堆栈无法排查
+        logger.exception("安全日志写入失败：action=%s username=%s", action, username)
 
 
 def parse_body(request):

@@ -36,18 +36,18 @@ def login_view(request):
         return fail_resp(42201, "用户名与密码不能为空")
     fail_key = f"login:fail:{username}"
     if cache.get(fail_key, 0) >= _LOGIN_MAX_ATTEMPTS:
-        security_log("login_locked", username=username)
+        security_log("login_locked", username=username, request=request)
         return fail_resp(42901, "失败次数过多，请 15 分钟后重试")
     user = User.objects.filter(username=username).first()
     if user is None or not user.check_password(password):
         cache.set(fail_key, cache.get(fail_key, 0) + 1, _LOGIN_LOCK_SECONDS)
-        security_log("login_failed", username=username)
+        security_log("login_failed", username=username, request=request)
         return fail_resp(40101, "用户名或密码错误")
     if not user.is_active:
         return fail_resp(40301, "账号已停用")
     cache.delete(fail_key)
     refresh = RefreshToken.for_user(user)
-    security_log("login_success", username=username)
+    security_log("login_success", username=username, request=request)
     return json_resp(ok({"token": str(refresh.access_token), "user": _user_payload(user)}))
 
 
@@ -71,7 +71,7 @@ def logout_view(request):
     RevokedToken.objects.filter(
         expires_at__lt=datetime.now(tz=dt_timezone.utc)
     ).delete()
-    security_log("logout", username=username)
+    security_log("logout", username=username, request=request)
     return json_resp(ok())
 
 

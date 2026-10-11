@@ -5,9 +5,10 @@ import { ref, reactive, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import { getReportRevisions, getReports, type ReportQuery } from "@/api/report";
-import { getStrategies } from "@/api/strategy";
-import type { ReportItem, ReportRevisionItem, StrategyItem } from "@/api/types";
+import type { ReportItem, ReportRevisionItem } from "@/api/types";
 import { getCurrentUser, formatTime } from "@/utils/business";
+import { copyText } from "@/utils/clipboard";
+import { useStrategyOptions } from "@/composables/useStrategyOptions";
 import { reportConclusionMeta, reportStatusMeta } from "@/views/constants";
 
 defineOptions({ name: "ReportIndex" });
@@ -35,17 +36,8 @@ const filter = reactive<ReportQuery>({
 });
 
 // 版本/策略级联选项：从全量策略推导（报告存文本快照，过滤按名称，与后端 FilterSet 对齐）
-const allStrategies = ref<StrategyItem[]>([]);
-const versionOptions = computed(() => {
-  const names = new Set<string>();
-  allStrategies.value.forEach(s => {
-    if (s.version_name) names.add(s.version_name);
-  });
-  return Array.from(names, name => ({ name }));
-});
-const strategyOptions = computed(() =>
-  allStrategies.value.filter(s => s.version_name === filter.version_name)
-);
+const { versionOptions, strategyOptions, loadStrategyOptions } =
+  useStrategyOptions(computed(() => filter.version_name));
 
 function onVersionChange() {
   filter.strategy_name = undefined;
@@ -70,22 +62,17 @@ function statusTag(s: string) {
 }
 // ---- 操作 ----
 // 深链接：hash 路由下浏览器地址即 {origin}/#/report/detail/{id}
-const reportLink = (id: number) => `${window.location.origin}/#/report/detail/${id}`;
+const reportLink = (id: number) =>
+  `${window.location.origin}/#/report/detail/${id}`;
 
 async function copyLink(row: ReportItem) {
   const url = reportLink(row.id);
-  try {
-    await navigator.clipboard.writeText(url);
-  } catch {
-    // 降级：非 HTTPS 或浏览器限制时用临时 textarea 复制
-    const ta = document.createElement("textarea");
-    ta.value = url;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand("copy");
-    document.body.removeChild(ta);
+  const ok = await copyText(url);
+  if (ok) {
+    ElMessage.success("链接已复制，可直接粘贴分享");
+  } else {
+    ElMessage.error("复制失败，请手动复制地址栏链接");
   }
-  ElMessage.success("链接已复制，可直接粘贴分享");
 }
 
 // ---- 修改记录弹窗 ----
@@ -125,11 +112,7 @@ function goCreate() {
 
 onMounted(async () => {
   load();
-  try {
-    allStrategies.value = await getStrategies();
-  } catch {
-    allStrategies.value = [];
-  }
+  loadStrategyOptions();
 });
 </script>
 
@@ -155,7 +138,12 @@ onMounted(async () => {
           style="width: 150px"
           @change="onVersionChange"
         >
-          <el-option v-for="v in versionOptions" :key="v.name" :label="v.name" :value="v.name" />
+          <el-option
+            v-for="v in versionOptions"
+            :key="v.name"
+            :label="v.name"
+            :value="v.name"
+          />
         </el-select>
         <el-select
           v-model="filter.strategy_name"
@@ -165,7 +153,12 @@ onMounted(async () => {
           style="width: 190px"
           @change="load"
         >
-          <el-option v-for="s in strategyOptions" :key="s.name" :label="s.name" :value="s.name" />
+          <el-option
+            v-for="s in strategyOptions"
+            :key="s.name"
+            :label="s.name"
+            :value="s.name"
+          />
         </el-select>
         <el-input
           v-model="filter.keyword"
@@ -174,18 +167,26 @@ onMounted(async () => {
           style="width: 180px"
           @keyup.enter="load"
         />
-        <el-button type="primary" :loading="loading" @click="load">查询</el-button>
+        <el-button type="primary" :loading="loading" @click="load"
+          >查询</el-button
+        >
       </div>
-      <el-button v-if="canWrite" type="primary" @click="goCreate">新建报告</el-button>
+      <el-button v-if="canWrite" type="primary" @click="goCreate"
+        >新建报告</el-button
+      >
     </div>
 
     <!-- 报告表格 -->
     <div class="section biz-card">
-      <el-table :data="list" v-loading="loading" style="width: 100%">
+      <el-table v-loading="loading" :data="list" style="width: 100%">
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column label="标题" min-width="220">
           <template #default="{ row }">
-            <el-link type="primary" :underline="false" @click="goDetail(row as ReportItem)">
+            <el-link
+              type="primary"
+              :underline="false"
+              @click="goDetail(row as ReportItem)"
+            >
               {{ row.title }}
             </el-link>
           </template>
@@ -214,14 +215,26 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column prop="created_by_username" label="作者" width="110" />
         <el-table-column label="更新时间" width="140">
-          <template #default="{ row }">{{ formatTime(row.updated_at) }}</template>
+          <template #default="{ row }">{{
+            formatTime(row.updated_at)
+          }}</template>
         </el-table-column>
         <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link size="small" @click="goDetail(row as ReportItem)">
+            <el-button
+              type="primary"
+              link
+              size="small"
+              @click="goDetail(row as ReportItem)"
+            >
               查看
             </el-button>
-            <el-button type="primary" link size="small" @click="copyLink(row as ReportItem)">
+            <el-button
+              type="primary"
+              link
+              size="small"
+              @click="copyLink(row as ReportItem)"
+            >
               复制链接
             </el-button>
             <el-button
@@ -233,7 +246,12 @@ onMounted(async () => {
             >
               编辑
             </el-button>
-            <el-button type="warning" link size="small" @click="viewRevisions(row as ReportItem)">
+            <el-button
+              type="warning"
+              link
+              size="small"
+              @click="viewRevisions(row as ReportItem)"
+            >
               修改记录
             </el-button>
           </template>
@@ -243,15 +261,22 @@ onMounted(async () => {
     </div>
 
     <!-- 修改记录弹窗：时间倒序，由近及远，含创建/修改/发布留痕 -->
-    <el-dialog v-model="revisionsVisible" title="修改记录" width="880px" append-to-body>
+    <el-dialog
+      v-model="revisionsVisible"
+      title="修改记录"
+      width="880px"
+      append-to-body
+    >
       <el-table
-        :data="revisionsList"
         v-loading="revisionsLoading"
+        :data="revisionsList"
         max-height="420"
         style="width: 100%"
       >
         <el-table-column label="操作时间" width="170">
-          <template #default="{ row }">{{ formatTime(row.created_at) }}</template>
+          <template #default="{ row }">{{
+            formatTime(row.created_at)
+          }}</template>
         </el-table-column>
         <el-table-column prop="operator_username" label="修改人" width="110" />
         <el-table-column label="操作内容" min-width="150">
@@ -259,7 +284,9 @@ onMounted(async () => {
             <el-tag :type="revisionTag(row as ReportRevisionItem)" size="small">
               {{ row.action_label }}
             </el-tag>
-            <span v-if="row.field_name" style="margin-left: 6px">{{ row.field_name }}</span>
+            <span v-if="row.field_name" style="margin-left: 6px">{{
+              row.field_name
+            }}</span>
           </template>
         </el-table-column>
         <el-table-column

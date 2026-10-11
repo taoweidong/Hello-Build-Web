@@ -1,4 +1,7 @@
 // 根据角色动态生成路由
+// ⚠️ 仅开发环境使用（build/plugins.ts 中 enableProd 恒为 false）。
+// 本文件返回的 accessToken/refreshToken 均为格式占位假 JWT，非真实签名令牌；
+// 若 enableProd 被误开，此文件会进入生产构建并可直接伪造管理员身份。
 import { defineFakeRoute } from "vite-plugin-fake-server/client";
 
 export default defineFakeRoute([
