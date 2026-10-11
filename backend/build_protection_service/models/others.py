@@ -15,6 +15,12 @@ class User(AbstractUser):
     role = models.CharField("角色", max_length=20, choices=ROLE_CHOICES, default="builder")
     display_name = models.CharField("显示名", max_length=100, blank=True, default="")
 
+    @property
+    def bound_version_id(self):
+        """PM 绑定版本 id（反向 OneToOne 无自动 *_id 透传属性，显式暴露）。"""
+        version = getattr(self, "bound_version", None)
+        return version.id if version else None
+
     def __str__(self) -> str:
         return self.username
 

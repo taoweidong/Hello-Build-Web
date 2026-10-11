@@ -134,6 +134,21 @@ class AuthTests(TestCase):
         self.assertIn("token", data)
         self.assertEqual(data["user"]["role"], "pm")
 
+    def test_login_payload_contains_bound_version_for_pm(self):
+        """PM 登录载荷必须携带绑定版本 id/name（反向 OneToOne 无自动 *_id 属性，回归防护）。"""
+        version = Version.objects.create(name="28A", pm_user=self.pm, status="active")
+        resp = self.client.post("/api/auth/login", {"username": "pm1", "password": "123456"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        user = resp.json()["data"]["user"]
+        self.assertEqual(user["bound_version_id"], version.id)
+        self.assertEqual(user["bound_version_name"], "28A")
+
+    def test_login_payload_bound_version_none_for_admin(self):
+        resp = self.client.post("/api/auth/login", {"username": "admin", "password": "123456"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        user = resp.json()["data"]["user"]
+        self.assertIsNone(user["bound_version_id"])
+
     def test_login_wrong_password_401(self):
         resp = self.client.post("/api/auth/login", {"username": "pm1", "password": "wrong"}, format="json")
         self.assertEqual(resp.status_code, 401)
@@ -535,10 +550,11 @@ class SeedTests(TestCase):
         # 精确断言演示数据规模，seed 变更时能暴露差异
         self.assertEqual(Version.objects.filter(name="27A").count(), 1)
         self.assertEqual(Version.objects.count(), 3)
-        self.assertEqual(Branch.objects.count(), 6)
+        # 三个版本各 3 条分支（27A/27B/26B），保证版本策略全景页各版本数据饱满
+        self.assertEqual(Branch.objects.count(), 9)
         self.assertEqual(StrategyTemplate.objects.count(), 3)
         self.assertEqual(SlotTemplate.objects.count(), 4)
-        self.assertEqual(Strategy.objects.count(), 14)
+        self.assertEqual(Strategy.objects.count(), 23)
         self.assertEqual(
             set(Strategy.objects.values_list("name", flat=True)),
             {
@@ -553,9 +569,18 @@ class SeedTests(TestCase):
                 "27A-TR6-同步推送验证",
                 "27A-TR6-晚间全量",
                 "27B-master-早间快速",
+                "27B-master-午间快速",
+                "27B-TR5-午间快速",
+                "27B-TR5-晚间全量",
+                "27B-TR6-同步推送验证",
+                "27B-TR6-晚间全量",
                 "26B-master-晚间全量",
                 "26B-master-同步推送",
+                "26B-master-早间回归",
                 "26B-TR5-午间快速",
+                "26B-TR5-夜间补测",
+                "26B-TR5-晚间全量",
+                "26B-TR6-午间快速",
             },
         )
 
@@ -565,7 +590,8 @@ class SeedTests(TestCase):
         call_command("seed")
         # 重复运行不报错、不重复
         self.assertEqual(Version.objects.count(), 3)
-        self.assertEqual(Strategy.objects.count(), 14)
+        self.assertEqual(Branch.objects.count(), 9)
+        self.assertEqual(Strategy.objects.count(), 23)
         self.assertEqual(SlotTemplate.objects.count(), 4)
         booking_count = SlotBooking.objects.count()
         self.assertGreater(booking_count, 0)

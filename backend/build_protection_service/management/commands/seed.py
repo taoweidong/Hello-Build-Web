@@ -63,6 +63,9 @@ class Command(BaseCommand):
         self._seed_extra_strategies()
         # ---- 26B 版本演示（独立 PM 与两条分支）----
         self._seed_version_26b()
+        # ---- 27B/26B 演示数据补全：三个版本均有三分支多时段的饱满策略 ----
+        self._seed_version_27b_full()
+        self._seed_version_26b_full()
 
         # ---- 时段抢占演示：模板 + 仿真实抢占记录（幂等）----
         if not SlotTemplate.objects.filter(name="上午窗口").exists():
@@ -171,6 +174,101 @@ class Command(BaseCommand):
         if t_quick:
             Strategy.objects.create(branch=bt, template=t_quick, name="26B-TR5-午间快速",
                                     build_start_time="12:45", push_mode="normal", created_by=pm26b)
+
+    def _seed_version_27b_full(self):
+        """27B 版本演示补全：三条分支、七条策略，覆盖凌晨/早/午/晚时段。
+
+        幂等：分支按 (version, name) 兜底创建，策略逐条 get_or_create；
+        同版本构建时段互不重叠（与资源互斥规则一致）。
+        """
+        v27b = Version.objects.filter(name="27B").first()
+        if v27b is None:
+            return
+        t_full = StrategyTemplate.objects.filter(name="晚间全量冒烟").first()
+        t_quick = StrategyTemplate.objects.filter(name="午间快速冒烟").first()
+        t_sync = StrategyTemplate.objects.filter(name="同步推送冒烟").first()
+        if t_full is None or t_quick is None:
+            return
+        pm27b, created = User.objects.get_or_create(
+            username="pm27b",
+            defaults={"role": "pm", "display_name": "27B负责人"},
+        )
+        if created:
+            pm27b.set_password("123456")
+            pm27b.save()
+
+        def branch_of(name, description=None):
+            existed = Branch.objects.filter(version=v27b, name=name).first()
+            if existed:
+                return existed
+            return Branch.objects.create(
+                version=v27b, name=name, description=description or "演示分支"
+            )
+
+        plan = [
+            (branch_of("master"), "27B-master-早间快速", t_quick, "07:00", "normal", None),
+            (branch_of("master"), "27B-master-午间快速", t_quick, "12:10", "normal", None),
+            (branch_of("master"), "27B-master-晚间全量", t_full, "22:30", "normal", None),
+            (branch_of("TR5"), "27B-TR5-午间快速", t_quick, "12:40", "normal", None),
+            (branch_of("TR5"), "27B-TR5-晚间全量", t_full, "21:30", "normal", None),
+            (branch_of("TR6", "TR6 维护分支"), "27B-TR6-同步推送验证", t_sync, "09:40", "sync", "11:20"),
+            (branch_of("TR6", "TR6 维护分支"), "27B-TR6-晚间全量", t_full, "23:10", "normal", None),
+        ]
+        for branch, name, template, build, mode, push in plan:
+            if template is None:
+                continue
+            Strategy.objects.get_or_create(
+                branch=branch,
+                name=name,
+                defaults={
+                    "template": template,
+                    "build_start_time": build,
+                    "push_mode": mode,
+                    "push_start_time": push,
+                    "created_by": pm27b,
+                },
+            )
+
+    def _seed_version_26b_full(self):
+        """26B 版本演示补全：补 TR6 分支与早/午/晚策略（幂等，逐条 get_or_create）。"""
+        v26b = Version.objects.filter(name="26B").first()
+        if v26b is None:
+            return
+        t_full = StrategyTemplate.objects.filter(name="晚间全量冒烟").first()
+        t_quick = StrategyTemplate.objects.filter(name="午间快速冒烟").first()
+        t_sync = StrategyTemplate.objects.filter(name="同步推送冒烟").first()
+        if t_full is None or t_quick is None:
+            return
+        pm26b = User.objects.filter(username="pm26b").first()
+
+        def branch_of(name, description=None):
+            existed = Branch.objects.filter(version=v26b, name=name).first()
+            if existed:
+                return existed
+            return Branch.objects.create(
+                version=v26b, name=name, description=description or "演示分支"
+            )
+
+        plan = [
+            (branch_of("master"), "26B-master-早间回归", t_sync, "06:40", "sync", "08:20"),
+            (branch_of("TR5"), "26B-TR5-夜间补测", t_quick, "02:20", "normal", None),
+            (branch_of("TR5"), "26B-TR5-晚间全量", t_full, "21:45", "normal", None),
+            (branch_of("TR6", "TR6 维护分支"), "26B-TR6-午间快速", t_quick, "13:20", "normal", None),
+        ]
+        for branch, name, template, build, mode, push in plan:
+            if template is None:
+                continue
+            Strategy.objects.get_or_create(
+                branch=branch,
+                name=name,
+                defaults={
+                    "template": template,
+                    "build_start_time": build,
+                    "push_mode": mode,
+                    "push_start_time": push,
+                    "created_by": pm26b,
+                },
+            )
 
     def _seed_slot_bookings(self):
         """仿真实抢占记录：本月起约两周内多用户多窗口轮转抢占 + 历史释放样例。
