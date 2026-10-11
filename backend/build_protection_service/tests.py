@@ -1296,7 +1296,7 @@ class RuntimeConfigPersistenceTests(TestCase):
 
 
 class SlotTemplateWeekdaysTests(ConfigAwareTestCase):
-    """时段模板 weekdays 校验：非法值 422，合法值归一化。"""
+    """时段模板 weekdays 校验：isoweekday 1-7 口径（1=周一…7=周日），非法值 422，合法值归一化。"""
 
     def setUp(self):
         super().setUp()
@@ -1310,7 +1310,7 @@ class SlotTemplateWeekdaysTests(ConfigAwareTestCase):
         return resp.json()["data"]["token"]
 
     def test_invalid_weekdays_422(self):
-        for bad in ("8", "abc", "0,9", "1,x"):
+        for bad in ("0", "8", "abc", "0,9", "1,x"):
             resp = self.client.post("/api/slot-templates", {
                 "name": f"模板-{bad}", "start_time": "09:00", "end_time": "12:00",
                 "weekdays": bad,
@@ -1325,3 +1325,12 @@ class SlotTemplateWeekdaysTests(ConfigAwareTestCase):
         }, format="json")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json()["data"]["template"]["weekdays"], "1,3")
+
+    def test_sunday_weekday_7_accepted(self):
+        """UI 口径的周日（7）必须可建——旧 0-6 校验会拒绝，导致周日模板无法创建。"""
+        resp = self.client.post("/api/slot-templates", {
+            "name": "周日时段", "start_time": "09:00", "end_time": "12:00",
+            "weekdays": "7",
+        }, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["data"]["template"]["weekdays"], "7")

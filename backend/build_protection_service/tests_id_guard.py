@@ -288,7 +288,8 @@ class SlotBookingIdGuardTests(ConfigAwareTestCase):
         self.version = Version.objects.create(name="27A", pm_user=self.pm, status="active")
         self.branch = Branch.objects.create(version=self.version, name="master")
         self.tmpl = SlotTemplate.objects.create(
-            name="工作日上午", start_time="09:00", end_time="12:00", weekdays="0,1,2,3,4"
+            # isoweekday 口径（1=周一…5=周五），与 _future_weekday 的选日范围一致
+            name="工作日上午", start_time="09:00", end_time="12:00", weekdays="1,2,3,4,5"
         )
         resp = self.client.post(
             "/api/auth/login", {"username": "pm1", "password": "123456"}, format="json"

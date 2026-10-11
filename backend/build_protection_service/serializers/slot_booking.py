@@ -27,14 +27,19 @@ class SlotTemplateSerializer(serializers.ModelSerializer):
         return name
 
     def validate_weekdays(self, value) -> str:
-        """生效星期校验：逗号分隔的 0-6（0=周一），拦截 "8,abc" 之类永不匹配的脏数据。"""
+        """生效星期校验：逗号分隔的 isoweekday 1-7（1=周一…7=周日）。
+
+        口径唯一真源：与 services.slot_booking.template_applies_on 的 isoweekday()
+        匹配逻辑、模型 help_text、seed 数据及前端 TemplateDialog 选项保持一致；
+        拦截 "0,8,abc" 之类永不匹配或错位的脏数据。
+        """
         raw = (value or "").strip()
         if not raw:
             return raw
         parts = [x.strip() for x in raw.split(",")]
         for part in parts:
-            if not part.isdigit() or not 0 <= int(part) <= 6:
-                raise serializers.ValidationError("生效星期应为 0-6 的逗号分隔数字（0=周一）")
+            if not part.isdigit() or not 1 <= int(part) <= 7:
+                raise serializers.ValidationError("生效星期应为 1-7 的逗号分隔数字（1=周一…7=周日）")
         return ",".join(str(int(x)) for x in parts)
 
     def validate(self, attrs: dict) -> dict:

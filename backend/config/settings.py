@@ -32,6 +32,9 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
+    # CSRF 仅保护 django-admin 的会话认证面；业务 API 走 JWT 头认证，
+    # 已在 views/urls.py 统一 csrf_exempt（DRF ViewSet 自带豁免）。
+    "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",

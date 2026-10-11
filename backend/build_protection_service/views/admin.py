@@ -241,6 +241,24 @@ def update_user(request, uid):
 
 # ---------- 模板 ----------
 
+def _parse_template_minutes(body):
+    """解析 body 中的 smoke_minutes/analysis_minutes（POST/PATCH 共用）。
+
+    仅处理显式提供且非 None 的字段；非法类型/负数 → 42201 响应，
+    避免落库时 ValueError/CHECK 约束 IntegrityError/TypeError 冒成 500
+    （2026-10-12 质量评估 B-P0-4）。返回 (parsed_dict, err_response)。
+    """
+    parsed = {}
+    for field in ("smoke_minutes", "analysis_minutes"):
+        if body.get(field) is None:
+            continue
+        val = parse_int(body[field])
+        if val is None or val < 0:
+            return None, fail_resp(CODE_UNPROCESSABLE, f"{field} 应为非负整数")
+        parsed[field] = val
+    return parsed, None
+
+
 def templates_view(request):
     user, resp = authed_user(request)
     if resp:
@@ -259,17 +277,22 @@ def templates_view(request):
             return perr
         body = parse_body(request)
         name = body.get("name")
-        if not name:
+        if not isinstance(name, str) or not name.strip():
             return fail_resp(CODE_UNPROCESSABLE, "模板名必填")
+        parsed, verr = _parse_template_minutes(body)
+        if verr:
+            return verr
+        description = body.get("description", "")
+        if not isinstance(description, str):
+            return fail_resp(CODE_UNPROCESSABLE, "description 应为字符串")
         t = StrategyTemplate.objects.create(
-            name=name,
-            smoke_minutes=body.get("smoke_minutes", 0),
-            analysis_minutes=body.get("analysis_minutes", 0),
-            description=body.get("description", ""),
+            name=name.strip(),
+            smoke_minutes=parsed.get("smoke_minutes", 0),
+            analysis_minutes=parsed.get("analysis_minutes", 0),
+            description=description,
         )
-        _admin_log(user, "create_template", target_type="template", target_id=t.id, detail=name)
-        return json_resp(ok({"id": t.id, "name": t.name, "smoke_minutes": t.smoke_minutes,
-                             "analysis_minutes": t.analysis_minutes, "description": t.description}))
+        _admin_log(user, "create_template", target_type="template", target_id=t.id, detail=t.name)
+        return json_resp(ok(_template_payload(t)))
     return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
 
 
@@ -296,12 +319,17 @@ def update_template(request, user, tid):
         return notfound
     body = parse_body(request)
     if body.get("name") is not None:
-        t.name = body["name"]
-    if body.get("smoke_minutes") is not None:
-        t.smoke_minutes = body["smoke_minutes"]
-    if body.get("analysis_minutes") is not None:
-        t.analysis_minutes = body["analysis_minutes"]
+        if not isinstance(body["name"], str) or not body["name"].strip():
+            return fail_resp(CODE_UNPROCESSABLE, "模板名不能为空")
+        t.name = body["name"].strip()
+    parsed, verr = _parse_template_minutes(body)
+    if verr:
+        return verr
+    for field, val in parsed.items():
+        setattr(t, field, val)
     if body.get("description") is not None:
+        if not isinstance(body["description"], str):
+            return fail_resp(CODE_UNPROCESSABLE, "description 应为字符串")
         t.description = body["description"]
     t.save()
     _admin_log(user, "update_template", target_type="template", target_id=tid)

@@ -10,7 +10,7 @@
 """
 from django.db import IntegrityError, transaction
 
-from ..errors import CODE_DUPLICATE
+from ..errors import CODE_DUPLICATE, CODE_UNPROCESSABLE
 from ..models import Strategy, StrategyChangeLog
 from .config import get_config
 from .conflict import detect_conflicts
@@ -26,6 +26,17 @@ class StrategyValidationError(Exception):
         self.code = code
         self.message = message
         self.extra = extra or {}
+
+
+def _validate_name(name):
+    """策略名必填：非字符串/空串/纯空白 → 42201。
+
+    Strategy.name 为非空约束字段，缺校验时缺 name 的创建请求会以
+    IntegrityError 形态冒到视图层变 500（见 2026-10-12 质量评估 B-P0-2）。
+    """
+    if not isinstance(name, str) or not name.strip():
+        raise StrategyValidationError(CODE_UNPROCESSABLE, "策略名必填")
+    return name.strip()
 
 
 class SimpleNamespaceTpl:
@@ -132,6 +143,7 @@ def create_strategy(branch, template, operator, *, name, build_start_time,
     校验竞态兜底：并发下另一事务可能在校验读之后、本事务写之前提交冲突策略，
     唯一约束 uniq_active_strategy_branch_time 在 DB 层拦截，转 40902。
     """
+    name = _validate_name(name)
     validate_strategy(branch, template, build_start_time, push_start_time, push_mode=push_mode)
     try:
         return Strategy.objects.create(
@@ -153,7 +165,8 @@ def update_strategy(strategy: Strategy, body: dict, operator):
     validate_strategy(strategy.branch, strategy.template, build_start_time, push_start_time,
                       push_mode=body.get("push_mode", strategy.push_mode),
                       exclude_id=strategy.id)
-    strategy.name = body.get("name", strategy.name)
+    if body.get("name") is not None:
+        strategy.name = _validate_name(body["name"])
     strategy.build_start_time = build_start_time
     strategy.push_start_time = push_start_time or None
     strategy.push_mode = body.get("push_mode", strategy.push_mode)

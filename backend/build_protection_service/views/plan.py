@@ -4,11 +4,12 @@ from django.db.models import OuterRef, Prefetch, Subquery
 from django.utils import timezone
 
 from ..api import ok
+from ..errors import CODE_UNPROCESSABLE
 from ..models import Branch, ExecutionRound, Strategy, Version
 from ..services.config import get_config
 from ..services.conflict import detect_conflicts
-from ..services.timeline import build_timeline
-from . import authed_user, json_resp
+from ..services.timeline import build_timeline, parse_cd
+from . import authed_user, fail_resp, json_resp
 
 
 def _conflicted_ids(items, build_minutes, push_minutes, sync_buffer_minutes, ds):
@@ -29,6 +30,11 @@ def plan_view(request):
     if resp:
         return resp
     ds = request.GET.get("date") or timezone.localdate().strftime("%Y-%m-%d")
+    try:
+        # 非法 date 直接 422，避免 build_timeline 内 strptime 抛 ValueError 变 500
+        parse_cd(ds)
+    except ValueError:
+        return fail_resp(CODE_UNPROCESSABLE, "date 格式应为 YYYY-MM-DD")
     versions = Version.objects.select_related("pm_user").prefetch_related(
         Prefetch("branches", queryset=Branch.objects.all().order_by("name")),
         Prefetch(
