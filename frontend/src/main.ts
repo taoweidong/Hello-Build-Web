@@ -4,9 +4,6 @@ import { setupStore } from "@/store";
 import { getPlatformConfig } from "./config";
 import { MotionPlugin } from "@vueuse/motion";
 // import { useEcharts } from "@/plugins/echarts";
-// ganttastic 甘特图库（pure-admin 同款）
-import ganttastic, { extendDayjs } from "@infectoone/vue-ganttastic";
-extendDayjs();
 import { createApp, type Directive } from "vue";
 import { useElementPlus } from "@/plugins/elementPlus";
 import { injectResponsiveStorage } from "@/utils/responsive";
@@ -60,7 +57,7 @@ getPlatformConfig(app).then(async config => {
   app.use(router);
   await router.isReady();
   injectResponsiveStorage(app, config);
-  app.use(MotionPlugin).use(useElementPlus).use(Table).use(ganttastic);
+  app.use(MotionPlugin).use(useElementPlus).use(Table);
   // .use(PureDescriptions)
   // .use(useEcharts);
   app.mount("#app");

@@ -6,17 +6,6 @@ export interface TagMeta {
   type: "success" | "danger" | "warning" | "info" | "primary";
 }
 
-// ---- 执行轮次结论（RoundItem.conclusion）----
-export const roundConclusionMap: Record<string, TagMeta> = {
-  pass: { text: "通过", type: "success" },
-  fail: { text: "不通过", type: "danger" },
-  pending: { text: "待录", type: "info" }
-};
-
-export function roundConclusionMeta(code: string): TagMeta {
-  return roundConclusionMap[code] || { text: code || "待录", type: "info" };
-}
-
 // ---- 报告结论/状态（VerificationReport）----
 export const reportConclusionMap: Record<string, TagMeta> = {
   pass: { text: "通过", type: "success" },
@@ -35,19 +24,6 @@ export const reportStatusMap: Record<string, TagMeta> = {
 
 export function reportStatusMeta(code: string): TagMeta {
   return reportStatusMap[code] || { text: code, type: "info" };
-}
-
-// ---- 推送状态（RoundItem.push_status）----
-export const pushStatusMap: Record<string, TagMeta> = {
-  pending: { text: "待推送", type: "info" },
-  running: { text: "推送中", type: "primary" },
-  success: { text: "成功", type: "success" },
-  failed: { text: "失败", type: "danger" },
-  skipped: { text: "跳过", type: "warning" }
-};
-
-export function pushStatusMeta(code: string): TagMeta {
-  return pushStatusMap[code] || { text: code || "-", type: "info" };
 }
 
 // ---- 用户角色中文标签（User.ROLE_CHOICES）----
