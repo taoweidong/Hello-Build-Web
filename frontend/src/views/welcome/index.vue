@@ -33,7 +33,9 @@ const entries = [
 <template>
   <div class="welcome">
     <h2 class="title">构建策略配置系统</h2>
-    <p class="sub">管理版本/分支的每日构建策略：构建 → 冒烟 → 人工分析 → 推送</p>
+    <p class="sub">
+      管理版本/分支的每日构建策略：构建 → 冒烟 → 人工分析 → 推送
+    </p>
     <div class="cards">
       <div
         v-for="e in entries"
@@ -50,7 +52,7 @@ const entries = [
 
 <style scoped>
 .welcome {
-  /* 布局 .main-content 已提供 24px 外边距，此处不再叠加 */
+  /* 布局 .main-content 已提供 12px 外边距，此处不再叠加 */
 }
 .title {
   color: var(--el-text-color-primary);

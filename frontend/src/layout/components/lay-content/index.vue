@@ -208,6 +208,7 @@ const transitionMain = defineComponent({
 }
 
 .main-content {
-  margin: 24px;
+  /* 内容区与菜单/页签/页脚的统一间距：12px 紧凑布局（原 24px 间距过大） */
+  margin: 12px;
 }
 </style>

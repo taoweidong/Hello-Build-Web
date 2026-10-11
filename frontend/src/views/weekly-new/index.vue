@@ -269,7 +269,7 @@ async function loadWeekly() {
   }
 }
 
-/** 任务芯片（按精确时间点归类：构建/推送起始时间相等才落行） */
+/** 任务卡片（按精确时间点归类：构建/推送起始时间相等才落行） */
 function tasksAtTime(t: string): HourTaskItem[] {
   const tasks: HourTaskItem[] = [];
   for (const s of strategies.value) {
@@ -281,8 +281,10 @@ function tasksAtTime(t: string): HourTaskItem[] {
         stageLabel: "构建",
         name: s.strategy_name,
         time: s.build_start_time,
-        title: `构建 · ${s.strategy_name} · ${s.branch_name} · ${s.build_start_time}`,
-        color: branchColor(s.branch_id)
+        title: `构建 · ${s.strategy_name} · ${s.branch_name} · ${s.template_name} · ${s.build_start_time}`,
+        color: branchColor(s.branch_id),
+        branchName: s.branch_name,
+        templateName: s.template_name
       });
     }
     if (s.push_start_time && s.push_start_time === t) {
@@ -293,8 +295,10 @@ function tasksAtTime(t: string): HourTaskItem[] {
         stageLabel: "推送",
         name: s.strategy_name,
         time: s.push_start_time,
-        title: `推送 · ${s.strategy_name} · ${s.branch_name} · ${s.push_start_time}`,
-        color: branchColor(s.branch_id)
+        title: `推送 · ${s.strategy_name} · ${s.branch_name} · ${s.template_name} · ${s.push_start_time}`,
+        color: branchColor(s.branch_id),
+        branchName: s.branch_name,
+        templateName: s.template_name
       });
     }
   }
@@ -394,8 +398,8 @@ onMounted(() => {
 .weekly-new {
   display: flex;
   flex-direction: column;
-  /* 视口高度扣除：顶部导航+页签 81px、内容区上下边距 48px、页脚约 23px */
-  height: calc(100vh - 152px);
+  /* 视口高度扣除：顶部导航+页签 81px、内容区上下边距 24px、页脚约 29px */
+  height: calc(100vh - 134px);
   min-height: 520px;
 }
 
