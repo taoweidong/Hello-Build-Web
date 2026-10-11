@@ -65,4 +65,19 @@ describe("formatBorrowFlowText 借用电子流复制文案", () => {
     const text = formatBorrowFlowText(makeFlow({ reason: "" }));
     expect(text).toContain("借用原因：（未填写）");
   });
+
+  it("传入 detailUrl 时附带可直达的审批链接行", () => {
+    const text = formatBorrowFlowText(
+      makeFlow(),
+      "http://localhost:8848/#/borrow-flow/index?focus=7"
+    );
+    expect(text).toContain(
+      "审批详情链接：http://localhost:8848/#/borrow-flow/index?focus=7"
+    );
+  });
+
+  it("不传 detailUrl 时不含链接行", () => {
+    const text = formatBorrowFlowText(makeFlow());
+    expect(text).not.toContain("审批详情链接");
+  });
 });

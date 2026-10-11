@@ -70,8 +70,18 @@ export function rejectBorrowFlow(
   return http.post(`/borrow-flows/${id}/reject`, { comment });
 }
 
-/** 组装电子流纯文本（审批页一键复制，便于粘贴发给审核人员） */
-export function formatBorrowFlowText(flow: BorrowFlowItem): string {
+/** 借用电子流审批页的直达链接（hash 路由，携带 focus 参数定位并打开该条） */
+export function borrowFlowUrl(id: number): string {
+  if (typeof window === "undefined") return `#/borrow-flow/index?focus=${id}`;
+  const { origin, pathname } = window.location;
+  return `${origin}${pathname}#/borrow-flow/index?focus=${id}`;
+}
+
+/** 组装电子流纯文本（审批页一键复制，便于粘贴发给审核人员）；传入 detailUrl 时附带可直达该条的链接 */
+export function formatBorrowFlowText(
+  flow: BorrowFlowItem,
+  detailUrl?: string
+): string {
   const lines = [
     `【借用电子流】#${flow.id} ${BORROW_STATUS_TEXT[flow.status]}`,
     `策略：${flow.strategy_name}（${flow.source_version_name}/${flow.source_branch_name} · ${flow.template_name}）`,
@@ -88,5 +98,6 @@ export function formatBorrowFlowText(flow: BorrowFlowItem): string {
       } ${(flow.handled_at || "").replace("T", " ")}`
     );
   }
+  if (detailUrl) lines.push(`审批详情链接：${detailUrl}`);
   return lines.join("\n");
 }

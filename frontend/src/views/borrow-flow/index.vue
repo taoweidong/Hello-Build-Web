@@ -72,8 +72,16 @@
             <span v-else class="cell-sub">-</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="190" fixed="right">
+        <el-table-column label="操作" width="230" fixed="right">
           <template #default="{ row }">
+            <el-button
+              type="info"
+              link
+              size="small"
+              @click="openDetail(row as BorrowFlowItem)"
+            >
+              详情
+            </el-button>
             <el-button
               type="primary"
               link
@@ -108,15 +116,79 @@
         </el-table-column>
       </el-table>
     </div>
+
+    <!-- 电子流只读详情（列表「详情」按钮或 ?focus= 直达链接打开） -->
+    <el-dialog v-model="detailVisible" title="借用电子流详情" width="560px">
+      <el-descriptions v-if="detailFlow" :column="2" border size="small">
+        <el-descriptions-item label="编号"
+          >#{{ detailFlow.id }}</el-descriptions-item
+        >
+        <el-descriptions-item label="状态">
+          <el-tag :type="statusTag(detailFlow.status)" size="small">
+            {{ BORROW_STATUS_TEXT[detailFlow.status] }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="策略（来源）" :span="2">
+          {{ detailFlow.strategy_name }}（{{
+            detailFlow.source_version_name
+          }}/{{ detailFlow.source_branch_name }} ·
+          {{ detailFlow.template_name }}）
+        </el-descriptions-item>
+        <el-descriptions-item label="原构建时间">
+          {{ detailFlow.original_build_time }}
+        </el-descriptions-item>
+        <el-descriptions-item label="借用人">
+          {{ detailFlow.borrower_name }}
+        </el-descriptions-item>
+        <el-descriptions-item label="借用至">
+          {{ detailFlow.target_version_name }}/{{
+            detailFlow.target_branch_name
+          }}
+        </el-descriptions-item>
+        <el-descriptions-item label="新构建时间">
+          {{ detailFlow.new_build_time }}
+        </el-descriptions-item>
+        <el-descriptions-item label="借用原因" :span="2">
+          {{ detailFlow.reason || "（未填写）" }}
+        </el-descriptions-item>
+        <el-descriptions-item label="申请时间" :span="2">
+          {{ (detailFlow.created_at || "").replace("T", " ") }}
+        </el-descriptions-item>
+        <el-descriptions-item
+          v-if="detailFlow.status !== 'pending'"
+          :span="2"
+          label="审批"
+        >
+          {{ detailFlow.approver_name || "-" }}
+          {{ detailFlow.status === "approved" ? "通过" : "驳回"
+          }}{{
+            detailFlow.handle_comment ? `（${detailFlow.handle_comment}）` : ""
+          }}
+          {{ (detailFlow.handled_at || "").replace("T", " ") }}
+        </el-descriptions-item>
+      </el-descriptions>
+      <template #footer>
+        <el-button
+          type="primary"
+          plain
+          @click="detailFlow && onCopy(detailFlow)"
+        >
+          复制（含链接）
+        </el-button>
+        <el-button @click="detailVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-// 借用审批页：借用电子流列表 + 复制 + 通过/驳回（独立页面，与版本策略全景页不绑定）
+// 借用审批页：借用电子流列表 + 复制（含直达链接）+ 通过/驳回（独立页面，与版本策略全景页不绑定）
 import { computed, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   approveBorrowFlow,
+  borrowFlowUrl,
   BORROW_STATUS_TEXT,
   formatBorrowFlowText,
   listBorrowFlows,
@@ -128,11 +200,15 @@ import { getCurrentUser } from "@/utils/business";
 defineOptions({ name: "BorrowFlowIndex" });
 
 const currentUser = getCurrentUser();
+const route = useRoute();
 
 const loading = ref(false);
 const flows = ref<BorrowFlowItem[]>([]);
 const statusFilter = ref<BorrowFlowItem["status"] | undefined>(undefined);
 const onlyMine = ref(false);
+// 直达链接打开的只读详情
+const detailVisible = ref(false);
+const detailFlow = ref<BorrowFlowItem | null>(null);
 
 /** 审批权限：admin 全部；pm 仅来源版本为自己的电子流 */
 function canApprove(flow: BorrowFlowItem): boolean {
@@ -164,12 +240,12 @@ function statusTag(status: BorrowFlowItem["status"]) {
       : "danger";
 }
 
-/** 复制电子流内容为纯文本，便于粘贴发给审核人员 */
+/** 复制电子流内容为纯文本（含可直达该条的审批链接），便于粘贴发给审核人员快速定位 */
 async function onCopy(flow: BorrowFlowItem) {
-  const text = formatBorrowFlowText(flow);
+  const text = formatBorrowFlowText(flow, borrowFlowUrl(flow.id));
   try {
     await navigator.clipboard.writeText(text);
-    ElMessage.success("电子流内容已复制到剪贴板");
+    ElMessage.success("电子流内容（含审批链接）已复制到剪贴板");
   } catch {
     // 剪贴板 API 不可用时降级为手动复制
     ElMessageBox.alert(
@@ -209,7 +285,22 @@ async function onReject(flow: BorrowFlowItem) {
   await load();
 }
 
-onMounted(load);
+/** 打开某条电子流的只读详情（供直达链接定位查看） */
+function openDetail(flow: BorrowFlowItem) {
+  detailFlow.value = flow;
+  detailVisible.value = true;
+}
+
+onMounted(async () => {
+  await load();
+  // 支持 ?focus=<id> 直达：自动定位并打开对应电子流详情
+  const focus = Number(route.query.focus);
+  if (focus) {
+    const target = flows.value.find(f => f.id === focus);
+    if (target) openDetail(target);
+    else ElMessage.warning(`未找到电子流 #${focus}`);
+  }
+});
 </script>
 
 <style scoped lang="scss">
