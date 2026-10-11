@@ -20,13 +20,25 @@ const users = ref<UserInfo[]>([]);
 const templates = ref<TemplateItem[]>([]);
 
 async function loadVersions() {
-  versions.value = await adminApi.getVersions();
+  try {
+    versions.value = await adminApi.getVersions();
+  } catch {
+    versions.value = []; // 失败已由拦截器提示；各 loader 自兜底，Promise.all 不再一损俱损
+  }
 }
 async function loadUsers() {
-  users.value = await adminApi.getUsers();
+  try {
+    users.value = await adminApi.getUsers();
+  } catch {
+    users.value = [];
+  }
 }
 async function loadTemplates() {
-  templates.value = await adminApi.getTemplates();
+  try {
+    templates.value = await adminApi.getTemplates();
+  } catch {
+    templates.value = [];
+  }
 }
 
 onMounted(async () => {

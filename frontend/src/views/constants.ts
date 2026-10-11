@@ -26,6 +26,51 @@ export function reportStatusMeta(code: string): TagMeta {
   return reportStatusMap[code] || { text: code, type: "info" };
 }
 
+// ---- 借用电子流状态（BorrowFlow.status）----
+export const borrowStatusMap: Record<string, TagMeta> = {
+  pending: { text: "待审批", type: "warning" },
+  approved: { text: "已通过", type: "success" },
+  rejected: { text: "已驳回", type: "danger" }
+};
+
+export function borrowStatusMeta(code: string): TagMeta {
+  return borrowStatusMap[code] || { text: code, type: "info" };
+}
+
+// ---- 分支权限角色（BranchPermission.role）----
+export const branchRoleMap: Record<string, TagMeta> = {
+  VIEWER: { text: "查看者", type: "info" },
+  OPERATOR: { text: "操作者", type: "primary" },
+  ADMIN: { text: "管理员", type: "warning" }
+};
+
+export function branchRoleMeta(code: string): TagMeta {
+  return branchRoleMap[code] || { text: code, type: "info" };
+}
+
+// ---- 分支实例状态（Instance.status）----
+export const instanceStatusMap: Record<string, TagMeta> = {
+  STARTING: { text: "启动中", type: "primary" },
+  RUNNING: { text: "运行中", type: "success" },
+  STOPPED: { text: "已停止", type: "info" },
+  ERROR: { text: "异常", type: "danger" }
+};
+
+export function instanceStatusMeta(code: string): TagMeta {
+  return instanceStatusMap[code] || { text: code, type: "info" };
+}
+
+// ---- 报告修订动作 → tag 颜色（ReportRevisionLog.action）----
+export const revisionTagTypeMap: Record<string, TagMeta["type"]> = {
+  create: "info",
+  update: "warning",
+  publish: "success"
+};
+
+export function revisionTagType(action: string): TagMeta["type"] {
+  return revisionTagTypeMap[action] || "info";
+}
+
 // ---- 用户角色中文标签（User.ROLE_CHOICES）----
 export const roleTextMap: Record<Role, string> = {
   admin: "管理员",

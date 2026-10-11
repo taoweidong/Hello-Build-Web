@@ -18,6 +18,7 @@ import { getCurrentUser, formatTime } from "@/utils/business";
 import { useReportForm } from "@/composables/useReportForm";
 import { useStrategyOptions } from "@/composables/useStrategyOptions";
 import { copyText } from "@/utils/clipboard";
+import { appHashUrl } from "@/utils/appUrl";
 import { reportConclusionMeta, reportStatusMeta } from "@/views/constants";
 
 // 图标：~icons/ri（Remix Icon）+ ~icons/ep（Element Plus Icon）
@@ -116,27 +117,8 @@ function cancelEdit() {
 // ---- 卡片数据源（编辑态实时预览，保证截图目标恒存在）----
 const cardData = computed(() => {
   const base = report.value;
-  if (editing.value || isNew.value) {
-    return {
-      title: form.title.trim() || "（未填写标题）",
-      version_name: form.version_name || null,
-      strategy_name: form.strategy_name || null,
-      conclusion: form.conclusion,
-      status: base?.status || "draft",
-      environment: form.environment,
-      summary: form.summary,
-      risks: form.risks,
-      remark: form.remark,
-      created_by_username:
-        base?.created_by_username || currentUser?.username || "",
-      created_at: base?.created_at || new Date().toISOString(),
-      published_at: base?.published_at || null,
-      publish_count: base?.publish_count || 0,
-      is_updated: base?.is_updated || false,
-      update_count: base?.update_count || 0
-    };
-  }
-  return {
+  // 只读字段统一从基准报告兜底（两分支曾逐字段重复 15 项，收敛为展开合并）
+  const readonlyData = {
     title: base?.title || "",
     version_name: base?.version_name || null,
     strategy_name: base?.strategy_name || null,
@@ -152,6 +134,23 @@ const cardData = computed(() => {
     publish_count: base?.publish_count || 0,
     is_updated: base?.is_updated || false,
     update_count: base?.update_count || 0
+  };
+  if (!editing.value && !isNew.value) return readonlyData;
+  // 编辑/新建态：表单可编辑字段实时覆盖
+  return {
+    ...readonlyData,
+    title: form.title.trim() || "（未填写标题）",
+    version_name: form.version_name || null,
+    strategy_name: form.strategy_name || null,
+    conclusion: form.conclusion,
+    status: base?.status || "draft",
+    environment: form.environment,
+    summary: form.summary,
+    risks: form.risks,
+    remark: form.remark,
+    created_by_username:
+      base?.created_by_username || currentUser?.username || "",
+    created_at: base?.created_at || new Date().toISOString()
   };
 });
 
@@ -342,9 +341,7 @@ async function copyReport() {
 }
 
 // ---- 复制链接 ----
-const reportLink = computed(
-  () => `${window.location.origin}/#/report/detail/${routeId.value}`
-);
+const reportLink = computed(() => appHashUrl(`/report/detail/${routeId.value}`));
 async function copyLink() {
   const ok = await copyText(reportLink.value);
   if (ok) {

@@ -13,7 +13,7 @@ describe("useReportForm", () => {
     warnings.length = 0;
   });
 
-  it("initNewForm 重置全部字段；开发环境预填演示内容", () => {
+  it("initNewForm 重置全部字段（不再预填演示假数据）", () => {
     const { form, initNewForm } = useReportForm();
     form.title = "旧标题";
     form.summary = "旧内容";
@@ -21,11 +21,9 @@ describe("useReportForm", () => {
     expect(form.version_name).toBeNull();
     expect(form.strategy_name).toBeNull();
     expect(form.conclusion).toBe("pass");
-    if (import.meta.env.DEV) {
-      expect(form.title).toBe("27A 冒烟验证报告");
-    } else {
-      expect(form.title).toBe("");
-    }
+    expect(form.title).toBe("");
+    expect(form.summary).toBe("");
+    expect(form.environment).toBe("");
   });
 
   it("fillForm 从报告回填", () => {

@@ -1,7 +1,12 @@
 // 策略配置 API 模块
 // 契约基准：设计文档 7.2 strategies 接口
 import http from "@/api/http";
-import type { StrategyItem, Timeline, ConflictInfo } from "@/api/types";
+import type {
+  StrategyItem,
+  Timeline,
+  ConflictInfo,
+  PushMode
+} from "@/api/types";
 
 /** 策略表单 */
 export interface StrategyForm {
@@ -9,7 +14,7 @@ export interface StrategyForm {
   template_id: number;
   name: string;
   build_start_time: string;
-  push_mode: string;
+  push_mode: PushMode;
   push_start_time?: string | null;
   enabled: boolean;
 }

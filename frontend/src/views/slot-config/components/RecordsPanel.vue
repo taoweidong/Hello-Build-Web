@@ -74,7 +74,6 @@
       >
         <el-option label="已抢占" value="reserved" />
         <el-option label="已释放" value="released" />
-        <el-option label="已过期" value="expired" />
       </el-select>
       <el-button size="small" text @click="resetFilters">重置</el-button>
     </div>
@@ -160,7 +159,8 @@ const dateRange = ref<[string, string] | null>(null);
 const versionId = ref<number | null>(null);
 const branchId = ref<number | null>(null);
 const userId = ref<number | null>(null);
-const status = ref<string>("");
+// 状态筛选与后端值域对齐（expired 已随死枚举清理，过期由前端按日期置灰）
+const status = ref<"" | "reserved" | "released">("");
 
 const versionOptions = ref<Awaited<ReturnType<typeof getPlan>>>([]);
 const userOptions = ref<Awaited<ReturnType<typeof getUsersAll>>>([]);

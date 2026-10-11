@@ -207,6 +207,7 @@ import {
 import ProjectsPanel from "./components/ProjectsPanel.vue";
 import StartupConfigForm from "./components/StartupConfigForm.vue";
 import InstancesPanel from "./components/InstancesPanel.vue";
+import { branchRoleMeta } from "@/views/constants";
 
 // ---------- 分支列表 ----------
 const branches = ref<BranchItem[]>([]);
@@ -460,7 +461,9 @@ async function startInstance(bpId: number) {
   startingId.value = bpId;
   try {
     const inst = await startBranchProject(bpId);
-    ElMessage.success(`已发起启动（pid=${inst.pid}）`);
+    ElMessage.success(
+      `已发起启动${inst.pid ? `（pid=${inst.pid}）` : ""}`
+    );
     await refreshAfterOp();
   } finally {
     startingId.value = null;
@@ -527,22 +530,12 @@ async function removePermission(perm: PermissionItem) {
   await loadConfig();
 }
 
-// ---------- 权限文案 ----------
-const ROLE_LABEL: Record<BranchRole, string> = {
-  VIEWER: "查看者",
-  OPERATOR: "操作者",
-  ADMIN: "管理员"
-};
-const ROLE_TAG: Record<BranchRole, "info" | "primary" | "warning"> = {
-  VIEWER: "info",
-  OPERATOR: "primary",
-  ADMIN: "warning"
-};
+// ---------- 权限文案（映射唯一来源在 views/constants） ----------
 function permLabel(r: BranchRole): string {
-  return ROLE_LABEL[r] ?? r;
+  return branchRoleMeta(r).text;
 }
-function permTagType(r: BranchRole): "info" | "primary" | "warning" {
-  return ROLE_TAG[r] ?? "info";
+function permTagType(r: BranchRole) {
+  return branchRoleMeta(r).type;
 }
 </script>
 

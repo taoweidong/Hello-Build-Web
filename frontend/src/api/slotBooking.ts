@@ -21,7 +21,8 @@ export interface SlotTemplateItem {
 /** 抢占详情（日历芯片 / 释放响应） */
 export interface BookingItem {
   id: number;
-  status: "reserved" | "released" | "expired";
+  // 过期不落库（后端惰性过期设计）：状态仅 reserved/released，过期由前端按日期置灰
+  status: "reserved" | "released";
   user_name: string;
   purpose: string;
   version_id: number;
@@ -92,7 +93,7 @@ export interface BookingQuery {
   version_id?: number;
   branch_id?: number;
   user_id?: number;
-  status?: string;
+  status?: BookingItem["status"];
 }
 
 // ---- 模板 ----

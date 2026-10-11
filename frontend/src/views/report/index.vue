@@ -8,8 +8,13 @@ import { getReportRevisions, getReports, type ReportQuery } from "@/api/report";
 import type { ReportItem, ReportRevisionItem } from "@/api/types";
 import { getCurrentUser, formatTime } from "@/utils/business";
 import { copyText } from "@/utils/clipboard";
+import { appHashUrl } from "@/utils/appUrl";
 import { useStrategyOptions } from "@/composables/useStrategyOptions";
-import { reportConclusionMeta, reportStatusMeta } from "@/views/constants";
+import {
+  reportConclusionMeta,
+  reportStatusMeta,
+  revisionTagType
+} from "@/views/constants";
 
 defineOptions({ name: "ReportIndex" });
 
@@ -48,6 +53,8 @@ async function load() {
   loading.value = true;
   try {
     list.value = await getReports({ ...filter });
+  } catch {
+    list.value = []; // 失败已由拦截器提示，清空避免旧数据误导
   } finally {
     loading.value = false;
   }
@@ -61,9 +68,9 @@ function statusTag(s: string) {
   return reportStatusMeta(s);
 }
 // ---- 操作 ----
-// 深链接：hash 路由下浏览器地址即 {origin}/#/report/detail/{id}
-const reportLink = (id: number) =>
-  `${window.location.origin}/#/report/detail/${id}`;
+// 深链接：hash 路由下浏览器地址即 {origin}{pathname}#/report/detail/{id}
+// （经 appHashUrl 统一拼接，子路径部署不断链）
+const reportLink = (id: number) => appHashUrl(`/report/detail/${id}`);
 
 async function copyLink(row: ReportItem) {
   const url = reportLink(row.id);
@@ -79,13 +86,9 @@ async function copyLink(row: ReportItem) {
 const revisionsVisible = ref(false);
 const revisionsLoading = ref(false);
 const revisionsList = ref<ReportRevisionItem[]>([]);
-const revisionTagMap: Record<string, "info" | "warning" | "success"> = {
-  create: "info",
-  update: "warning",
-  publish: "success"
-};
+// 修订动作 tag 映射唯一来源在 views/constants
 function revisionTag(r: ReportRevisionItem) {
-  return revisionTagMap[r.action] || "info";
+  return revisionTagType(r.action);
 }
 async function viewRevisions(row: ReportItem) {
   revisionsVisible.value = true;

@@ -131,7 +131,6 @@ import dayjs from "dayjs";
 import { ElMessage } from "element-plus";
 import ArrowLeft from "~icons/ep/arrow-left";
 import ArrowRight from "~icons/ep/arrow-right";
-import { useUserStoreHook } from "@/store/modules/user";
 import {
   getSlotCalendar,
   type CalendarDayCell,
@@ -143,13 +142,14 @@ import BookingDialog from "./components/BookingDialog.vue";
 import SlotDetailDialog from "./components/SlotDetailDialog.vue";
 import DayDetailDialog from "./components/DayDetailDialog.vue";
 import MyBookingsDrawer from "./components/MyBookingsDrawer.vue";
+import { getCurrentUser } from "@/utils/business";
 
 defineOptions({ name: "SlotBookingIndex" });
 
 const route = useRoute();
 const router = useRouter();
-const userStore = useUserStoreHook();
-const isAdmin = computed(() => userStore.roles?.includes("admin"));
+// 业务身份统一取 localStorage 快照（与其余业务页一致，避免 pinia/快照双源）
+const isAdmin = computed(() => getCurrentUser()?.role === "admin");
 
 const loading = ref(false);
 const loadError = ref("");

@@ -46,7 +46,7 @@ describe("api/strategy 契约", () => {
       template_id: 2,
       name: "s",
       build_start_time: "22:00",
-      push_mode: "normal",
+      push_mode: "normal" as const,
       enabled: true
     };
     await previewStrategy(form);
@@ -59,7 +59,7 @@ describe("api/strategy 契约", () => {
       template_id: 2,
       name: "s",
       build_start_time: "22:00",
-      push_mode: "normal",
+      push_mode: "normal" as const,
       enabled: true
     };
     await createStrategy(form);
@@ -97,7 +97,11 @@ describe("api/report 契约", () => {
     });
     await getReport(7);
     expect(httpMock.get).toHaveBeenCalledWith("/reports/7");
-    const form = { title: "t", conclusion: "pass", summary: "s" };
+    const form = {
+      title: "t",
+      conclusion: "pass" as const,
+      summary: "s"
+    };
     await createReport(form);
     expect(httpMock.post).toHaveBeenCalledWith("/reports", form);
     await updateReport(7, form);

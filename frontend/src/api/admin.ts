@@ -1,11 +1,14 @@
 // 系统管理 API 模块（前缀 /api/admin，写操作均写管理操作日志）
 // 契约基准：设计文档 7.2 admin 接口
 import http from "@/api/http";
+import type { StrategyForm } from "@/api/strategy";
 import type {
   VersionItem,
   UserInfo,
   TemplateItem,
-  GlobalConfig
+  GlobalConfig,
+  Role,
+  StrategyItem
 } from "@/api/types";
 
 export const adminApi = {
@@ -24,13 +27,13 @@ export const adminApi = {
     username: string;
     password: string;
     display_name?: string;
-    role: string;
+    role: Role;
   }): Promise<UserInfo> => http.post("/admin/users", d),
   updateUser: (
     id: number,
     d: {
       display_name?: string;
-      role?: string;
+      role?: Role;
       is_active?: boolean;
       password?: string;
     }
@@ -65,16 +68,16 @@ export const adminApi = {
   getAdminStrategies: (params?: {
     version_id?: number;
     branch_id?: number;
-  }): Promise<import("@/api/types").StrategyItem[]> =>
+  }): Promise<StrategyItem[]> =>
     http.get("/admin/strategies", { params }),
-  createAdminStrategy: (d: import("./strategy").StrategyForm): Promise<import("@/api/types").StrategyItem> =>
+  createAdminStrategy: (d: StrategyForm): Promise<StrategyItem> =>
     http.post("/admin/strategies", d),
   updateAdminStrategy: (
     id: number,
-    d: import("./strategy").StrategyForm
-  ): Promise<import("@/api/types").StrategyItem> =>
+    d: StrategyForm
+  ): Promise<StrategyItem> =>
     http.patch(`/admin/strategies/${id}`, d),
-  toggleAdminStrategy: (id: number): Promise<import("@/api/types").StrategyItem> =>
+  toggleAdminStrategy: (id: number): Promise<StrategyItem> =>
     http.patch(`/admin/strategies/${id}/toggle`),
   deleteAdminStrategy: (id: number): Promise<void> =>
     http.delete(`/admin/strategies/${id}`)

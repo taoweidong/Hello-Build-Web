@@ -70,6 +70,8 @@ async function loadExec() {
       version_id: execFilter.version_id,
       branch_id: execFilter.branch_id
     });
+  } catch {
+    execLogs.value = []; // 失败已由拦截器提示，清空避免旧数据误导
   } finally {
     loading.value = false;
   }
@@ -82,6 +84,8 @@ async function loadChanges() {
       from: range.value[0],
       to: range.value[1]
     });
+  } catch {
+    changeLogs.value = [];
   } finally {
     loading.value = false;
   }
@@ -89,18 +93,26 @@ async function loadChanges() {
 
 async function loadOps() {
   if (!isAdmin) return;
-  opLogs.value = await logsApi.operations({
-    from: range.value[0],
-    to: range.value[1]
-  });
+  try {
+    opLogs.value = await logsApi.operations({
+      from: range.value[0],
+      to: range.value[1]
+    });
+  } catch {
+    opLogs.value = []; // 失败已由拦截器提示
+  }
 }
 
 async function loadSecurity() {
   if (!isAdmin) return;
-  securityLogs.value = await logsApi.security({
-    from: range.value[0],
-    to: range.value[1]
-  });
+  try {
+    securityLogs.value = await logsApi.security({
+      from: range.value[0],
+      to: range.value[1]
+    });
+  } catch {
+    securityLogs.value = [];
+  }
 }
 
 function onTabChange(name: string) {

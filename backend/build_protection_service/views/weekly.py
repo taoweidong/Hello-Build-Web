@@ -62,6 +62,7 @@ def weekly_view(request):
                     "branch_name": b.name,
                     "build_start_time": s.build_start_time,
                     "push_start_time": s.push_start_time,
+                    "push_mode": s.push_mode,
                     "template_name": s.template.name,
                 })
     return json_resp(ok({

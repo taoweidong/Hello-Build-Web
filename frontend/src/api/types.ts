@@ -209,6 +209,7 @@ export interface WeeklyStrategy {
   branch_name: string;
   build_start_time: string; // "HH:mm"
   push_start_time?: string | null;
+  push_mode: PushMode;
   template_name: string;
 }
 

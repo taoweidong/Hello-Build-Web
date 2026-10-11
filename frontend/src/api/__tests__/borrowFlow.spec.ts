@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/api/http", () => ({ default: { get: vi.fn(), post: vi.fn() } }));
 
-import { formatBorrowFlowText, type BorrowFlowItem } from "@/api/borrowFlow";
+import type { BorrowFlowItem } from "@/api/borrowFlow";
+import { formatBorrowFlowText } from "@/views/borrow-flow/format";
 
 function makeFlow(overrides: Partial<BorrowFlowItem> = {}): BorrowFlowItem {
   return {

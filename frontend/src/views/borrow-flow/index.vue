@@ -53,8 +53,8 @@
         </el-table-column>
         <el-table-column label="状态" width="96">
           <template #default="{ row }">
-            <el-tag :type="statusTag(row.status)" size="small">
-              {{ BORROW_STATUS_TEXT[row.status as BorrowFlowItem["status"]] }}
+            <el-tag :type="borrowStatusMeta(row.status).type" size="small">
+              {{ borrowStatusMeta(row.status).text }}
             </el-tag>
           </template>
         </el-table-column>
@@ -124,8 +124,8 @@
           >#{{ detailFlow.id }}</el-descriptions-item
         >
         <el-descriptions-item label="状态">
-          <el-tag :type="statusTag(detailFlow.status)" size="small">
-            {{ BORROW_STATUS_TEXT[detailFlow.status] }}
+          <el-tag :type="borrowStatusMeta(detailFlow.status).type" size="small">
+            {{ borrowStatusMeta(detailFlow.status).text }}
           </el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="策略（来源）" :span="2">
@@ -189,12 +189,12 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import {
   approveBorrowFlow,
   borrowFlowUrl,
-  BORROW_STATUS_TEXT,
-  formatBorrowFlowText,
   listBorrowFlows,
   rejectBorrowFlow,
   type BorrowFlowItem
 } from "@/api/borrowFlow";
+import { formatBorrowFlowText } from "./format";
+import { borrowStatusMeta } from "@/views/constants";
 import { getCurrentUser } from "@/utils/business";
 import { copyText } from "@/utils/clipboard";
 
@@ -228,17 +228,11 @@ async function load() {
   loading.value = true;
   try {
     flows.value = await listBorrowFlows(statusFilter.value);
+  } catch {
+    flows.value = []; // 失败已由拦截器提示，清空避免旧数据误导
   } finally {
     loading.value = false;
   }
-}
-
-function statusTag(status: BorrowFlowItem["status"]) {
-  return status === "pending"
-    ? "warning"
-    : status === "approved"
-      ? "success"
-      : "danger";
 }
 
 /** 复制电子流内容为纯文本（含可直达该条的审批链接），便于粘贴发给审核人员快速定位 */
@@ -259,28 +253,46 @@ async function onCopy(flow: BorrowFlowItem) {
 }
 
 async function onApprove(flow: BorrowFlowItem) {
-  await ElMessageBox.confirm(
-    `通过后将立即在 ${flow.target_version_name}/${flow.target_branch_name} 按新时间 ${flow.new_build_time} 创建借用策略（若与目标版本既有安排冲突将无法通过）`,
-    "通过借用申请",
-    { type: "warning", confirmButtonText: "确认通过", cancelButtonText: "取消" }
-  );
-  await approveBorrowFlow(flow.id);
+  try {
+    await ElMessageBox.confirm(
+      `通过后将立即在 ${flow.target_version_name}/${flow.target_branch_name} 按新时间 ${flow.new_build_time} 创建借用策略（若与目标版本既有安排冲突将无法通过）`,
+      "通过借用申请",
+      { type: "warning", confirmButtonText: "确认通过", cancelButtonText: "取消" }
+    );
+  } catch {
+    return; // 用户取消
+  }
+  try {
+    await approveBorrowFlow(flow.id);
+  } catch {
+    await load(); // 失败已由拦截器提示（如 40901 冲突保持待审批），刷新同步真实状态
+    return;
+  }
   ElMessage.success("已通过并创建借用策略");
   await load();
 }
 
 async function onReject(flow: BorrowFlowItem) {
-  const { value } = await ElMessageBox.prompt(
-    "请填写驳回意见（必填）",
-    "驳回借用申请",
-    {
-      type: "warning",
-      confirmButtonText: "确认驳回",
-      cancelButtonText: "取消",
-      inputValidator: (v: string) => (v && v.trim() ? true : "驳回意见不能为空")
-    }
-  );
-  await rejectBorrowFlow(flow.id, value.trim());
+  let value: string;
+  try {
+    ({ value } = await ElMessageBox.prompt(
+      "请填写驳回意见（必填）",
+      "驳回借用申请",
+      {
+        type: "warning",
+        confirmButtonText: "确认驳回",
+        cancelButtonText: "取消",
+        inputValidator: (v: string) => (v && v.trim() ? true : "驳回意见不能为空")
+      }
+    ));
+  } catch {
+    return; // 用户取消
+  }
+  try {
+    await rejectBorrowFlow(flow.id, value.trim());
+  } catch {
+    return; // 失败已由拦截器提示
+  }
   ElMessage.success("已驳回");
   await load();
 }

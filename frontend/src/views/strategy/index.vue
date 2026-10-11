@@ -4,7 +4,7 @@
 import { ref, reactive, computed, watch, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
-import http from "@/api/http";
+import { adminApi } from "@/api/admin";
 import {
   getStrategies,
   createStrategy,
@@ -15,7 +15,7 @@ import {
 import { useStrategyPreview } from "@/composables/useStrategyPreview";
 import { getPlan } from "@/api/plan";
 import type { StrategyItem, TemplateItem } from "@/api/types";
-import { getCurrentUser, dayjs } from "@/utils/business";
+import { getCurrentUser, dayjs, parseTime, timeToMs } from "@/utils/business";
 import { STAGE_COLORS } from "@/components/gantt/types";
 
 defineOptions({ name: "StrategyIndex" });
@@ -79,6 +79,8 @@ async function load() {
   loading.value = true;
   try {
     strategyList.value = await getStrategies({ version_id: boundVersionId });
+  } catch {
+    strategyList.value = []; // 失败已由拦截器提示，清空避免旧数据误导
   } finally {
     loading.value = false;
   }
@@ -100,9 +102,7 @@ async function loadMeta() {
   }
   // 模板列表：优先 /admin/templates，失败降级从现有策略提取
   try {
-    templateOptions.value = (await http.get(
-      "/admin/templates"
-    )) as TemplateItem[];
+    templateOptions.value = await adminApi.getTemplates();
   } catch {
     const set = new Map<number, TemplateItem>();
     strategyList.value.forEach(s => {
@@ -164,21 +164,29 @@ async function onSave() {
     );
     return;
   }
-  await ElMessageBox.confirm("确认保存该策略配置？", "保存策略", {
-    type: "warning",
-    confirmButtonText: "确认保存",
-    cancelButtonText: "取消"
-  });
+  try {
+    await ElMessageBox.confirm("确认保存该策略配置？", "保存策略", {
+      type: "warning",
+      confirmButtonText: "确认保存",
+      cancelButtonText: "取消"
+    });
+  } catch {
+    return; // 用户取消（confirm 以 reject 形式返回，裸 await 会产生未处理 rejection）
+  }
   const payload = {
     ...form,
     push_start_time: form.push_start_time || null
   };
-  if (isEditing.value) {
-    await updateStrategy(editingId.value as number, { ...payload });
-    ElMessage.success("策略已更新");
-  } else {
-    await createStrategy({ ...payload });
-    ElMessage.success("策略已创建");
+  try {
+    if (isEditing.value) {
+      await updateStrategy(editingId.value as number, { ...payload });
+      ElMessage.success("策略已更新");
+    } else {
+      await createStrategy({ ...payload });
+      ElMessage.success("策略已创建");
+    }
+  } catch {
+    return; // 失败已由拦截器提示，保留表单便于修改重试
   }
   await load();
   startNew();
@@ -212,11 +220,11 @@ const previewPhases = computed(() => {
   ].filter(x => x.t);
   if (list.length === 0) return [];
   const startMs = list.reduce(
-    (min, x) => Math.min(min, new Date(x.t.start).getTime()),
+    (min, x) => Math.min(min, timeToMs(x.t.start)),
     Infinity
   );
   const endMs = list.reduce(
-    (max, x) => Math.max(max, new Date(x.t.end).getTime()),
+    (max, x) => Math.max(max, timeToMs(x.t.end)),
     -Infinity
   );
   const total = Math.max(endMs - startMs, 1);
@@ -225,10 +233,10 @@ const previewPhases = computed(() => {
     label: x.label,
     start: x.t.start,
     end: x.t.end,
-    left: ((new Date(x.t.start).getTime() - startMs) / total) * 100,
+    left: ((timeToMs(x.t.start) - startMs) / total) * 100,
     width:
       (Math.max(
-        new Date(x.t.end).getTime() - new Date(x.t.start).getTime(),
+        timeToMs(x.t.end) - timeToMs(x.t.start),
         1
       ) /
         total) *
@@ -238,7 +246,7 @@ const previewPhases = computed(() => {
 });
 
 function fmtPreview(t: string) {
-  return dayjs(new Date(t)).format("MM-DD HH:mm");
+  return dayjs(parseTime(t)).format("MM-DD HH:mm");
 }
 
 onMounted(async () => {

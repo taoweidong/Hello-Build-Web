@@ -1,12 +1,17 @@
 import http from "@/api/http";
-import type { ReportItem, ReportRevisionItem } from "@/api/types";
+import type {
+  ReportConclusion,
+  ReportItem,
+  ReportRevisionItem,
+  ReportStatus
+} from "@/api/types";
 
 /** 报告表单：版本/策略为文本快照（无外键，发布后可改，结论发布后锁定） */
 export interface ReportForm {
   title: string;
   version_name?: string | null;
   strategy_name?: string | null;
-  conclusion: string;
+  conclusion: ReportConclusion;
   environment?: string;
   summary: string;
   risks?: string;
@@ -15,7 +20,7 @@ export interface ReportForm {
 
 /** 报告列表查询（django-filter：status 精确 + 版本/策略包含 + 关键词） */
 export interface ReportQuery {
-  status?: string;
+  status?: ReportStatus;
   version_name?: string;
   strategy_name?: string;
   keyword?: string;

@@ -4,6 +4,7 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { adminApi } from "@/api/admin";
 import type { StrategyItem, TemplateItem, VersionItem } from "@/api/types";
+import type { StrategyForm } from "@/api/strategy";
 import { useStrategyPreview } from "@/composables/useStrategyPreview";
 
 defineOptions({ name: "AdminStrategiesTab" });
@@ -17,7 +18,7 @@ const adminStrategies = ref<StrategyItem[]>([]);
 const adminVersionId = ref<number | undefined>(undefined);
 const adminBranchId = ref<number | undefined>(undefined);
 const adminStrategyDialog = ref(false);
-const adminStrategyForm = reactive({
+const adminStrategyForm = reactive<StrategyForm>({
   branch_id: 0,
   template_id: 0,
   name: "",
@@ -164,12 +165,20 @@ async function toggleAdminStrategy(s: StrategyItem) {
 }
 
 async function deleteAdminStrategy(s: StrategyItem) {
-  await ElMessageBox.confirm(
-    `确认删除策略「${s.name}」？将级联清理其关联执行数据。`,
-    "删除策略",
-    { type: "warning", confirmButtonText: "确认删除", cancelButtonText: "取消" }
-  );
-  await adminApi.deleteAdminStrategy(s.id);
+  try {
+    await ElMessageBox.confirm(
+      `确认删除策略「${s.name}」？将级联清理其关联执行数据。`,
+      "删除策略",
+      { type: "warning", confirmButtonText: "确认删除", cancelButtonText: "取消" }
+    );
+  } catch {
+    return; // 用户取消
+  }
+  try {
+    await adminApi.deleteAdminStrategy(s.id);
+  } catch {
+    return; // 失败已由拦截器提示
+  }
   ElMessage.success("策略已删除");
   loadAdminStrategies();
 }

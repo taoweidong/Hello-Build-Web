@@ -16,7 +16,10 @@ export function useReportForm() {
     remark: ""
   });
 
-  /** 新建态初始化：重置全部字段；开发环境预填演示内容便于快速成稿与截图联调 */
+  /** 新建态初始化：重置全部字段。
+
+  不预填任何演示内容——旧实现在 DEV 下预填假报告，「新建→直接发布」会把
+  假数据一键落库（2026-10-12 质量评估 F-P2-17）。 */
   function initNewForm() {
     form.title = "";
     form.version_name = null;
@@ -26,14 +29,6 @@ export function useReportForm() {
     form.summary = "";
     form.risks = "";
     form.remark = "";
-    if (import.meta.env.DEV) {
-      form.title = "27A 冒烟验证报告";
-      form.environment = "测试环境（27A 预发）";
-      form.summary =
-        "针对 27A 版本冒烟策略执行完整验证：核心流程用例 12 项全部通过，未出现阻断性问题。";
-      form.risks = "存在 1 项中风险：附件上传偶发延迟（已提单跟踪）。";
-      form.remark = "建议次日回归确认风险项后放行发布。";
-    }
   }
 
   function fillForm(r: ReportItem) {

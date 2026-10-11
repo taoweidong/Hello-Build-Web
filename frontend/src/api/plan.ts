@@ -2,13 +2,13 @@
 // 契约基准：设计文档 7.2 GET /api/plan?date=
 // 甘特看板聚合：版本 → 分支 → 策略 → 各阶段时间区间 + 冲突标记
 import http from "@/api/http";
-import type { Timeline } from "@/api/types";
+import type { PushMode, Timeline } from "@/api/types";
 
 /** 甘特看板策略行 */
 export interface PlanStrategy {
   id: number;
   name: string;
-  push_mode: string;
+  push_mode: PushMode;
   build_start_time: string;
   push_start_time?: string | null;
   enabled: boolean;

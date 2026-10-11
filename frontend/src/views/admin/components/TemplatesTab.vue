@@ -44,34 +44,46 @@ async function saveTemplate() {
     ElMessage.warning("请输入模板名称");
     return;
   }
-  if (templateForm.id) {
-    await adminApi.updateTemplate(templateForm.id, {
-      name: templateForm.name,
-      smoke_minutes: templateForm.smoke_minutes,
-      analysis_minutes: templateForm.analysis_minutes,
-      description: templateForm.description
-    });
-    ElMessage.success("模板已更新");
-  } else {
-    await adminApi.createTemplate({
-      name: templateForm.name,
-      smoke_minutes: templateForm.smoke_minutes,
-      analysis_minutes: templateForm.analysis_minutes,
-      description: templateForm.description
-    });
-    ElMessage.success("模板已创建");
+  try {
+    if (templateForm.id) {
+      await adminApi.updateTemplate(templateForm.id, {
+        name: templateForm.name,
+        smoke_minutes: templateForm.smoke_minutes,
+        analysis_minutes: templateForm.analysis_minutes,
+        description: templateForm.description
+      });
+      ElMessage.success("模板已更新");
+    } else {
+      await adminApi.createTemplate({
+        name: templateForm.name,
+        smoke_minutes: templateForm.smoke_minutes,
+        analysis_minutes: templateForm.analysis_minutes,
+        description: templateForm.description
+      });
+      ElMessage.success("模板已创建");
+    }
+  } catch {
+    return; // 失败已由拦截器提示（如重名 40902），保留弹窗便于修改重试
   }
   templateDialog.value = false;
   emit("refresh");
 }
 
 async function deleteTemplate(t: TemplateItem) {
-  await ElMessageBox.confirm(
-    `确认删除模板「${t.name}」？被策略引用的模板不可删除。`,
-    "删除模板",
-    { type: "warning", confirmButtonText: "确认删除", cancelButtonText: "取消" }
-  );
-  await adminApi.deleteTemplate(t.id);
+  try {
+    await ElMessageBox.confirm(
+      `确认删除模板「${t.name}」？被策略引用的模板不可删除。`,
+      "删除模板",
+      { type: "warning", confirmButtonText: "确认删除", cancelButtonText: "取消" }
+    );
+  } catch {
+    return; // 用户取消
+  }
+  try {
+    await adminApi.deleteTemplate(t.id);
+  } catch {
+    return; // 失败已由拦截器提示（如 40903 被策略引用）
+  }
   ElMessage.success("模板已删除");
   emit("refresh");
 }

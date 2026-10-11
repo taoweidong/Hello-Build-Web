@@ -2,6 +2,7 @@
 // 契约：统一响应 { code, message, data }；写接口权限门槛由后端校验
 import type { AxiosRequestConfig } from "axios";
 import http from "@/api/http";
+import type { Role } from "@/api/types";
 
 /** 分支角色（与后端 BranchPermission.ROLE_CHOICES 一致） */
 export type BranchRole = "VIEWER" | "OPERATOR" | "ADMIN";
@@ -66,7 +67,7 @@ export interface UserOption {
   id: number;
   username: string;
   display_name: string;
-  role: string;
+  role: Role;
 }
 
 /** 聚合配置响应：GET /branches/{id}/config */

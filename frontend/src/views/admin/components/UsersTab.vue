@@ -3,7 +3,7 @@
 import { reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { adminApi } from "@/api/admin";
-import type { UserInfo } from "@/api/types";
+import type { Role, UserInfo } from "@/api/types";
 import { roleTextMap } from "@/views/constants";
 
 defineOptions({ name: "AdminUsersTab" });
@@ -20,7 +20,7 @@ const userForm = reactive({
   username: "",
   password: "",
   display_name: "",
-  role: "builder" as string
+  role: "builder" as Role
 });
 
 function openUserDialog(u?: UserInfo) {
@@ -45,48 +45,67 @@ async function saveUser() {
     ElMessage.warning("请输入用户名");
     return;
   }
-  if (userForm.id) {
-    await adminApi.updateUser(userForm.id, {
-      display_name: userForm.display_name,
-      role: userForm.role,
-      password: userForm.password || undefined
-    });
-    ElMessage.success("用户已更新");
-  } else {
-    if (!userForm.password) {
-      ElMessage.warning("请输入初始密码");
-      return;
+  try {
+    if (userForm.id) {
+      await adminApi.updateUser(userForm.id, {
+        display_name: userForm.display_name,
+        role: userForm.role,
+        password: userForm.password || undefined
+      });
+      ElMessage.success("用户已更新");
+    } else {
+      // 后端已强制初始密码必填（不再回退弱口令默认值）
+      if (!userForm.password) {
+        ElMessage.warning("请输入初始密码");
+        return;
+      }
+      await adminApi.createUser({
+        username: userForm.username,
+        password: userForm.password,
+        display_name: userForm.display_name,
+        role: userForm.role
+      });
+      ElMessage.success("用户已创建");
     }
-    await adminApi.createUser({
-      username: userForm.username,
-      password: userForm.password,
-      display_name: userForm.display_name,
-      role: userForm.role
-    });
-    ElMessage.success("用户已创建");
+  } catch {
+    return; // 失败已由拦截器提示（如重名 40902），保留弹窗便于修改重试
   }
   userDialog.value = false;
   emit("refresh");
 }
 
 async function toggleUser(u: UserInfo) {
-  await adminApi.updateUser(u.id, { is_active: !u.is_active });
+  try {
+    await adminApi.updateUser(u.id, { is_active: !u.is_active });
+  } catch {
+    emit("refresh"); // 失败已由拦截器提示；刷新回真实状态（开关为受控组件不残留乐观值）
+    return;
+  }
   ElMessage.success(u.is_active ? "用户已停用" : "用户已启用");
   emit("refresh");
 }
 
 async function resetPassword(u: UserInfo) {
-  const { value } = await ElMessageBox.prompt(
-    `重置用户 ${u.username} 的密码`,
-    "重置密码",
-    {
-      inputType: "password",
-      inputPlaceholder: "请输入新密码",
-      confirmButtonText: "确认",
-      cancelButtonText: "取消"
-    }
-  );
-  await adminApi.updateUser(u.id, { password: value });
+  let value: string;
+  try {
+    ({ value } = await ElMessageBox.prompt(
+      `重置用户 ${u.username} 的密码`,
+      "重置密码",
+      {
+        inputType: "password",
+        inputPlaceholder: "请输入新密码",
+        confirmButtonText: "确认",
+        cancelButtonText: "取消"
+      }
+    ));
+  } catch {
+    return; // 用户取消
+  }
+  try {
+    await adminApi.updateUser(u.id, { password: value });
+  } catch {
+    return; // 失败已由拦截器提示
+  }
   ElMessage.success("密码已重置");
 }
 </script>

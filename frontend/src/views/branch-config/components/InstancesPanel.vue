@@ -53,6 +53,7 @@
 
 <script setup lang="ts">
 import type { BranchRole, InstanceRow, InstanceStatus } from "@/api/branchConfig";
+import { instanceStatusMeta } from "@/views/constants";
 
 defineProps<{
   rows: InstanceRow[];
@@ -66,27 +67,12 @@ defineEmits<{
   (e: "stop", bpId: number): void;
 }>();
 
-/** 实例状态文案 */
-const STATUS_LABEL: Record<InstanceStatus, string> = {
-  STARTING: "启动中",
-  RUNNING: "运行中",
-  STOPPED: "已停止",
-  ERROR: "异常"
-};
-
-/** 实例状态 tag 类型 */
-const STATUS_TYPE: Record<InstanceStatus, "primary" | "success" | "info" | "danger"> = {
-  STARTING: "primary",
-  RUNNING: "success",
-  STOPPED: "info",
-  ERROR: "danger"
-};
-
+// 实例状态文案/tag 映射唯一来源在 views/constants（instanceStatusMeta）
 function statusLabel(s: InstanceStatus): string {
-  return STATUS_LABEL[s] ?? s;
+  return instanceStatusMeta(s).text;
 }
 
-function statusType(s: InstanceStatus): "primary" | "success" | "info" | "danger" {
-  return STATUS_TYPE[s] ?? "info";
+function statusType(s: InstanceStatus) {
+  return instanceStatusMeta(s).type;
 }
 </script>

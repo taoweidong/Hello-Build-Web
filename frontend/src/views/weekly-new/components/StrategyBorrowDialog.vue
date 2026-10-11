@@ -25,7 +25,7 @@
         {{ strategy?.build_start_time }}
       </el-descriptions-item>
       <el-descriptions-item label="推送模式">
-        {{ strategy?.push_start_time ? "同步推送" : "正常流程" }}
+        {{ strategy?.push_mode === "sync" ? "同步推送" : "正常流程" }}
       </el-descriptions-item>
       <el-descriptions-item label="推送时间">
         {{ strategy?.push_start_time || "结论后推导" }}
@@ -174,7 +174,7 @@ async function onOpen() {
 
 function reset() {
   form.target_version_id = undefined;
-  form.target_branch_id = 0;
+  form.target_branch_id = undefined;
   form.reason = "";
 }
 
