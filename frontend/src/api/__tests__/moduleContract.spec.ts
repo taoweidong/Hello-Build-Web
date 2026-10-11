@@ -99,7 +99,11 @@ describe("api/admin 契约", () => {
     expect(httpMock.delete).toHaveBeenCalledWith("/admin/templates/4");
     await adminApi.getConfig();
     expect(httpMock.get).toHaveBeenCalledWith("/admin/config");
-    const cfg = { build_minutes: 90, push_minutes: 30, sync_buffer_minutes: 10 };
+    const cfg = {
+      build_minutes: 90,
+      push_minutes: 30,
+      sync_buffer_minutes: 10
+    };
     await adminApi.updateConfig(cfg);
     expect(httpMock.put).toHaveBeenCalledWith("/admin/config", cfg);
   });

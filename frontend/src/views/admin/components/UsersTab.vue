@@ -121,19 +121,32 @@ async function resetPassword(u: UserInfo) {
       <el-table-column prop="username" label="用户名" width="140" />
       <el-table-column prop="display_name" label="显示名" min-width="140" />
       <el-table-column label="角色" width="120">
-        <template #default="{ row }">{{ roleTextMap[row.role] || row.role }}</template>
+        <template #default="{ row }">{{
+          roleTextMap[row.role] || row.role
+        }}</template>
       </el-table-column>
       <el-table-column label="状态" width="100">
         <template #default="{ row }">
-          <el-tag :type="row.is_active === false ? 'info' : 'success'" size="small">
+          <el-tag
+            :type="row.is_active === false ? 'info' : 'success'"
+            size="small"
+          >
             {{ row.is_active === false ? "停用" : "启用" }}
           </el-tag>
         </template>
       </el-table-column>
       <el-table-column label="操作" width="220">
         <template #default="{ row }">
-          <el-button type="primary" link size="small" @click="openUserDialog(row as UserInfo)">编辑</el-button>
-          <el-button size="small" link @click="resetPassword(row as UserInfo)">重置密码</el-button>
+          <el-button
+            type="primary"
+            link
+            size="small"
+            @click="openUserDialog(row as UserInfo)"
+            >编辑</el-button
+          >
+          <el-button size="small" link @click="resetPassword(row as UserInfo)"
+            >重置密码</el-button
+          >
           <el-button size="small" link @click="toggleUser(row as UserInfo)">
             {{ row.is_active === false ? "启用" : "停用" }}
           </el-button>

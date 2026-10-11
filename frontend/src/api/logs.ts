@@ -10,10 +10,11 @@ import type {
 
 export const logsApi = {
   /** 执行日志查询（PM 限本版本） */
-  execution: (
-    p: { date?: string; version_id?: number; branch_id?: number }
-  ): Promise<ExecutionLogItem[]> =>
-    http.get("/logs/execution", { params: p }),
+  execution: (p: {
+    date?: string;
+    version_id?: number;
+    branch_id?: number;
+  }): Promise<ExecutionLogItem[]> => http.get("/logs/execution", { params: p }),
 
   /** 策略变更日志（PM 限本版本） */
   changes: (p: { from?: string; to?: string }): Promise<ChangeLogItem[]> =>

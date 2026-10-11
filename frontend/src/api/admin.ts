@@ -14,10 +14,14 @@ import type {
 export const adminApi = {
   // ---- 版本与分支 ----
   getVersions: (): Promise<VersionItem[]> => http.get("/admin/versions"),
-  createVersion: (d: { name: string; pm_user_id?: number | null }): Promise<VersionItem> =>
-    http.post("/admin/versions", d),
-  updateVersion: (id: number, d: { name?: string; pm_user_id?: number | null; status?: string }): Promise<VersionItem> =>
-    http.patch(`/admin/versions/${id}`, d),
+  createVersion: (d: {
+    name: string;
+    pm_user_id?: number | null;
+  }): Promise<VersionItem> => http.post("/admin/versions", d),
+  updateVersion: (
+    id: number,
+    d: { name?: string; pm_user_id?: number | null; status?: string }
+  ): Promise<VersionItem> => http.patch(`/admin/versions/${id}`, d),
   addBranch: (vid: number, branchName: string): Promise<void> =>
     http.post(`/admin/versions/${vid}/branches`, { name: branchName }),
 
@@ -68,14 +72,10 @@ export const adminApi = {
   getAdminStrategies: (params?: {
     version_id?: number;
     branch_id?: number;
-  }): Promise<StrategyItem[]> =>
-    http.get("/admin/strategies", { params }),
+  }): Promise<StrategyItem[]> => http.get("/admin/strategies", { params }),
   createAdminStrategy: (d: StrategyForm): Promise<StrategyItem> =>
     http.post("/admin/strategies", d),
-  updateAdminStrategy: (
-    id: number,
-    d: StrategyForm
-  ): Promise<StrategyItem> =>
+  updateAdminStrategy: (id: number, d: StrategyForm): Promise<StrategyItem> =>
     http.patch(`/admin/strategies/${id}`, d),
   toggleAdminStrategy: (id: number): Promise<StrategyItem> =>
     http.patch(`/admin/strategies/${id}/toggle`),

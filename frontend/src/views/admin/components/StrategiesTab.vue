@@ -169,7 +169,11 @@ async function deleteAdminStrategy(s: StrategyItem) {
     await ElMessageBox.confirm(
       `确认删除策略「${s.name}」？将级联清理其关联执行数据。`,
       "删除策略",
-      { type: "warning", confirmButtonText: "确认删除", cancelButtonText: "取消" }
+      {
+        type: "warning",
+        confirmButtonText: "确认删除",
+        cancelButtonText: "取消"
+      }
     );
   } catch {
     return; // 用户取消

@@ -36,10 +36,16 @@ export function getReport(id: number): Promise<ReportItem> {
 export function createReport(data: ReportForm): Promise<ReportItem> {
   return http.post("/reports", data);
 }
-export function updateReport(id: number, data: ReportForm): Promise<ReportItem> {
+export function updateReport(
+  id: number,
+  data: ReportForm
+): Promise<ReportItem> {
   return http.put(`/reports/${id}`, data);
 }
-export function publishReport(id: number, screenshot: string): Promise<ReportItem> {
+export function publishReport(
+  id: number,
+  screenshot: string
+): Promise<ReportItem> {
   return http.post(`/reports/${id}/publish`, { screenshot });
 }
 /** 报告修改记录：按时间倒序（由近及远），含创建/修改/发布全留痕 */

@@ -179,7 +179,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch
+} from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { getPlan } from "@/api/plan";
 import { pollDelay } from "@/utils/polling";
@@ -461,9 +468,7 @@ async function startInstance(bpId: number) {
   startingId.value = bpId;
   try {
     const inst = await startBranchProject(bpId);
-    ElMessage.success(
-      `已发起启动${inst.pid ? `（pid=${inst.pid}）` : ""}`
-    );
+    ElMessage.success(`已发起启动${inst.pid ? `（pid=${inst.pid}）` : ""}`);
     await refreshAfterOp();
   } finally {
     startingId.value = null;

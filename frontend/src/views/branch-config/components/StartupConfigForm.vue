@@ -2,14 +2,21 @@
   <div v-if="bp">
     <el-form label-width="120px" size="small" :disabled="myRole !== 'ADMIN'">
       <el-form-item label="启动命令">
-        <el-input v-model="form.command" placeholder="如 python manage.py runserver" />
+        <el-input
+          v-model="form.command"
+          placeholder="如 python manage.py runserver"
+        />
       </el-form-item>
       <el-form-item label="参数">
         <div v-for="(arg, idx) in form.args" :key="idx" class="kv-row">
           <el-input v-model="form.args[idx]" placeholder="参数值" />
-          <el-button text type="danger" @click="form.args.splice(idx, 1)">删除</el-button>
+          <el-button text type="danger" @click="form.args.splice(idx, 1)"
+            >删除</el-button
+          >
         </div>
-        <el-button size="small" text type="primary" @click="form.args.push('')">＋ 添加参数</el-button>
+        <el-button size="small" text type="primary" @click="form.args.push('')"
+          >＋ 添加参数</el-button
+        >
       </el-form-item>
       <el-form-item label="环境变量">
         <div v-for="(key, idx) in envKeys" :key="idx" class="kv-row">
@@ -29,10 +36,15 @@
           />
           <el-button text type="danger" @click="removeEnv(idx)">删除</el-button>
         </div>
-        <el-button size="small" text type="primary" @click="addEnv">＋ 添加变量</el-button>
+        <el-button size="small" text type="primary" @click="addEnv"
+          >＋ 添加变量</el-button
+        >
       </el-form-item>
       <el-form-item label="工作目录">
-        <el-input v-model="form.working_directory" placeholder="绝对路径，可空" />
+        <el-input
+          v-model="form.working_directory"
+          placeholder="绝对路径，可空"
+        />
       </el-form-item>
       <el-form-item label="启动超时(秒)">
         <el-input-number v-model="form.timeout_seconds" :min="1" :max="3600" />
@@ -44,7 +56,9 @@
         <pre class="raw-json">{{ form.raw_json }}</pre>
       </el-form-item>
       <el-form-item v-if="myRole === 'ADMIN'">
-        <el-button type="primary" :loading="saving" @click="$emit('save', form)">保存参数</el-button>
+        <el-button type="primary" :loading="saving" @click="$emit('save', form)"
+          >保存参数</el-button
+        >
       </el-form-item>
     </el-form>
   </div>
@@ -53,7 +67,11 @@
 
 <script setup lang="ts">
 import { computed, reactive, watch } from "vue";
-import type { BranchRole, BranchProjectItem, StartupConfigItem } from "@/api/branchConfig";
+import type {
+  BranchRole,
+  BranchProjectItem,
+  StartupConfigItem
+} from "@/api/branchConfig";
 
 const props = defineProps<{
   bp: BranchProjectItem | null;

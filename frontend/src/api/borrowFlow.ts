@@ -69,4 +69,3 @@ export function borrowFlowUrl(id: number): string {
   const { origin, pathname } = window.location;
   return `${origin}${pathname}#/borrow-flow/index?focus=${id}`;
 }
-

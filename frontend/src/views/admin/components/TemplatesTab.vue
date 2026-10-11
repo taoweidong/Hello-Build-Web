@@ -74,7 +74,11 @@ async function deleteTemplate(t: TemplateItem) {
     await ElMessageBox.confirm(
       `确认删除模板「${t.name}」？被策略引用的模板不可删除。`,
       "删除模板",
-      { type: "warning", confirmButtonText: "确认删除", cancelButtonText: "取消" }
+      {
+        type: "warning",
+        confirmButtonText: "确认删除",
+        cancelButtonText: "取消"
+      }
     );
   } catch {
     return; // 用户取消
@@ -107,8 +111,20 @@ async function deleteTemplate(t: TemplateItem) {
       <el-table-column prop="description" label="描述" min-width="180" />
       <el-table-column label="操作" width="140">
         <template #default="{ row }">
-          <el-button type="primary" link size="small" @click="openTemplateDialog(row as TemplateItem)">编辑</el-button>
-          <el-button type="danger" link size="small" @click="deleteTemplate(row as TemplateItem)">删除</el-button>
+          <el-button
+            type="primary"
+            link
+            size="small"
+            @click="openTemplateDialog(row as TemplateItem)"
+            >编辑</el-button
+          >
+          <el-button
+            type="danger"
+            link
+            size="small"
+            @click="deleteTemplate(row as TemplateItem)"
+            >删除</el-button
+          >
         </template>
       </el-table-column>
     </el-table>
@@ -130,7 +146,11 @@ async function deleteTemplate(t: TemplateItem) {
           <el-input-number v-model="templateForm.analysis_minutes" :min="1" />
         </el-form-item>
         <el-form-item label="描述">
-          <el-input v-model="templateForm.description" type="textarea" :rows="2" />
+          <el-input
+            v-model="templateForm.description"
+            type="textarea"
+            :rows="2"
+          />
         </el-form-item>
       </el-form>
       <template #footer>

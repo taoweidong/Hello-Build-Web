@@ -13,8 +13,7 @@ describe("copyText", () => {
       value: { writeText },
       configurable: true
     });
-    (document as unknown as { execCommand: unknown }).execCommand =
-      execCommand;
+    (document as unknown as { execCommand: unknown }).execCommand = execCommand;
   });
 
   afterEach(() => {

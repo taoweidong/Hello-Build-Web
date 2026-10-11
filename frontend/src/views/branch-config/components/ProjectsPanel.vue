@@ -12,7 +12,12 @@
     </div>
     <el-table :data="items" size="small" border>
       <el-table-column label="工程名" prop="project.name" min-width="140" />
-      <el-table-column label="仓库地址" prop="project.repository_url" min-width="200" show-overflow-tooltip />
+      <el-table-column
+        label="仓库地址"
+        prop="project.repository_url"
+        min-width="200"
+        show-overflow-tooltip
+      />
       <el-table-column label="启用" width="90">
         <template #default="{ row }">
           <el-tag :type="row.enabled ? 'success' : 'info'" size="small">
@@ -79,7 +84,9 @@
       </el-select>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="adding" @click="confirmAdd">确定</el-button>
+        <el-button type="primary" :loading="adding" @click="confirmAdd"
+          >确定</el-button
+        >
       </template>
     </el-dialog>
   </div>

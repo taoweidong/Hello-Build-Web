@@ -252,7 +252,11 @@ async function onApprove(flow: BorrowFlowItem) {
     await ElMessageBox.confirm(
       `通过后将立即在 ${flow.target_version_name}/${flow.target_branch_name} 按新时间 ${flow.new_build_time} 创建借用策略（若与目标版本既有安排冲突将无法通过）`,
       "通过借用申请",
-      { type: "warning", confirmButtonText: "确认通过", cancelButtonText: "取消" }
+      {
+        type: "warning",
+        confirmButtonText: "确认通过",
+        cancelButtonText: "取消"
+      }
     );
   } catch {
     return; // 用户取消
@@ -277,7 +281,8 @@ async function onReject(flow: BorrowFlowItem) {
         type: "warning",
         confirmButtonText: "确认驳回",
         cancelButtonText: "取消",
-        inputValidator: (v: string) => (v && v.trim() ? true : "驳回意见不能为空")
+        inputValidator: (v: string) =>
+          v && v.trim() ? true : "驳回意见不能为空"
       }
     ));
   } catch {

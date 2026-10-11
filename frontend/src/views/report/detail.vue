@@ -341,7 +341,9 @@ async function copyReport() {
 }
 
 // ---- 复制链接 ----
-const reportLink = computed(() => appHashUrl(`/report/detail/${routeId.value}`));
+const reportLink = computed(() =>
+  appHashUrl(`/report/detail/${routeId.value}`)
+);
 async function copyLink() {
   const ok = await copyText(reportLink.value);
   if (ok) {

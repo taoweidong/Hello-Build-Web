@@ -19,12 +19,7 @@ export type PushMode = "normal" | "sync";
 export type RoundConclusion = "pending" | "pass" | "fail" | null;
 /** 推送状态 */
 export type PushStatus =
-  | "pending"
-  | "running"
-  | "success"
-  | "failed"
-  | "skipped"
-  | "";
+  "pending" | "running" | "success" | "failed" | "skipped" | "";
 /** 报告结论（VerificationReport.CONCLUSION_CHOICES） */
 export type ReportConclusion = "pass" | "fail" | "risk";
 /** 报告状态（VerificationReport.STATUS_CHOICES） */
@@ -281,4 +276,3 @@ export interface ReportRevisionItem {
   operator_username: string;
   created_at: string;
 }
-

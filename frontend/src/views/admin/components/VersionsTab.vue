@@ -68,7 +68,10 @@ async function saveVersion() {
   emit("refresh");
 }
 
-const branchInput = reactive<{ vid: number; name: string }>({ vid: 0, name: "" });
+const branchInput = reactive<{ vid: number; name: string }>({
+  vid: 0,
+  name: ""
+});
 
 function openBranchInput(vid: number) {
   branchInput.vid = vid;
@@ -140,7 +143,10 @@ async function addBranch() {
       </el-table-column>
       <el-table-column label="状态" width="100">
         <template #default="{ row }">
-          <el-tag :type="row.status === 'active' ? 'success' : 'info'" size="small">
+          <el-tag
+            :type="row.status === 'active' ? 'success' : 'info'"
+            size="small"
+          >
             {{ row.status === "active" ? "启用" : "归档" }}
           </el-tag>
         </template>
@@ -177,7 +183,9 @@ async function addBranch() {
             style="width: 100%"
           >
             <el-option
-              v-for="u in pmCandidates(versions.find(v => v.id === versionForm.id))"
+              v-for="u in pmCandidates(
+                versions.find(v => v.id === versionForm.id)
+              )"
               :key="u.id"
               :label="`${u.display_name}（${u.username}）`"
               :value="u.id"

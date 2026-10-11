@@ -234,13 +234,7 @@ const previewPhases = computed(() => {
     start: x.t.start,
     end: x.t.end,
     left: ((timeToMs(x.t.start) - startMs) / total) * 100,
-    width:
-      (Math.max(
-        timeToMs(x.t.end) - timeToMs(x.t.start),
-        1
-      ) /
-        total) *
-      100,
+    width: (Math.max(timeToMs(x.t.end) - timeToMs(x.t.start), 1) / total) * 100,
     color: STAGE_COLORS[x.stage]
   }));
 });

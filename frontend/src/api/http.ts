@@ -19,7 +19,12 @@ export class BizError extends Error {
   data: unknown;
   httpStatus?: number;
 
-  constructor(code: number, message: string, data?: unknown, httpStatus?: number) {
+  constructor(
+    code: number,
+    message: string,
+    data?: unknown,
+    httpStatus?: number
+  ) {
     super(message);
     this.name = "BizError";
     this.code = code;
@@ -60,7 +65,9 @@ service.interceptors.response.use(
       if (!res.config?.silent) {
         ElMessage.error(d.message || "请求失败");
       }
-      return Promise.reject(new BizError(d.code, d.message || "请求失败", d.data));
+      return Promise.reject(
+        new BizError(d.code, d.message || "请求失败", d.data)
+      );
     }
     // 成功直接返回 data 字段，方便业务层使用
     return d?.data;
@@ -79,7 +86,12 @@ service.interceptors.response.use(
       // 保留部署子路径（pathname），避免子路径部署时硬编码 /#/login 断链
       window.location.href = `${window.location.pathname}#/login`;
       return Promise.reject(
-        new BizError(code, message || "未认证", body?.data, err?.response?.status)
+        new BizError(
+          code,
+          message || "未认证",
+          body?.data,
+          err?.response?.status
+        )
       );
     }
     if (!silent) {
@@ -97,7 +109,12 @@ service.interceptors.response.use(
     }
     return Promise.reject(
       // 网络层错误（断网/超时）无业务 code，兜底 -1；不用 0（信封契约中 0=成功）
-      new BizError(code ?? -1, message || "请求失败", body?.data, err?.response?.status)
+      new BizError(
+        code ?? -1,
+        message || "请求失败",
+        body?.data,
+        err?.response?.status
+      )
     );
   }
 );

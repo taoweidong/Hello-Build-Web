@@ -27,9 +27,11 @@ export function buildMonthCells(month: string): MonthCell[] {
 }
 
 /** 工具栏统计：本月展示总段数 / 已占 / 我的 */
-export function summarizeCalendar(
-  days: SlotCalendarResponse["days"]
-): { total: number; occupied: number; mine: number } {
+export function summarizeCalendar(days: SlotCalendarResponse["days"]): {
+  total: number;
+  occupied: number;
+  mine: number;
+} {
   let total = 0;
   let occupied = 0;
   let mine = 0;

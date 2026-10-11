@@ -59,7 +59,10 @@ describe("分支权限角色与实例状态", () => {
       text: "操作者",
       type: "primary"
     });
-    expect(branchRoleMeta("ADMIN")).toEqual({ text: "管理员", type: "warning" });
+    expect(branchRoleMeta("ADMIN")).toEqual({
+      text: "管理员",
+      type: "warning"
+    });
     expect(branchRoleMeta("x")).toEqual({ text: "x", type: "info" });
   });
 
@@ -70,7 +73,10 @@ describe("分支权限角色与实例状态", () => {
       type: "success"
     });
     expect(instanceStatusMeta("STOPPED").type).toBe("info");
-    expect(instanceStatusMeta("ERROR")).toEqual({ text: "异常", type: "danger" });
+    expect(instanceStatusMeta("ERROR")).toEqual({
+      text: "异常",
+      type: "danger"
+    });
     expect(instanceStatusMeta("x")).toEqual({ text: "x", type: "info" });
   });
 });

@@ -51,7 +51,11 @@ onMounted(async () => {
     <el-tabs v-model="activeTab">
       <!-- Tab1 版本分支 -->
       <el-tab-pane label="版本分支" name="versions">
-        <VersionsTab :versions="versions" :users="users" @refresh="loadVersions" />
+        <VersionsTab
+          :versions="versions"
+          :users="users"
+          @refresh="loadVersions"
+        />
       </el-tab-pane>
 
       <!-- Tab2 用户管理 -->

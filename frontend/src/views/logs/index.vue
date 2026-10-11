@@ -31,9 +31,13 @@ const execFilter = reactive({
   version_id: undefined as number | undefined,
   branch_id: undefined as number | undefined
 });
-const versionOptions = ref<Array<{ id: number; name: string; branches: Array<{ id: number; name: string }> }>>(
-  []
-);
+const versionOptions = ref<
+  Array<{
+    id: number;
+    name: string;
+    branches: Array<{ id: number; name: string }>;
+  }>
+>([]);
 const branchOptions = ref<Array<{ id: number; name: string }>>([]);
 
 // ---- 数据 ----
@@ -148,7 +152,12 @@ onMounted(async () => {
             style="width: 150px"
             @change="onVersionChange"
           >
-            <el-option v-for="v in versionOptions" :key="v.id" :label="v.name" :value="v.id" />
+            <el-option
+              v-for="v in versionOptions"
+              :key="v.id"
+              :label="v.name"
+              :value="v.id"
+            />
           </el-select>
           <el-select
             v-model="execFilter.branch_id"
@@ -157,16 +166,25 @@ onMounted(async () => {
             :disabled="!execFilter.version_id"
             style="width: 150px"
           >
-            <el-option v-for="b in branchOptions" :key="b.id" :label="b.name" :value="b.id" />
+            <el-option
+              v-for="b in branchOptions"
+              :key="b.id"
+              :label="b.name"
+              :value="b.id"
+            />
           </el-select>
-          <el-button type="primary" :loading="loading" @click="loadExec">查询</el-button>
+          <el-button type="primary" :loading="loading" @click="loadExec"
+            >查询</el-button
+          >
         </div>
-        <el-table :data="execLogs" v-loading="loading" style="width: 100%">
+        <el-table v-loading="loading" :data="execLogs" style="width: 100%">
           <el-table-column prop="stage" label="阶段" width="110" />
           <el-table-column prop="event" label="事件" min-width="160" />
           <el-table-column prop="detail" label="详情" min-width="220" />
           <el-table-column label="时间" width="170">
-            <template #default="{ row }">{{ formatTime(row.at, "MM-DD HH:mm:ss") }}</template>
+            <template #default="{ row }">{{
+              formatTime(row.at, "MM-DD HH:mm:ss")
+            }}</template>
           </el-table-column>
         </el-table>
       </el-tab-pane>
@@ -183,12 +201,16 @@ onMounted(async () => {
             end-placeholder="结束"
             style="width: 260px"
           />
-          <el-button type="primary" :loading="loading" @click="loadChanges">查询</el-button>
+          <el-button type="primary" :loading="loading" @click="loadChanges"
+            >查询</el-button
+          >
         </div>
-        <el-table :data="changeLogs" v-loading="loading" style="width: 100%">
+        <el-table v-loading="loading" :data="changeLogs" style="width: 100%">
           <el-table-column prop="operator" label="操作人" width="120" />
           <el-table-column label="时间" width="170">
-            <template #default="{ row }">{{ formatTime(row.at, "MM-DD HH:mm:ss") }}</template>
+            <template #default="{ row }">{{
+              formatTime(row.at, "MM-DD HH:mm:ss")
+            }}</template>
           </el-table-column>
           <el-table-column prop="strategy_name" label="策略" min-width="160" />
           <el-table-column prop="field" label="字段" width="110" />
@@ -222,7 +244,9 @@ onMounted(async () => {
           <el-table-column prop="target_type" label="目标类型" width="120" />
           <el-table-column prop="detail" label="详情" min-width="240" />
           <el-table-column label="时间" width="170">
-            <template #default="{ row }">{{ formatTime(row.at, "MM-DD HH:mm:ss") }}</template>
+            <template #default="{ row }">{{
+              formatTime(row.at, "MM-DD HH:mm:ss")
+            }}</template>
           </el-table-column>
         </el-table>
       </el-tab-pane>
@@ -246,7 +270,9 @@ onMounted(async () => {
           <el-table-column prop="event" label="事件" min-width="140" />
           <el-table-column prop="ip" label="IP" width="140" />
           <el-table-column label="时间" width="170">
-            <template #default="{ row }">{{ formatTime(row.at, "MM-DD HH:mm:ss") }}</template>
+            <template #default="{ row }">{{
+              formatTime(row.at, "MM-DD HH:mm:ss")
+            }}</template>
           </el-table-column>
         </el-table>
       </el-tab-pane>

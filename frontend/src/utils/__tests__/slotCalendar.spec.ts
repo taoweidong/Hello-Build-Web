@@ -35,7 +35,10 @@ describe("buildMonthCells", () => {
   });
 });
 
-function cell(status: "available" | "reserved", isMine = false): CalendarDayCell {
+function cell(
+  status: "available" | "reserved",
+  isMine = false
+): CalendarDayCell {
   return {
     template_id: 1,
     status,

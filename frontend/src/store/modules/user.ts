@@ -7,10 +7,7 @@ import {
   routerArrays,
   storageLocal
 } from "../utils";
-import {
-  type RefreshTokenResult,
-  refreshTokenApi
-} from "@/api/user";
+import { type RefreshTokenResult, refreshTokenApi } from "@/api/user";
 // 后端认证接口（构建策略配置系统契约）
 import { loginApi, logoutApi } from "@/api/auth";
 import { useMultiTagsStoreHook } from "./multiTags";
