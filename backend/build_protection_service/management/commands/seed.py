@@ -7,6 +7,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from ...models import (
+    BorrowFlow,
     Branch,
     SlotBooking,
     SlotTemplate,
@@ -66,6 +67,8 @@ class Command(BaseCommand):
         # ---- 27B/26B 演示数据补全：三个版本均有三分支多时段的饱满策略 ----
         self._seed_version_27b_full()
         self._seed_version_26b_full()
+        # ---- 借用电子流演示：一条待审批 + 一条已驳回 ----
+        self._seed_borrow_flows()
 
         # ---- 时段抢占演示：模板 + 仿真实抢占记录（幂等）----
         if not SlotTemplate.objects.filter(name="上午窗口").exists():
@@ -268,6 +271,47 @@ class Command(BaseCommand):
                     "push_start_time": push,
                     "created_by": pm26b,
                 },
+            )
+
+    def _seed_borrow_flows(self):
+        """借用电子流演示（幂等，按 借用人+策略+状态 锚点）：
+        - pm26b 借用 27A-master-早间回归（同步推送冒烟模板）到 26B/master（15:00），
+          待审批（审批人 = 27A 负责人）——时段与 26B 既有安排无冲突，可通过并实际建策略；
+        - builder 曾借用 27A-master-早间回归 被驳回（时间与既有安排冲突，样例留痕）。
+        """
+        from django.utils import timezone as tz
+
+        src_strategy = Strategy.objects.filter(name="27A-master-早间回归").first()
+        pm26b = User.objects.filter(username="pm26b").first()
+        builder = User.objects.filter(username="builder").first()
+        target_tr5_26b = Branch.objects.filter(version__name="26B", name="TR5").first()
+        target_master_26b = Branch.objects.filter(version__name="26B", name="master").first()
+        reject_src = Strategy.objects.filter(name="27A-master-早间回归").first()
+        if not all([src_strategy, pm26b, builder, target_tr5_26b, target_master_26b, reject_src]):
+            return
+        if not BorrowFlow.objects.filter(
+            strategy=src_strategy, borrower=pm26b, status="pending"
+        ).exists():
+            BorrowFlow.objects.create(
+                strategy=src_strategy,
+                borrower=pm26b,
+                target_branch=target_master_26b,
+                new_build_time="15:00",
+                reason="26B 午后空闲时段复用 27A 早间回归流程做同步推送演练",
+            )
+        if not BorrowFlow.objects.filter(
+            strategy=reject_src, borrower=builder, status="rejected"
+        ).exists():
+            BorrowFlow.objects.create(
+                strategy=reject_src,
+                borrower=builder,
+                target_branch=target_master_26b,
+                new_build_time="07:00",
+                reason="构建机空闲时段练习早间构建",
+                status="rejected",
+                approver=User.objects.filter(username="pm27a").first(),
+                handle_comment="早间时段已被 26B 早间回归占用，且构建机需专职 27A 任务",
+                handled_at=tz.now(),
             )
 
     def _seed_slot_bookings(self):

@@ -125,6 +125,50 @@ export const asyncRoutes = [
     ]
   },
   {
+    path: "/weekly-new",
+    name: "WeeklyNew",
+    component: Layout,
+    redirect: "/weekly-new/index",
+    meta: {
+      icon: "ep/timer",
+      title: "版本策略全景(New)",
+      rank: 6
+    },
+    children: [
+      {
+        path: "/weekly-new/index",
+        name: "WeeklyNewIndex",
+        component: () => import("@/views/weekly-new/index.vue"),
+        meta: {
+          title: "版本策略全景(New)",
+          roles: ALL_ROLES
+        }
+      }
+    ]
+  },
+  {
+    path: "/borrow-flow",
+    name: "BorrowFlow",
+    component: Layout,
+    redirect: "/borrow-flow/index",
+    meta: {
+      icon: "ep/tickets",
+      title: "借用审批",
+      rank: 7
+    },
+    children: [
+      {
+        path: "/borrow-flow/index",
+        name: "BorrowFlowIndex",
+        component: () => import("@/views/borrow-flow/index.vue"),
+        meta: {
+          title: "借用审批",
+          roles: ALL_ROLES
+        }
+      }
+    ]
+  },
+  {
     path: "/strategy",
     name: "Strategy",
     component: Layout,
@@ -132,7 +176,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/set-up",
       title: "策略配置",
-      rank: 6
+      rank: 8
     },
     children: [
       {
@@ -154,7 +198,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/notebook",
       title: "验证报告",
-      rank: 7
+      rank: 9
     },
     children: [
       {
@@ -176,7 +220,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/setting",
       title: "系统管理",
-      rank: 8
+      rank: 10
     },
     children: [
       {
@@ -198,7 +242,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/document",
       title: "日志中心",
-      rank: 9
+      rank: 11
     },
     children: [
       {
@@ -220,7 +264,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/connection",
       title: "分支配置",
-      rank: 10
+      rank: 12
     },
     children: [
       {
@@ -242,7 +286,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/alarm-clock",
       title: "时段抢占",
-      rank: 11
+      rank: 13
     },
     children: [
       {
@@ -264,7 +308,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/list",
       title: "时段配置",
-      rank: 12
+      rank: 14
     },
     children: [
       {
@@ -274,28 +318,6 @@ export const asyncRoutes = [
         meta: {
           title: "时段配置",
           roles: ADMIN_ROLE
-        }
-      }
-    ]
-  },
-  {
-    path: "/weekly-new",
-    name: "WeeklyNew",
-    component: Layout,
-    redirect: "/weekly-new/index",
-    meta: {
-      icon: "ep/timer",
-      title: "版本策略全景(New)",
-      rank: 13
-    },
-    children: [
-      {
-        path: "/weekly-new/index",
-        name: "WeeklyNewIndex",
-        component: () => import("@/views/weekly-new/index.vue"),
-        meta: {
-          title: "版本策略全景(New)",
-          roles: ALL_ROLES
         }
       }
     ]

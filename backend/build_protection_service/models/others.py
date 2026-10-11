@@ -166,3 +166,40 @@ class RuntimeConfig(models.Model):
 
     def __str__(self) -> str:
         return f"{self.key}={self.value}"
+
+
+class BorrowFlow(models.Model):
+    """借用电子流：非本版本人员申请借用某策略的构建时间到自己的版本/分支。
+
+    审批通过 = 在目标分支按新时间实际创建借用策略（复用策略写路径统一校验）；
+    审批人为被借用策略所属版本的 PM（或 admin）。
+    """
+    STATUS_CHOICES = (
+        ("pending", "待审批"),
+        ("approved", "已通过"),
+        ("rejected", "已驳回"),
+    )
+    strategy = models.ForeignKey(
+        Strategy, on_delete=models.CASCADE,
+        related_name="borrow_flows", verbose_name="被借用策略")
+    borrower = models.ForeignKey(
+        User, on_delete=models.CASCADE,
+        related_name="borrow_flows", verbose_name="借用人")
+    target_branch = models.ForeignKey(
+        Branch, on_delete=models.PROTECT,
+        related_name="borrow_flows", verbose_name="目标分支")
+    new_build_time = models.CharField("新构建时间", max_length=5)
+    reason = models.TextField("借用原因", blank=True, default="")
+    status = models.CharField("状态", max_length=10, choices=STATUS_CHOICES, default="pending")
+    approver = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.PROTECT,
+        related_name="approved_borrow_flows", verbose_name="审批人")
+    handle_comment = models.CharField("审批意见", max_length=255, blank=True, default="")
+    handled_at = models.DateTimeField("审批时间", null=True, blank=True)
+    created_at = models.DateTimeField("申请时间", auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.strategy.name} -> {self.target_branch.version.name}/{self.target_branch.name}@{self.new_build_time}({self.status})"

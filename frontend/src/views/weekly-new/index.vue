@@ -122,6 +122,13 @@
       :branches="branches"
       @saved="onStrategySaved"
     />
+
+    <!-- 策略详情 + 借用申请弹窗（无修改权限的用户） -->
+    <StrategyBorrowDialog
+      v-model="borrowVisible"
+      :strategy="borrowStrategy"
+      :current-version-id="versionId"
+    />
   </div>
 </template>
 
@@ -135,11 +142,12 @@ import ArrowLeft from "~icons/ep/arrow-left";
 import ArrowRight from "~icons/ep/arrow-right";
 import { getWeekly } from "@/api/weekly";
 import { getStrategies } from "@/api/strategy";
-import type { WeeklyData, StrategyItem } from "@/api/types";
+import type { WeeklyData, StrategyItem, WeeklyStrategy } from "@/api/types";
 import { canEditPanorama, getCurrentUser } from "@/utils/business";
 import { useBranchColors } from "@/composables/useBranchColors";
 import HourGrid, { type HourTaskItem } from "./components/HourGrid.vue";
 import StrategyEditDialog from "./components/StrategyEditDialog.vue";
+import StrategyBorrowDialog from "./components/StrategyBorrowDialog.vue";
 
 defineOptions({ name: "WeeklyNewIndex" });
 
@@ -226,6 +234,11 @@ const WEEKDAY_CN: Record<string, string> = {
 const versionOptions = computed(() => weekly.value?.versions ?? []);
 const branches = computed(() => weekly.value?.branches ?? []);
 const strategies = computed(() => weekly.value?.strategies ?? []);
+const currentVersionName = computed(
+  () =>
+    versionOptions.value.find(v => v.version_id === versionId.value)
+      ?.version_name ?? ""
+);
 
 // 分支配色：固定色板、按 branch_id 稳定取色（与 weekly 共用）
 const { branchColor } = useBranchColors(branches);
@@ -323,9 +336,23 @@ const canEdit = computed(() =>
 const strategyDetailList = ref<StrategyItem[] | null>(null);
 const editVisible = ref(false);
 const editStrategy = ref<StrategyItem | null>(null);
+// 借用弹窗（无修改权限的用户）：数据直接取自周视图策略数组（只读字段足够，且不受 /strategies 版本过滤限制）
+const borrowVisible = ref(false);
+const borrowStrategy = ref<(WeeklyStrategy & { version_name?: string }) | null>(
+  null
+);
 
 async function openEditDialog(task: HourTaskItem) {
-  if (!canEdit.value || !versionId.value) return;
+  if (!versionId.value) return;
+  // 无修改权限 → 策略详情 + 借用申请（借用至自己的版本与时间，走电子流审批）
+  if (!canEdit.value) {
+    const s =
+      strategies.value.find(x => x.strategy_id === task.strategyId) ?? null;
+    if (!s) return;
+    borrowStrategy.value = { ...s, version_name: currentVersionName.value };
+    borrowVisible.value = true;
+    return;
+  }
   if (!strategyDetailList.value) {
     try {
       strategyDetailList.value = await getStrategies({

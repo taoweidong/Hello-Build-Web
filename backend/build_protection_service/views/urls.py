@@ -3,8 +3,7 @@ from django.urls import path
 
 from . import executions, login, logs, plan, reports, strategies, weekly
 from . import admin
-from . import branch_config
-from . import slot_booking
+from . import borrow_flow, branch_config, slot_booking
 
 app_name = "build_protection_service"
 
@@ -70,4 +69,9 @@ urlpatterns = [
     path("slot-bookings", slot_booking.SlotBookingViewSet.as_view({"get": "list", "post": "create"}), name="slot_bookings"),
     path("slot-bookings/mine", slot_booking.SlotBookingViewSet.as_view({"get": "mine"}), name="slot_bookings_mine"),
     path("slot-bookings/<int:pk>/release", slot_booking.SlotBookingViewSet.as_view({"post": "release"}), name="slot_booking_release"),
+
+    # 借用电子流：发起/列表/审批（通过=在目标分支实际创建借用策略）
+    path("borrow-flows", borrow_flow.borrow_flow_list_view, name="borrow_flows"),
+    path("borrow-flows/<int:fid>/approve", borrow_flow.borrow_flow_approve_view, name="borrow_flow_approve"),
+    path("borrow-flows/<int:fid>/reject", borrow_flow.borrow_flow_reject_view, name="borrow_flow_reject"),
 ]

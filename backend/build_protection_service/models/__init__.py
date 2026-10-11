@@ -5,6 +5,7 @@
 """
 from .others import (
     AdminOpLog,
+    BorrowFlow,
     Branch,
     ExecutionLog,
     ExecutionRound,
@@ -29,6 +30,7 @@ from .slot_booking import SlotBooking, SlotTemplate
 
 __all__ = [
     "AdminOpLog",
+    "BorrowFlow",
     "Branch",
     "BranchPermission",
     "BranchProject",
