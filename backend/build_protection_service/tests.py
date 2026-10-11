@@ -1086,8 +1086,9 @@ class AdminVersionUserApiTests(ConfigAwareTestCase):
 
     def test_update_user_role_and_password(self):
         self._auth(self.token)
+        # is_active 为严格布尔契约：字符串 "false" 会被 422 拒绝（见 tests_quality_round2）
         resp = self.client.patch(f"/api/admin/users/{self.pm.id}", {
-            "role": "tester", "password": "newpass123", "is_active": "false",
+            "role": "tester", "password": "newpass123", "is_active": False,
         }, format="json")
         self.assertEqual(resp.status_code, 200)
         self.pm.refresh_from_db()

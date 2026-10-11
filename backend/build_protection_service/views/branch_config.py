@@ -37,6 +37,7 @@ from ..services.branch_config import (
     stop_instance as svc_stop,
 )
 from . import authed_user, fail_resp, first_error, json_resp, parse_body, parse_int
+from ..errors import CODE_ASSOCIATION, CODE_DUPLICATE, CODE_FORBIDDEN, CODE_NOT_FOUND, CODE_UNPROCESSABLE
 
 logger = logging.getLogger("build_protection_service")
 
@@ -54,20 +55,20 @@ def _bp_or_none(pk) -> BranchProject:
 def _branch_required(branch):
     """分支不存在返回 (None, 404 响应)。"""
     if branch is None:
-        return None, fail_resp(40401, "分支不存在")
+        return None, fail_resp(CODE_NOT_FOUND, "分支不存在")
     return branch, None
 
 
 def _bp_required(bp):
     if bp is None:
-        return None, fail_resp(40401, "工程关联不存在")
+        return None, fail_resp(CODE_NOT_FOUND, "工程关联不存在")
     return bp, None
 
 
 def _require_role(user, branch, *roles):
     """角色门槛：有效角色不在 roles 内则返回 40301 响应。"""
     if resolve_role(branch, user) not in roles:
-        return fail_resp(40301, "无权限执行该操作")
+        return fail_resp(CODE_FORBIDDEN, "无权限执行该操作")
     return None
 
 
@@ -106,12 +107,12 @@ class BranchViewSet(
         body = request.data or {}
         version = Version.objects.filter(id=parse_int(body.get("version_id"))).first()
         if version is None:
-            return fail_resp(42201, "版本必选且存在")
+            return fail_resp(CODE_UNPROCESSABLE, "版本必选且存在")
         name = (body.get("name") or "").strip()
         if not name:
-            return fail_resp(42201, "分支名必填")
+            return fail_resp(CODE_UNPROCESSABLE, "分支名必填")
         if Branch.objects.filter(version=version, name=name).exists():
-            return fail_resp(40902, "该版本下分支已存在")
+            return fail_resp(CODE_DUPLICATE, "该版本下分支已存在")
         try:
             branch = Branch.objects.create(
                 version=version,
@@ -120,7 +121,7 @@ class BranchViewSet(
                 description=(body.get("description") or "").strip(),
             )
         except IntegrityError:
-            return fail_resp(40902, "该版本下分支已存在")
+            return fail_resp(CODE_DUPLICATE, "该版本下分支已存在")
         return json_resp(ok(serialize_branch(branch)))
 
     def destroy(self, request, *args, **kwargs):
@@ -163,9 +164,9 @@ class BranchViewSet(
         body = request.data or {}
         project = Project.objects.filter(id=parse_int(body.get("project_id"))).first()
         if project is None:
-            return fail_resp(42201, "工程不存在")
+            return fail_resp(CODE_UNPROCESSABLE, "工程不存在")
         if BranchProject.objects.filter(branch=branch, project=project).exists():
-            return fail_resp(40903, "该工程已关联此分支")
+            return fail_resp(CODE_ASSOCIATION, "该工程已关联此分支")
         # 关联与默认启动配置两步写入，包事务保证一致性
         with transaction.atomic():
             bp = BranchProject.objects.create(
@@ -200,10 +201,10 @@ class BranchViewSet(
         body = request.data or {}
         target = User.objects.filter(id=parse_int(body.get("user_id"))).first()
         if target is None:
-            return fail_resp(42201, "授权用户不存在")
+            return fail_resp(CODE_UNPROCESSABLE, "授权用户不存在")
         role = body.get("role")
         if role not in ROLE_VALID:
-            return fail_resp(42201, "角色必须为 VIEWER/OPERATOR/ADMIN")
+            return fail_resp(CODE_UNPROCESSABLE, "角色必须为 VIEWER/OPERATOR/ADMIN")
         perm, _ = BranchPermission.objects.update_or_create(
             branch=branch, user=target, defaults={"role": role}
         )
@@ -278,7 +279,7 @@ class BranchProjectViewSet(mixins.DestroyModelMixin, viewsets.GenericViewSet):
             conf = StartupConfig.objects.create(branch_project=bp)
         serializer = StartupConfigSerializer(conf, data=request.data, partial=True)
         if not serializer.is_valid():
-            return fail_resp(42201, first_error(serializer.errors))
+            return fail_resp(CODE_UNPROCESSABLE, first_error(serializer.errors))
         conf = serializer.save()
         return json_resp(ok(serialize_config(conf)))
 
@@ -296,7 +297,7 @@ class BranchProjectViewSet(mixins.DestroyModelMixin, viewsets.GenericViewSet):
             return perr
         inst = svc_start(bp, user.username)
         if inst is None:
-            return fail_resp(40903, "实例已在运行")
+            return fail_resp(CODE_ASSOCIATION, "实例已在运行")
         return json_resp(ok(serialize_instance(inst)))
 
     @action(detail=True, methods=["post"])
@@ -328,7 +329,7 @@ class BranchPermissionViewSet(mixins.DestroyModelMixin, viewsets.GenericViewSet)
             return error
         perm = self.get_queryset().filter(pk=kwargs.get("pk")).first()
         if perm is None:
-            return fail_resp(40401, "授权记录不存在")
+            return fail_resp(CODE_NOT_FOUND, "授权记录不存在")
         perr = _require_role(user, perm.branch, ROLE_ADMIN)
         if perr:
             return perr
@@ -366,9 +367,9 @@ def projects_view(request):
         body = parse_body(request)
         name = (body.get("name") or "").strip()
         if not name:
-            return fail_resp(42201, "工程名必填")
+            return fail_resp(CODE_UNPROCESSABLE, "工程名必填")
         if Project.objects.filter(name=name).exists():
-            return fail_resp(40902, "工程名已存在")
+            return fail_resp(CODE_DUPLICATE, "工程名已存在")
         try:
             project = Project.objects.create(
                 name=name,
@@ -376,6 +377,6 @@ def projects_view(request):
                 description=(body.get("description") or "").strip(),
             )
         except IntegrityError:
-            return fail_resp(40902, "工程名已存在")
+            return fail_resp(CODE_DUPLICATE, "工程名已存在")
         return json_resp(ok(serialize_project(project)))
-    return fail_resp(42201, "不支持的请求方法")
+    return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")

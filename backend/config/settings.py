@@ -1,17 +1,32 @@
 """Django 主配置。保留现有契约：API 前缀 /api、JWT、统一响应。"""
 import os
+import sys
 from datetime import timedelta
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-only-insecure-secret-key-do-not-use-in-production-0123456789abcdef")
 # 安全默认值：DEBUG 与 CORS 默认关闭/收紧，本地开发通过 backend/.env 打开（见 .env.example）。
 DEBUG = os.getenv("DEBUG", "false").lower() in ("1", "true", "yes")
 ALLOWED_HOSTS = [h.strip() for h in os.getenv("ALLOWED_HOSTS", "*").split(",") if h.strip()]
+
+# SECRET_KEY：回退开发密钥随仓库公开，生产（DEBUG=false）静默回退等于任何人可伪造
+# JWT。因此生产缺失 env 配置时拒绝启动；测试进程（manage.py test）豁免以便无 .env 运行。
+_ENV_SECRET_KEY = os.getenv("SECRET_KEY")
+_IS_TESTING = "test" in sys.argv
+if _ENV_SECRET_KEY:
+    SECRET_KEY = _ENV_SECRET_KEY
+elif DEBUG or _IS_TESTING:
+    SECRET_KEY = "dev-only-insecure-secret-key-do-not-use-in-production-0123456789abcdef"
+else:
+    raise ImproperlyConfigured(
+        "缺少 SECRET_KEY 环境变量：生产环境禁止回退到仓库内置开发密钥，"
+        "请在 backend/.env 中配置（模板见 backend/.env.example）"
+    )
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -105,6 +120,9 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
     "DEFAULT_FILTER_BACKENDS": ("django_filters.rest_framework.DjangoFilterBackend",),
     "DEFAULT_PAGINATION_CLASS": None,
+    # 异常也走 {code,message,data} 信封（非法 JSON body 等 DRF 异常默认返回
+    # {"detail": ...} 无 code 字段，会破坏前端契约）
+    "EXCEPTION_HANDLER": "build_protection_service.exception_handlers.contract_exception_handler",
 }
 
 SIMPLE_JWT = {

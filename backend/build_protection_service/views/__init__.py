@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.http import JsonResponse
 
 from ..api import err
-from ..errors import CODE_FORBIDDEN, CODE_NOT_FOUND, CODE_STATUS, CODE_UNPROCESSABLE
+from ..errors import CODE_FORBIDDEN, CODE_NOT_FOUND, CODE_STATUS, CODE_UNAUTHENTICATED, CODE_UNPROCESSABLE
 from ..models import SecurityLog
 
 logger = logging.getLogger(__name__)
@@ -131,6 +131,6 @@ def authed_user(request):
 
     result = JWTAuthentication().authenticate(request)
     if result is None:
-        return None, fail_resp(40100, "未认证")
+        return None, fail_resp(CODE_UNAUTHENTICATED, "未认证")
     user, _ = result
     return user, None

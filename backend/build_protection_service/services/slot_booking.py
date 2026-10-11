@@ -15,6 +15,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from ..models import Branch, SlotBooking, SlotTemplate, Version
+from ..errors import CODE_FORBIDDEN, CODE_NOT_FOUND, CODE_SLOT_CONFLICT, CODE_UNPROCESSABLE
 
 logger = logging.getLogger("build_protection_service")
 
@@ -142,7 +143,7 @@ def build_slot_calendar(month: str, user) -> tuple[Optional[dict], Optional[dict
         year_str, mon_str = str(month).strip().split("-")
         first = date_cls(int(year_str), int(mon_str), 1)
     except (ValueError, TypeError):
-        return None, _err(42201, "月份格式非法，应为 YYYY-MM")
+        return None, _err(CODE_UNPROCESSABLE, "月份格式非法，应为 YYYY-MM")
     if first.month == 12:
         last = first.replace(day=31)
     else:
@@ -193,39 +194,39 @@ def create_booking(user, payload: dict) -> tuple[Optional[dict], Optional[dict]]
     try:
         d = date_cls.fromisoformat(str(payload.get("date") or "").strip())
     except ValueError:
-        return None, _err(42201, "日期格式非法，应为 YYYY-MM-DD")
+        return None, _err(CODE_UNPROCESSABLE, "日期格式非法，应为 YYYY-MM-DD")
 
     template_id = _safe_int(payload.get("template_id"))
     if template_id is None:
-        return None, _err(42201, "template_id 应为整数")
+        return None, _err(CODE_UNPROCESSABLE, "template_id 应为整数")
     template = SlotTemplate.objects.filter(id=template_id).first()
     if template is None:
-        return None, _err(40401, "时段模板不存在")
+        return None, _err(CODE_NOT_FOUND, "时段模板不存在")
     if not template.enabled:
-        return None, _err(42201, "该时段模板已停用")
+        return None, _err(CODE_UNPROCESSABLE, "该时段模板已停用")
 
     today = _today()
     if d < today:
-        return None, _err(42201, "不能抢占过去日期")
+        return None, _err(CODE_UNPROCESSABLE, "不能抢占过去日期")
     if d > today + timedelta(days=_horizon_days()):
-        return None, _err(42201, f"超出可抢占窗口（最多提前 {_horizon_days()} 天）")
+        return None, _err(CODE_UNPROCESSABLE, f"超出可抢占窗口（最多提前 {_horizon_days()} 天）")
     if not template_applies_on(template, d):
-        return None, _err(42201, "该日期不在此时段的适用范围（星期/生效期）内")
+        return None, _err(CODE_UNPROCESSABLE, "该日期不在此时段的适用范围（星期/生效期）内")
 
     purpose = str(payload.get("purpose") or "").strip()
     if not 2 <= len(purpose) <= 200:
-        return None, _err(42201, "用途说明需 2~200 字")
+        return None, _err(CODE_UNPROCESSABLE, "用途说明需 2~200 字")
 
     version_id = _safe_int(payload.get("version_id"))
     branch_id = _safe_int(payload.get("branch_id"))
     if version_id is None or branch_id is None:
-        return None, _err(42201, "version_id / branch_id 应为整数")
+        return None, _err(CODE_UNPROCESSABLE, "version_id / branch_id 应为整数")
     version = Version.objects.filter(id=version_id).first()
     branch = Branch.objects.select_related("version").filter(id=branch_id).first()
     if version is None or branch is None:
-        return None, _err(42201, "版本或分支不存在")
+        return None, _err(CODE_UNPROCESSABLE, "版本或分支不存在")
     if branch.version_id != version.id:
-        return None, _err(42201, "分支不属于所选版本")
+        return None, _err(CODE_UNPROCESSABLE, "分支不属于所选版本")
 
     try:
         with transaction.atomic():
@@ -249,7 +250,7 @@ def create_booking(user, payload: dict) -> tuple[Optional[dict], Optional[dict]]
             "[slot-booking] conflict date=%s template=%s actor=%s holder=%s",
             d, template.id, user.username, holder_name,
         )
-        return None, _err(40904, f"该时段刚被 {holder_name} 抢占，请刷新后选择其他时段")
+        return None, _err(CODE_SLOT_CONFLICT, f"该时段刚被 {holder_name} 抢占，请刷新后选择其他时段")
 
     logger.info(
         "[slot-booking] create id=%s date=%s template=%s actor=%s",
@@ -263,14 +264,14 @@ def create_booking(user, payload: dict) -> tuple[Optional[dict], Optional[dict]]
 def release_booking(booking: SlotBooking, actor, release_reason: str) -> tuple[Optional[dict], Optional[dict]]:
     """释放抢占：本人可释（原因可选）；admin 释他人必须填原因。"""
     if booking.status != "reserved":
-        return None, _err(42201, "该记录不是待占用状态，无法释放")
+        return None, _err(CODE_UNPROCESSABLE, "该记录不是待占用状态，无法释放")
     is_owner = booking.user_id == actor.id
     is_admin = getattr(actor, "role", "") == "admin"
     if not (is_owner or is_admin):
-        return None, _err(40301, "无权限执行该操作")
+        return None, _err(CODE_FORBIDDEN, "无权限执行该操作")
     reason = str(release_reason or "").strip()
     if not is_owner and not reason:
-        return None, _err(42201, "管理员释放他人抢占需填写释放原因")
+        return None, _err(CODE_UNPROCESSABLE, "管理员释放他人抢占需填写释放原因")
     booking.status = "released"
     booking.released_at = timezone.now()
     booking.release_reason = reason

@@ -10,7 +10,7 @@
 """
 from django.db import IntegrityError, transaction
 
-from ..errors import CODE_DUPLICATE, CODE_UNPROCESSABLE
+from ..errors import CODE_DUPLICATE, CODE_STAGE_CONFLICT, CODE_UNPROCESSABLE
 from ..models import Strategy, StrategyChangeLog
 from .config import get_config
 from .conflict import detect_conflicts
@@ -53,9 +53,16 @@ def validate_strategy(branch, template, build_start_time, push_start_time,
     from django.conf import settings
     from django.utils import timezone
 
-    for field, val in (("build_start_time", build_start_time), ("push_start_time", push_start_time)):
-        if val is not None and not valid_hhmm(val):
-            raise StrategyValidationError(42201, f"{field} 格式应为 HH:MM（0-23 时 0-59 分）")
+    if not valid_hhmm(build_start_time):
+        # build_start_time 为必填非空字段：此前 None 会跳过校验、落库时
+        # IntegrityError 冒成 500（2026-10-12 评估 B-P1-12）
+        raise StrategyValidationError(CODE_UNPROCESSABLE, "build_start_time 格式应为 HH:MM（0-23 时 0-59 分）")
+    if push_start_time is not None and not valid_hhmm(push_start_time):
+        raise StrategyValidationError(CODE_UNPROCESSABLE, "push_start_time 格式应为 HH:MM（0-23 时 0-59 分）")
+    if push_mode not in ("normal", "sync"):
+        # choices 仅在 full_clean 生效，直接 save 不校验；此处兜底防止
+        # "xyz" 之类值静默入库导致时间线推导行为漂移
+        raise StrategyValidationError(CODE_UNPROCESSABLE, "push_mode 应为 normal 或 sync")
     build_minutes = get_config("build_minutes", settings.BUILD_MINUTES)
     push_minutes = get_config("push_minutes", settings.PUSH_MINUTES)
     sync_buffer_minutes = get_config("sync_buffer_minutes", settings.SYNC_BUFFER_MINUTES)
@@ -65,8 +72,7 @@ def validate_strategy(branch, template, build_start_time, push_start_time,
     mutex_hits = check_build_mutex(branch.version_id, build_start_time, build_minutes,
                                    exclude_strategy_id=exclude_id, ds=ds)
     if mutex_hits:
-        raise StrategyValidationError(
-            40902, "同一时间节点仅允许一个分支构建（资源互斥）", extra={"mutex": mutex_hits})
+        raise StrategyValidationError(CODE_DUPLICATE, "同一时间节点仅允许一个分支构建（资源互斥）", extra={"mutex": mutex_hits})
 
     # select_related("template")：下方推导式逐条读 s.template.*，避免 N+1
     # （preview 是前端表单防抖高频路径，务必一次取全）
@@ -89,8 +95,7 @@ def validate_strategy(branch, template, build_start_time, push_start_time,
     }]
     hits = detect_conflicts(ds, cand, existing, build_minutes, push_minutes, sync_buffer_minutes)
     if hits:
-        raise StrategyValidationError(
-            40901, "阶段时间冲突，请调整构建时间", extra={"conflicts": hits})
+        raise StrategyValidationError(CODE_STAGE_CONFLICT, "阶段时间冲突，请调整构建时间", extra={"conflicts": hits})
 
 
 def strategy_payload(s: Strategy) -> dict:
@@ -144,6 +149,8 @@ def create_strategy(branch, template, operator, *, name, build_start_time,
     唯一约束 uniq_active_strategy_branch_time 在 DB 层拦截，转 40902。
     """
     name = _validate_name(name)
+    if not isinstance(enabled, bool):
+        raise StrategyValidationError(CODE_UNPROCESSABLE, "enabled 应为布尔值")
     validate_strategy(branch, template, build_start_time, push_start_time, push_mode=push_mode)
     try:
         return Strategy.objects.create(
@@ -162,15 +169,18 @@ def update_strategy(strategy: Strategy, body: dict, operator):
     old = strategy_payload(strategy)
     build_start_time = body.get("build_start_time", strategy.build_start_time)
     push_start_time = body.get("push_start_time", strategy.push_start_time)
+    push_mode = strategy.push_mode if body.get("push_mode") is None else body["push_mode"]
+    enabled = strategy.enabled if body.get("enabled") is None else body["enabled"]
+    if not isinstance(enabled, bool):
+        raise StrategyValidationError(CODE_UNPROCESSABLE, "enabled 应为布尔值")
     validate_strategy(strategy.branch, strategy.template, build_start_time, push_start_time,
-                      push_mode=body.get("push_mode", strategy.push_mode),
-                      exclude_id=strategy.id)
+                      push_mode=push_mode, exclude_id=strategy.id)
     if body.get("name") is not None:
         strategy.name = _validate_name(body["name"])
     strategy.build_start_time = build_start_time
     strategy.push_start_time = push_start_time or None
-    strategy.push_mode = body.get("push_mode", strategy.push_mode)
-    strategy.enabled = body.get("enabled", strategy.enabled)
+    strategy.push_mode = push_mode
+    strategy.enabled = enabled
     try:
         strategy.save()
     except IntegrityError as exc:

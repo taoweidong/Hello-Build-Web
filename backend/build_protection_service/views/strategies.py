@@ -71,10 +71,14 @@ def list_strategies(request):
         qs = qs.filter(branch__version_id=version_id)
     if branch_id:
         qs = qs.filter(branch_id=branch_id)
-    # PM 仅可见其绑定版本策略（管理员可见全部）
-    bound_version_id = getattr(request.user, "bound_version_id", None)
-    if request.user.role == "pm" and bound_version_id:
-        qs = qs.filter(branch__version_id=bound_version_id)
+    # PM 仅可见其绑定版本策略（管理员可见全部）；未绑定版本的 PM 取空集
+    # （fail-closed，避免过滤条件整体跳过导致越权可见全部策略）。
+    if request.user.role == "pm":
+        bound_version_id = getattr(request.user, "bound_version_id", None)
+        if bound_version_id is None:
+            qs = qs.none()
+        else:
+            qs = qs.filter(branch__version_id=bound_version_id)
     return json_resp(ok([strategy_payload(s) for s in qs]))
 
 
@@ -100,6 +104,10 @@ def preview_strategy(request):
         validate_strategy(branch, template, build_start_time, push_start_time,
                           push_mode=push_mode, exclude_id=parse_int(body.get("id")))
     except StrategyValidationError as exc:
+        if exc.code == CODE_UNPROCESSABLE:
+            # 参数本身非法（时间格式/push_mode 值域）走错误响应；
+            # 冲突类（40901/40902）才是预览要回传的 conflict 载荷。
+            return _validation_error(exc)
         return json_resp(ok({"conflict": {"code": exc.code, "message": exc.message, **exc.extra}}))
     # 计算时间线供前端实时预览（与校验同一基准日期：当天）
     build_minutes = get_config("build_minutes", settings.BUILD_MINUTES)
@@ -159,6 +167,10 @@ def update_strategy(request, sid):
 
 
 def toggle_strategy(request, sid):
+    # 方法守卫：翻转是写操作，GET/HEAD 等读方法不得产生副作用
+    # （前端用 PATCH，既有集成方用 POST，两者均放行；admin 侧同款端点强制 PATCH）。
+    if request.method not in ("POST", "PATCH"):
+        return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
     authed = _authed(request)
     if authed:
         return authed

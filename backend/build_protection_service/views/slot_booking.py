@@ -12,7 +12,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
 
 from ..api import err, ok
-from ..errors import CODE_STATUS
+from ..errors import CODE_DUPLICATE, CODE_NOT_FOUND, CODE_STATUS, CODE_UNPROCESSABLE
 from ..models import SlotBooking, SlotTemplate
 from ..serializers.slot_booking import (
     ReleaseBookingSerializer,
@@ -86,7 +86,7 @@ class SlotTemplateViewSet(
             return perr
         serializer = SlotTemplateSerializer(data=request.data or {})
         if not serializer.is_valid():
-            return fail_resp(42201, first_error(serializer.errors))
+            return fail_resp(CODE_UNPROCESSABLE, first_error(serializer.errors))
         template = serializer.save()
         logger.info("[slot-booking] template create id=%s name=%s actor=%s",
                     template.id, template.name, user.username)
@@ -104,10 +104,10 @@ class SlotTemplateViewSet(
             return perr
         template = self.get_queryset().filter(pk=kwargs.get("pk")).first()
         if template is None:
-            return fail_resp(40401, "时段模板不存在")
+            return fail_resp(CODE_NOT_FOUND, "时段模板不存在")
         serializer = SlotTemplateSerializer(template, data=request.data or {}, partial=True)
         if not serializer.is_valid():
-            return fail_resp(42201, first_error(serializer.errors))
+            return fail_resp(CODE_UNPROCESSABLE, first_error(serializer.errors))
         template = serializer.save()
         logger.info("[slot-booking] template update id=%s actor=%s", template.id, user.username)
         return json_resp(ok({
@@ -124,9 +124,9 @@ class SlotTemplateViewSet(
             return perr
         template = self.get_queryset().filter(pk=kwargs.get("pk")).first()
         if template is None:
-            return fail_resp(40401, "时段模板不存在")
+            return fail_resp(CODE_NOT_FOUND, "时段模板不存在")
         if SlotBooking.objects.filter(template=template).exists():
-            return fail_resp(40902, "该时段已有抢占记录，请改用停用")
+            return fail_resp(CODE_DUPLICATE, "该时段已有抢占记录，请改用停用")
         template.delete()
         logger.info("[slot-booking] template delete id=%s actor=%s", kwargs.get("pk"), user.username)
         return json_resp(ok(message="时段模板已删除"))
@@ -145,7 +145,7 @@ class SlotBookingViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
             return resp
         serializer = SlotBookingCreateSerializer(data=request.data or {})
         if not serializer.is_valid():
-            return fail_resp(42201, first_error(serializer.errors))
+            return fail_resp(CODE_UNPROCESSABLE, first_error(serializer.errors))
         data, error = create_booking(user, serializer.validated_data)
         if error:
             return _err_resp(error)
@@ -160,10 +160,10 @@ class SlotBookingViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
             self.get_queryset().filter(pk=pk).first()
         )
         if booking is None:
-            return fail_resp(40401, "抢占记录不存在")
+            return fail_resp(CODE_NOT_FOUND, "抢占记录不存在")
         serializer = ReleaseBookingSerializer(data=request.data or {})
         if not serializer.is_valid():
-            return fail_resp(42201, first_error(serializer.errors))
+            return fail_resp(CODE_UNPROCESSABLE, first_error(serializer.errors))
         data, error = release_booking(booking, user, serializer.validated_data.get("release_reason", ""))
         if error:
             return _err_resp(error)
@@ -192,14 +192,14 @@ class SlotBookingViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
             if params.get("date_to"):
                 qs = qs.filter(date__lte=params["date_to"])
         except (ValueError, ValidationError):
-            return fail_resp(42201, "日期筛选格式非法，应为 YYYY-MM-DD")
+            return fail_resp(CODE_UNPROCESSABLE, "日期筛选格式非法，应为 YYYY-MM-DD")
         # 整数过滤参数须过 parse_int，非法值返回 42201（避免 filter(version_id="abc") → 500）
         for key in ("version_id", "branch_id", "user_id"):
             raw = params.get(key)
             if raw:
                 val = parse_int(raw)
                 if val is None:
-                    return fail_resp(42201, f"{key} 应为整数")
+                    return fail_resp(CODE_UNPROCESSABLE, f"{key} 应为整数")
                 qs = qs.filter(**{key: val})
         if params.get("status"):
             qs = qs.filter(status=params["status"])

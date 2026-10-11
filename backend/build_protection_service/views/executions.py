@@ -9,6 +9,7 @@ from ..api import err, ok
 from ..models import ExecutionRound
 from ..services.config import get_config
 from . import authed_user, fail_resp, first_error, fmt_dt, json_resp, parse_body, parse_int
+from ..errors import CODE_DUPLICATE, CODE_FORBIDDEN, CODE_NOT_FOUND, CODE_UNPROCESSABLE
 
 
 def _round_payload(r):
@@ -39,7 +40,7 @@ def executions_view(request):
     if raw_strategy_id:
         strategy_id = parse_int(raw_strategy_id)
         if strategy_id is None:
-            return fail_resp(42201, "strategy_id 应为整数")
+            return fail_resp(CODE_UNPROCESSABLE, "strategy_id 应为整数")
         qs = qs.filter(strategy_id=strategy_id)
     # 日期过滤参数须校验，非法值返回 42201（避免 exec_date="abc" → ValidationError → 500）
     try:
@@ -53,17 +54,32 @@ def executions_view(request):
         if to_date:
             qs = qs.filter(exec_date__lte=to_date)
     except (ValueError, ValidationError):
-        return fail_resp(42201, "日期筛选格式非法，应为 YYYY-MM-DD")
+        return fail_resp(CODE_UNPROCESSABLE, "日期筛选格式非法，应为 YYYY-MM-DD")
     return json_resp(ok([_round_payload(r) for r in qs[:200]]))
 
 
+def _round_or_denied(user, rid):
+    """按 id 取执行轮次并做 PM 版本隔离（与列表端点同口径，堵住枚举 rid 越权读取）。
+
+    返回 (round, err_response)：不存在 → 40401；PM 访问他版轮次 → 40301。
+    """
+    r = ExecutionRound.objects.select_related(
+        "strategy", "strategy__branch", "strategy__branch__version"
+    ).filter(id=rid).first()
+    if not r:
+        return None, fail_resp(CODE_NOT_FOUND, "执行轮次不存在")
+    if user.role == "pm" and r.strategy.branch.version.pm_user_id != user.id:
+        return None, fail_resp(CODE_FORBIDDEN, "仅可查看本版本执行轮次")
+    return r, None
+
+
 def round_detail(request, rid):
-    _, resp = authed_user(request)
+    user, resp = authed_user(request)
     if resp:
         return resp
-    r = ExecutionRound.objects.select_related("strategy").filter(id=rid).first()
-    if not r:
-        return fail_resp(40401, "执行轮次不存在")
+    r, denied = _round_or_denied(user, rid)
+    if denied:
+        return denied
     logs = [
         {"id": lg.id, "stage": lg.stage, "message": lg.message, "created_at": fmt_dt(lg.created_at)}
         for lg in r.logs.all().order_by("id")
@@ -73,32 +89,41 @@ def round_detail(request, rid):
 
 def conclusion_view(request, rid):
     if request.method != "POST":
-        return fail_resp(42201, "不支持的请求方法")
+        return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
     user, resp = authed_user(request)
     if resp:
         return resp
-    r = ExecutionRound.objects.select_related("strategy").filter(id=rid).first()
-    if not r:
-        return fail_resp(40401, "执行轮次不存在")
+    r, denied = _round_or_denied(user, rid)
+    if denied:
+        return denied
     if user.role != "tester":
-        return fail_resp(40301, "仅测试人员可提交结论")
+        return fail_resp(CODE_FORBIDDEN, "仅测试人员可提交结论")
     body = parse_body(request)
     conclusion = body.get("conclusion")
     if conclusion not in ("pass", "fail"):
-        return fail_resp(42201, "非法结论")
+        return fail_resp(CODE_UNPROCESSABLE, "非法结论")
     # 防重：已有结论的轮次不可重复提交（初始 conclusion 为 None，对应前端 40902「结论已录入」处理）
     if r.conclusion is not None:
-        return fail_resp(40902, "结论已录入，不可重复提交")
-    r.conclusion = conclusion
-    r.note = body.get("note", r.note or "")
-    r.analysis_end_at = now()
-    if r.conclusion == "pass" and r.strategy.push_mode == "normal":
+        return fail_resp(CODE_DUPLICATE, "结论已录入，不可重复提交")
+    analysis_end = now()
+    fields = {
+        "conclusion": conclusion,
+        "note": body.get("note", r.note or ""),
+        "analysis_end_at": analysis_end,
+    }
+    if conclusion == "pass" and r.strategy.push_mode == "normal":
         push_minutes = get_config("push_minutes", settings.PUSH_MINUTES)
-        r.push_start_at = r.analysis_end_at
-        r.push_end_at = r.analysis_end_at + timedelta(minutes=push_minutes)
-        r.push_status = "pushed"
+        fields.update(
+            push_start_at=analysis_end,
+            push_end_at=analysis_end + timedelta(minutes=push_minutes),
+            push_status="pushed",
+        )
     else:
-        r.push_start_at = r.push_end_at = None
-        r.push_status = ""
-    r.save()
+        fields.update(push_start_at=None, push_end_at=None, push_status="")
+    # 原子抢占：单条 UPDATE 仅在 conclusion 仍为 NULL 时写入（对齐 borrow_flow 审批
+    # 范式），并发双提交后到者更新 0 行 → 40902，消除 check-then-act 竞态。
+    updated = ExecutionRound.objects.filter(id=rid, conclusion__isnull=True).update(**fields)
+    if not updated:
+        return fail_resp(CODE_DUPLICATE, "结论已录入，不可重复提交")
+    r.refresh_from_db()
     return json_resp(ok(_round_payload(r)))

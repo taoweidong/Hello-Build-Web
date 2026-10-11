@@ -7,6 +7,7 @@ from django.utils import timezone
 from ..api import err, ok
 from ..models import Branch, Strategy, Version
 from . import authed_user, fail_resp, first_error, json_resp, parse_int
+from ..errors import CODE_UNPROCESSABLE
 
 
 _WEEKDAY_ZH = ("周一", "周二", "周三", "周四", "周五", "周六", "周日")
@@ -33,12 +34,12 @@ def weekly_view(request):
         # 非数字 version_id 直接 422，避免 filter(id="abc") 抛 ValueError 变成 500
         version_id = parse_int(raw_version_id)
         if version_id is None:
-            return fail_resp(42201, "version_id 应为整数")
+            return fail_resp(CODE_UNPROCESSABLE, "version_id 应为整数")
         version = Version.objects.filter(id=version_id).first()
     try:
         days = _weekdays(week_start)
     except ValueError:
-        return fail_resp(42201, "week_start 格式应为 YYYY-MM-DD")
+        return fail_resp(CODE_UNPROCESSABLE, "week_start 格式应为 YYYY-MM-DD")
     branches = []
     strategies = []
     if version:

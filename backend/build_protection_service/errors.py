@@ -9,6 +9,7 @@
 - 40903 重复关联/授权/启动
 - 40904 时段抢占冲突
 - 42901 登录尝试过于频繁
+- 50000 服务端内部错误（DRF 异常处理器兜底，勿在业务代码手工使用）
 """
 
 CODE_OK = 0
@@ -22,6 +23,7 @@ CODE_DUPLICATE = 40902
 CODE_ASSOCIATION = 40903
 CODE_SLOT_CONFLICT = 40904
 CODE_RATE_LIMITED = 42901
+CODE_INTERNAL = 50000
 
 # 业务码 → HTTP 状态映射：视图组装响应时的唯一真源（原 slot_booking._ERR_STATUS 收敛至此）
 CODE_STATUS = {
@@ -35,4 +37,5 @@ CODE_STATUS = {
     CODE_ASSOCIATION: 409,
     CODE_SLOT_CONFLICT: 409,
     CODE_RATE_LIMITED: 429,
+    CODE_INTERNAL: 500,
 }

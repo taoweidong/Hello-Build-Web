@@ -73,13 +73,17 @@ def list_versions(user):
 def create_version(user, body):
     name = body.get("name")
     pm_user_id = parse_int(body.get("pm_user_id"))
-    if not name or pm_user_id is None:
+    if not isinstance(name, str) or not name.strip() or pm_user_id is None:
         return fail_resp(CODE_UNPROCESSABLE, "版本名与 PM 必填")
+    name = name.strip()
     if Version.objects.filter(name=name).exists():
         return fail_resp(CODE_DUPLICATE, "版本号已存在")
     pm = User.objects.filter(id=pm_user_id).first()
     if not pm:
         return fail_resp(CODE_UNPROCESSABLE, "PM 用户不存在")
+    # 版本挂给非 PM 角色会形成"无主版本"（该用户不会获得 PM 权限），入口拒绝
+    if pm.role != "pm":
+        return fail_resp(CODE_UNPROCESSABLE, "pm_user_id 必须为 PM 角色用户")
     status = body.get("status", "active")
     if status not in _VALID_STATUSES:
         return fail_resp(CODE_UNPROCESSABLE, "非法状态")
@@ -106,6 +110,10 @@ def extra_view(request):
 
 
 def update_version(request, vid):
+    # 方法守卫：此前 GET 会执行空 body 的 save 并写审计日志、DELETE 不删数据
+    # 却返回"成功"payload（对客户端是删除成功假象），统一拒绝非写方法。
+    if request.method not in ("PUT", "PATCH"):
+        return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
     user, resp = authed_user(request)
     if resp:
         return resp
@@ -117,10 +125,12 @@ def update_version(request, vid):
         return fail_resp(CODE_NOT_FOUND, "版本不存在")
     body = parse_body(request)
     if body.get("name") is not None:
-        dup = Version.objects.filter(name=body["name"]).exclude(id=vid).exists()
+        if not isinstance(body["name"], str) or not body["name"].strip():
+            return fail_resp(CODE_UNPROCESSABLE, "版本名不能为空")
+        dup = Version.objects.filter(name=body["name"].strip()).exclude(id=vid).exists()
         if dup:
             return fail_resp(CODE_DUPLICATE, "版本号已存在")
-        v.name = body["name"]
+        v.name = body["name"].strip()
     if body.get("pm_user_id") is not None:
         pm_id = parse_int(body["pm_user_id"])
         if pm_id is None:
@@ -128,6 +138,8 @@ def update_version(request, vid):
         pm = User.objects.filter(id=pm_id).first()
         if not pm:
             return fail_resp(CODE_UNPROCESSABLE, "PM 用户不存在")
+        if pm.role != "pm":
+            return fail_resp(CODE_UNPROCESSABLE, "pm_user_id 必须为 PM 角色用户")
         v.pm_user = pm
     if body.get("status") is not None:
         if body["status"] not in _VALID_STATUSES:
@@ -142,6 +154,8 @@ def update_version(request, vid):
 
 
 def add_branch(request, vid):
+    if request.method != "POST":
+        return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
     user, resp = authed_user(request)
     if resp:
         return resp
@@ -153,8 +167,9 @@ def add_branch(request, vid):
         return fail_resp(CODE_NOT_FOUND, "版本不存在")
     body = parse_body(request)
     name = body.get("name")
-    if not name:
+    if not isinstance(name, str) or not name.strip():
         return fail_resp(CODE_UNPROCESSABLE, "分支名必填")
+    name = name.strip()
     if Branch.objects.filter(version=v, name=name).exists():
         return fail_resp(CODE_DUPLICATE, "该版本下分支已存在")
     try:
@@ -184,16 +199,23 @@ def users_view(request):
         body = parse_body(request)
         username = body.get("username")
         role = body.get("role", "builder")
-        if not username:
+        password = body.get("password")
+        display_name = body.get("display_name", "")
+        if not isinstance(username, str) or not username.strip():
             return fail_resp(CODE_UNPROCESSABLE, "用户名必填")
+        # 密码必填：不再回退默认弱口令 "123456"（2026-10-12 评估 B-P1-14）
+        if not isinstance(password, str) or not password.strip():
+            return fail_resp(CODE_UNPROCESSABLE, "密码必填")
         if role not in _VALID_ROLES:
             return fail_resp(CODE_UNPROCESSABLE, "非法角色")
+        if not isinstance(display_name, str):
+            return fail_resp(CODE_UNPROCESSABLE, "display_name 应为字符串")
         if User.objects.filter(username=username).exists():
             return fail_resp(CODE_DUPLICATE, "用户名已存在")
         try:
             u = User.objects.create_user(
-                username=username, password=body.get("password") or "123456",
-                role=role, display_name=body.get("display_name", ""),
+                username=username.strip(), password=password,
+                role=role, display_name=display_name,
             )
         except IntegrityError:
             return fail_resp(CODE_DUPLICATE, "用户名已存在")
@@ -203,6 +225,8 @@ def users_view(request):
 
 
 def update_user(request, uid):
+    if request.method != "PATCH":
+        return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
     user, resp = authed_user(request)
     if resp:
         return resp
@@ -216,15 +240,22 @@ def update_user(request, uid):
     # 记录变更前身份，用于"最后一个 admin"保护判定
     orig_role, orig_is_active = u.role, u.is_active
     if body.get("password"):
+        if not isinstance(body["password"], str):
+            return fail_resp(CODE_UNPROCESSABLE, "密码应为字符串")
         u.set_password(body["password"])
     if body.get("role") is not None:
         if body["role"] not in _VALID_ROLES:
             return fail_resp(CODE_UNPROCESSABLE, "非法角色")
         u.role = body["role"]
     if body.get("display_name") is not None:
+        if not isinstance(body["display_name"], str):
+            return fail_resp(CODE_UNPROCESSABLE, "display_name 应为字符串")
         u.display_name = body["display_name"]
     if body.get("is_active") is not None:
-        u.is_active = str(body["is_active"]).lower() in ("true", "1")
+        # 严格布尔：此前 str(...).lower() in ("true","1") 会把任意垃圾值静默解析成"停用"
+        if not isinstance(body["is_active"], bool):
+            return fail_resp(CODE_UNPROCESSABLE, "is_active 应为布尔值")
+        u.is_active = body["is_active"]
     # 最后一个启用状态的 admin 不可被停用/降级，避免系统失去管理入口
     losing_admin = (
         orig_role == "admin" and orig_is_active

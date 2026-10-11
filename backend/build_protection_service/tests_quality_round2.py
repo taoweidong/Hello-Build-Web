@@ -7,9 +7,13 @@ docs/superpowers/specs/2026-10-12-code-quality-optimization-round2-design.md：
 from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from rest_framework.test import APIClient
 
-from .models import Branch, SlotTemplate, Strategy, StrategyTemplate, Version
+from .models import (
+    AdminOpLog, Branch, ExecutionRound, SlotTemplate, Strategy,
+    StrategyTemplate, Version,
+)
 from .services.slot_booking import template_applies_on
 from .tests import ConfigAwareTestCase
 
@@ -258,3 +262,402 @@ class CsrfHardeningTests(ConfigAwareTestCase):
         resp = client.post("/api/reports", {}, format="json")
         self.assertNotEqual(resp.status_code, 403)
         self.assertEqual(resp.json()["code"], 40100)
+
+
+class ToggleMethodGuardTests(ConfigAwareTestCase):
+    """B-P1-7：toggle 仅接受 POST/PATCH，GET 不得产生副作用。"""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.pm = User.objects.create_user(username="pm1", password="123456", role="pm")
+        self.version = Version.objects.create(name="27A", pm_user=self.pm, status="active")
+        self.branch = Branch.objects.create(version=self.version, name="master")
+        self.tmpl = StrategyTemplate.objects.create(name="模板A", smoke_minutes=60, analysis_minutes=30)
+        self.s = Strategy.objects.create(
+            branch=self.branch, template=self.tmpl, name="策略A",
+            build_start_time="22:00", push_mode="normal", created_by=self.pm, enabled=True,
+        )
+        resp = self.client.post(
+            "/api/auth/login", {"username": "pm1", "password": "123456"}, format="json"
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {resp.json()['data']['token']}")
+
+    def test_get_toggle_rejected_and_no_side_effect(self):
+        resp = self.client.get(f"/api/strategies/{self.s.id}/toggle")
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["code"], 42201)
+        self.s.refresh_from_db()
+        self.assertTrue(self.s.enabled)
+
+    def test_patch_toggle_flips(self):
+        resp = self.client.patch(f"/api/strategies/{self.s.id}/toggle")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.json()["data"]["enabled"])
+
+    def test_post_toggle_flips(self):
+        resp = self.client.post(f"/api/strategies/{self.s.id}/toggle")
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.json()["data"]["enabled"])
+
+
+class AdminMethodGuardTests(ConfigAwareTestCase):
+    """B-P1-8：update_version/add_branch/update_user 补方法守卫，GET/DELETE 无副作用。"""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.admin = User.objects.create_user(username="admin", password="123456", role="admin")
+        self.pm = User.objects.create_user(username="pm1", password="123456", role="pm")
+        self.builder = User.objects.create_user(username="b1", password="123456", role="builder")
+        self.version = Version.objects.create(name="27A", pm_user=self.pm, status="active")
+        resp = self.client.post(
+            "/api/auth/login", {"username": "admin", "password": "123456"}, format="json"
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {resp.json()['data']['token']}")
+
+    def test_update_version_get_rejected_no_side_effect(self):
+        resp = self.client.get(f"/api/admin/versions/{self.version.id}")
+        self.assertEqual(resp.status_code, 422)
+        before = AdminOpLog.objects.count()
+        self.version.refresh_from_db()
+        self.assertEqual(self.version.name, "27A")
+        self.assertEqual(AdminOpLog.objects.count(), before)
+
+    def test_update_version_delete_rejected(self):
+        """DELETE 曾不删数据却返回成功 payload（删除成功假象），必须显式拒绝。"""
+        resp = self.client.delete(f"/api/admin/versions/{self.version.id}")
+        self.assertEqual(resp.status_code, 422)
+        self.assertTrue(Version.objects.filter(id=self.version.id).exists())
+
+    def test_update_version_put_and_patch_ok(self):
+        for method in (self.client.put, self.client.patch):
+            resp = method(f"/api/admin/versions/{self.version.id}", {"status": "active"}, format="json")
+            self.assertEqual(resp.status_code, 200)
+
+    def test_add_branch_get_rejected(self):
+        resp = self.client.get(f"/api/admin/versions/{self.version.id}/branches")
+        self.assertEqual(resp.status_code, 422)
+        self.assertFalse(Branch.objects.filter(version=self.version).exists())
+
+    def test_update_user_get_rejected(self):
+        resp = self.client.get(f"/api/admin/users/{self.pm.id}")
+        self.assertEqual(resp.status_code, 422)
+
+    def test_update_user_put_rejected(self):
+        resp = self.client.put(f"/api/admin/users/{self.pm.id}", {"role": "builder"}, format="json")
+        self.assertEqual(resp.status_code, 422)
+        self.pm.refresh_from_db()
+        self.assertEqual(self.pm.role, "pm")
+
+
+class ExecutionsPmIsolationTests(ConfigAwareTestCase):
+    """B-P1-9/B-P1-10：轮次详情 PM 版本隔离 + 结论提交原子防重与角色/参数矩阵。"""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.pm_a = User.objects.create_user(username="pmA", password="123456", role="pm")
+        self.pm_b = User.objects.create_user(username="pmB", password="123456", role="pm")
+        self.tester = User.objects.create_user(username="t1", password="123456", role="tester")
+        self.admin = User.objects.create_user(username="admin", password="123456", role="admin")
+        self.v_a = Version.objects.create(name="27A", pm_user=self.pm_a, status="active")
+        self.v_b = Version.objects.create(name="27B", pm_user=self.pm_b, status="active")
+        self.b_a = Branch.objects.create(version=self.v_a, name="master")
+        self.tmpl = StrategyTemplate.objects.create(name="模板A", smoke_minutes=60, analysis_minutes=30)
+        self.s_a = Strategy.objects.create(
+            branch=self.b_a, template=self.tmpl, name="策略A",
+            build_start_time="22:00", push_mode="normal", created_by=self.pm_a,
+        )
+        self.round = ExecutionRound.objects.create(strategy=self.s_a, exec_date="2026-10-12")
+
+    def _login(self, username):
+        resp = self.client.post(
+            "/api/auth/login", {"username": username, "password": "123456"}, format="json"
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {resp.json()['data']['token']}")
+
+    def test_own_pm_can_read_round_detail(self):
+        self._login("pmA")
+        resp = self.client.get(f"/api/executions/rounds/{self.round.id}")
+        self.assertEqual(resp.status_code, 200)
+
+    def test_other_pm_round_detail_403(self):
+        self._login("pmB")
+        resp = self.client.get(f"/api/executions/rounds/{self.round.id}")
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.json()["code"], 40301)
+
+    def test_admin_and_tester_round_detail_ok(self):
+        for who in ("admin", "t1"):
+            self._login(who)
+            resp = self.client.get(f"/api/executions/rounds/{self.round.id}")
+            self.assertEqual(resp.status_code, 200, msg=who)
+
+    def test_round_detail_404(self):
+        self._login("admin")
+        resp = self.client.get("/api/executions/rounds/999999")
+        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(resp.json()["code"], 40401)
+
+    def test_conclusion_non_tester_403(self):
+        self._login("pmA")
+        resp = self.client.post(
+            f"/api/executions/rounds/{self.round.id}/conclusion",
+            {"conclusion": "pass"}, format="json",
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.json()["code"], 40301)
+
+    def test_conclusion_invalid_value_422(self):
+        self._login("t1")
+        resp = self.client.post(
+            f"/api/executions/rounds/{self.round.id}/conclusion",
+            {"conclusion": "maybe"}, format="json",
+        )
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["code"], 42201)
+
+    def test_conclusion_get_rejected(self):
+        self._login("t1")
+        resp = self.client.get(f"/api/executions/rounds/{self.round.id}/conclusion")
+        self.assertEqual(resp.status_code, 422)
+
+    def test_conclusion_duplicate_40902(self):
+        self._login("t1")
+        first = self.client.post(
+            f"/api/executions/rounds/{self.round.id}/conclusion",
+            {"conclusion": "pass", "note": "全绿"}, format="json",
+        )
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.json()["data"]["conclusion"], "pass")
+        second = self.client.post(
+            f"/api/executions/rounds/{self.round.id}/conclusion",
+            {"conclusion": "fail"}, format="json",
+        )
+        self.assertEqual(second.status_code, 409)
+        self.assertEqual(second.json()["code"], 40902)
+        self.round.refresh_from_db()
+        self.assertEqual(self.round.conclusion, "pass")
+
+    def test_conclusion_pass_normal_pushes(self):
+        self._login("t1")
+        resp = self.client.post(
+            f"/api/executions/rounds/{self.round.id}/conclusion",
+            {"conclusion": "pass"}, format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["data"]["push_status"], "pushed")
+
+
+class StrategyVisibilityAndValueDomainTests(ConfigAwareTestCase):
+    """B-P1-11/B-P1-12：无绑定 PM fail-closed + push_mode/enabled 值域校验。"""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.pm_bound = User.objects.create_user(username="pmA", password="123456", role="pm")
+        self.pm_free = User.objects.create_user(username="pmFree", password="123456", role="pm")
+        self.version = Version.objects.create(name="27A", pm_user=self.pm_bound, status="active")
+        self.branch = Branch.objects.create(version=self.version, name="master")
+        self.tmpl = StrategyTemplate.objects.create(name="模板A", smoke_minutes=60, analysis_minutes=30)
+        self.s = Strategy.objects.create(
+            branch=self.branch, template=self.tmpl, name="策略A",
+            build_start_time="22:00", push_mode="normal", created_by=self.pm_bound,
+        )
+
+    def _login(self, username):
+        resp = self.client.post(
+            "/api/auth/login", {"username": username, "password": "123456"}, format="json"
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {resp.json()['data']['token']}")
+
+    def test_unbound_pm_sees_empty_list(self):
+        """未绑定版本的 PM 此前可见全部策略，必须 fail-closed 为空集。"""
+        self._login("pmFree")
+        resp = self.client.get("/api/strategies")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["data"], [])
+
+    def test_bound_pm_sees_own_version(self):
+        self._login("pmA")
+        resp = self.client.get("/api/strategies")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(resp.json()["data"]), 1)
+
+    def test_update_push_mode_invalid_422(self):
+        self._login("pmA")
+        resp = self.client.patch(f"/api/strategies/{self.s.id}", {"push_mode": "xyz"}, format="json")
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["code"], 42201)
+        self.s.refresh_from_db()
+        self.assertEqual(self.s.push_mode, "normal")
+
+    def test_update_enabled_string_422(self):
+        self._login("pmA")
+        resp = self.client.patch(f"/api/strategies/{self.s.id}", {"enabled": "false"}, format="json")
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["code"], 42201)
+        self.s.refresh_from_db()
+        self.assertTrue(self.s.enabled)
+
+    def test_create_push_mode_invalid_422(self):
+        self._login("pmA")
+        resp = self.client.post("/api/strategies", {
+            "branch_id": self.branch.id, "template_id": self.tmpl.id,
+            "name": "策略B", "build_start_time": "23:00", "push_mode": "turbo",
+        }, format="json")
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["code"], 42201)
+
+    def test_update_push_mode_sync_ok(self):
+        self._login("pmA")
+        resp = self.client.patch(f"/api/strategies/{self.s.id}", {"push_mode": "sync"}, format="json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["data"]["push_mode"], "sync")
+
+
+class AdminUserManagementTests(ConfigAwareTestCase):
+    """B-P1-14 + B-P2-21：建用户密码必填、类型守卫、is_active 严格布尔、PM 角色校验。"""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.admin = User.objects.create_user(username="admin", password="123456", role="admin")
+        self.pm = User.objects.create_user(username="pm1", password="123456", role="pm")
+        self.builder = User.objects.create_user(username="b1", password="123456", role="builder")
+        resp = self.client.post(
+            "/api/auth/login", {"username": "admin", "password": "123456"}, format="json"
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {resp.json()['data']['token']}")
+
+    def test_create_user_requires_password(self):
+        resp = self.client.post("/api/admin/users", {
+            "username": "newbie", "role": "builder",
+        }, format="json")
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["code"], 42201)
+        self.assertFalse(User.objects.filter(username="newbie").exists())
+
+    def test_create_user_ok(self):
+        resp = self.client.post("/api/admin/users", {
+            "username": "newbie", "role": "builder", "password": "Str0ng!pass",
+            "display_name": "新同事",
+        }, format="json")
+        self.assertEqual(resp.status_code, 200)
+        u = User.objects.get(username="newbie")
+        self.assertTrue(u.check_password("Str0ng!pass"))
+        self.assertEqual(u.display_name, "新同事")
+
+    def test_create_user_non_string_fields_422(self):
+        resp = self.client.post("/api/admin/users", {
+            "username": {"a": 1}, "role": "builder", "password": "x12345",
+        }, format="json")
+        self.assertEqual(resp.status_code, 422)
+        resp = self.client.post("/api/admin/users", {
+            "username": "u2", "role": "builder", "password": ["list"],
+        }, format="json")
+        self.assertEqual(resp.status_code, 422)
+
+    def test_users_get_list_ok(self):
+        """零覆盖端点补齐：GET /admin/users 列表。"""
+        resp = self.client.get("/api/admin/users")
+        self.assertEqual(resp.status_code, 200)
+        usernames = {u["username"] for u in resp.json()["data"]}
+        self.assertIn("admin", usernames)
+
+    def test_update_user_is_active_strict_bool(self):
+        """垃圾值此前被静默解析为「停用」，必须 422。"""
+        resp = self.client.patch(f"/api/admin/users/{self.builder.id}", {
+            "is_active": "yes",
+        }, format="json")
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["code"], 42201)
+        self.builder.refresh_from_db()
+        self.assertTrue(self.builder.is_active)
+
+    def test_update_user_password_type_guard(self):
+        resp = self.client.patch(f"/api/admin/users/{self.builder.id}", {
+            "password": {"dict": True},
+        }, format="json")
+        self.assertEqual(resp.status_code, 422)
+
+    def test_create_version_pm_must_have_pm_role(self):
+        resp = self.client.post("/api/admin/versions", {
+            "name": "28A", "pm_user_id": self.builder.id,
+        }, format="json")
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["code"], 42201)
+        self.assertFalse(Version.objects.filter(name="28A").exists())
+
+    def test_update_version_pm_role_check(self):
+        v = Version.objects.create(name="27C", pm_user=self.pm, status="active")
+        resp = self.client.put(f"/api/admin/versions/{v.id}", {
+            "pm_user_id": self.builder.id,
+        }, format="json")
+        self.assertEqual(resp.status_code, 422)
+
+    def test_versions_get_list_ok(self):
+        """零覆盖端点补齐：GET /admin/versions 列表。"""
+        Version.objects.create(name="27D", pm_user=self.pm, status="active")
+        resp = self.client.get("/api/admin/versions")
+        self.assertEqual(resp.status_code, 200)
+        names = {v["name"] for v in resp.json()["data"]}
+        self.assertIn("27D", names)
+
+
+class ContractExceptionHandlerTests(ConfigAwareTestCase):
+    """B-P1-15：DRF 异常也走 {code,message,data} 信封（非法 JSON body 不再返回 {"detail":...}）。"""
+
+    def setUp(self):
+        super().setUp()
+        self.client = APIClient()
+        self.tester = User.objects.create_user(username="t1", password="123456", role="tester")
+        resp = self.client.post(
+            "/api/auth/login", {"username": "t1", "password": "123456"}, format="json"
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {resp.json()['data']['token']}")
+
+    def test_invalid_json_body_returns_envelope(self):
+        resp = self.client.post(
+            "/api/reports", "{不是合法 JSON", content_type="application/json"
+        )
+        self.assertEqual(resp.status_code, 422)
+        data = resp.json()
+        self.assertEqual(data["code"], 42201)
+        self.assertIn("message", data)
+        self.assertIn("data", data)
+
+
+class LoginLockoutKeyTests(ConfigAwareTestCase):
+    """B-P1-16：登录锁定按「用户名+IP」联合键，他人无法远程锁死任意账号。"""
+
+    def setUp(self):
+        super().setUp()
+        cache.clear()
+        self.client = APIClient()
+        self.admin = User.objects.create_user(username="admin", password="123456", role="admin")
+
+    def tearDown(self):
+        cache.clear()
+
+    def _post(self, username, password, ip):
+        return self.client.post(
+            "/api/auth/login", {"username": username, "password": password},
+            format="json", REMOTE_ADDR=ip,
+        )
+
+    def test_same_ip_locked_after_5_failures(self):
+        for _ in range(5):
+            resp = self._post("admin", "wrong-pass", "10.0.0.1")
+            self.assertEqual(resp.json()["code"], 40101)
+        locked = self._post("admin", "123456", "10.0.0.1")
+        self.assertEqual(locked.status_code, 429)
+        self.assertEqual(locked.json()["code"], 42901)
+
+    def test_other_ip_not_locked(self):
+        for _ in range(5):
+            self._post("admin", "wrong-pass", "10.0.0.1")
+        ok_resp = self._post("admin", "123456", "10.0.0.2")
+        self.assertEqual(ok_resp.status_code, 200)
+        self.assertEqual(ok_resp.json()["code"], 0)
