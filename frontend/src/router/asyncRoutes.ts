@@ -277,5 +277,27 @@ export const asyncRoutes = [
         }
       }
     ]
+  },
+  {
+    path: "/weekly-new",
+    name: "WeeklyNew",
+    component: Layout,
+    redirect: "/weekly-new/index",
+    meta: {
+      icon: "ep/timer",
+      title: "周视图(New)",
+      rank: 13
+    },
+    children: [
+      {
+        path: "/weekly-new/index",
+        name: "WeeklyNewIndex",
+        component: () => import("@/views/weekly-new/index.vue"),
+        meta: {
+          title: "周视图(New)",
+          roles: ALL_ROLES
+        }
+      }
+    ]
   }
 ];
