@@ -179,9 +179,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { getPlan } from "@/api/plan";
+import { pollDelay } from "@/utils/polling";
 import {
   addBranchPermission,
   addBranchProject,
@@ -225,7 +226,11 @@ const filteredBranches = computed(() => {
 });
 
 async function loadBranches() {
-  branches.value = await getBranches();
+  try {
+    branches.value = await getBranches();
+  } catch {
+    branches.value = []; // 失败已由拦截器提示，避免残留旧数据
+  }
   if (!selectedId.value && branches.value.length) {
     selectedId.value = branches.value[0].id;
   }
@@ -247,14 +252,19 @@ async function loadConfig() {
     config.value = await getBranchConfig(selectedId.value);
     editingBp.value = config.value.branch_projects[0] ?? null;
     activeTab.value = "projects";
+  } catch {
+    config.value = undefined; // 失败已由拦截器提示，清空避免展示旧分支配置
   } finally {
     loadingConfig.value = false;
   }
 }
 
-// ---------- 实例轮询（仅当前分支，5s） ----------
+// ---------- 实例轮询（仅当前分支；基础 5s，失败指数退避，页面隐藏暂停） ----------
 const instanceRows = ref<InstanceRow[]>([]);
 let pollTimer: number | null = null;
+let pollFailures = 0;
+const POLL_BASE = 5_000;
+const POLL_MAX = 60_000;
 // 过期响应守卫：切分支时作废在途请求，防止 A 分支的响应晚于 B 返回、
 // 把 B 的实例列表覆盖成 A 的（视图与数据错配，要等下一轮轮询才被纠正）
 let pollSeq = 0;
@@ -264,33 +274,65 @@ async function pollInstances() {
   if (!branchId) return;
   const cur = ++pollSeq;
   try {
-    const rows = await getBranchInstances(branchId);
+    // silent：后端故障时拦截器不弹 toast（旧实现每 5s 轰炸一次错误弹窗），
+    // 失败走退避静默重试
+    const rows = await getBranchInstances(branchId, { silent: true });
+    pollFailures = 0;
     if (cur === pollSeq && branchId === selectedId.value) {
       instanceRows.value = rows;
     }
   } catch {
-    /* 轮询失败静默，等待下一周期 */
+    pollFailures += 1;
+  } finally {
+    schedulePoll();
+  }
+}
+
+function schedulePoll() {
+  if (pollTimer !== null) {
+    window.clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+  if (!selectedId.value || document.hidden) return;
+  pollTimer = window.setTimeout(
+    pollInstances,
+    pollDelay(pollFailures, POLL_BASE, POLL_MAX)
+  );
+}
+
+function stopPoll() {
+  if (pollTimer !== null) {
+    window.clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+}
+
+// 页面隐藏暂停轮询（后台标签页不再打点），恢复可见立即补一次并续上轮询链
+function onVisibilityChange() {
+  if (document.hidden) {
+    stopPoll();
+  } else if (selectedId.value) {
+    pollInstances();
   }
 }
 
 watch(selectedId, id => {
   // 主动作废所有在途请求
   pollSeq++;
-  if (pollTimer !== null) {
-    window.clearInterval(pollTimer);
-    pollTimer = null;
-  }
-  if (id) {
+  pollFailures = 0;
+  stopPoll();
+  if (id && !document.hidden) {
     pollInstances();
-    pollTimer = window.setInterval(pollInstances, 5000);
   }
 });
 
+onMounted(() => {
+  document.addEventListener("visibilitychange", onVisibilityChange);
+});
+
 onBeforeUnmount(() => {
-  if (pollTimer !== null) {
-    window.clearInterval(pollTimer);
-    pollTimer = null;
-  }
+  document.removeEventListener("visibilitychange", onVisibilityChange);
+  stopPoll();
 });
 
 // ---------- 新建分支 ----------

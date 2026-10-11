@@ -18,14 +18,20 @@ export const POLL_MAX_MS = 300_000;
  * 计算下一次轮询间隔。
  *
  * @param consecutiveFailures 连续失败次数（0 表示上次成功）
- * @returns 毫秒数，最小 POLL_BASE_MS，最大 POLL_MAX_MS
+ * @param baseMs 正常轮询间隔（默认 30s，实例轮询等高频场景可传更小值）
+ * @param maxMs 退避上限
+ * @returns 毫秒数，最小 baseMs，最大 maxMs
  */
-export function pollDelay(consecutiveFailures: number): number {
+export function pollDelay(
+  consecutiveFailures: number,
+  baseMs: number = POLL_BASE_MS,
+  maxMs: number = POLL_MAX_MS
+): number {
   if (!Number.isFinite(consecutiveFailures) || consecutiveFailures <= 0) {
-    return POLL_BASE_MS;
+    return baseMs;
   }
-  const delay = POLL_BASE_MS * 2 ** Math.floor(consecutiveFailures);
-  return Math.min(delay, POLL_MAX_MS);
+  const delay = baseMs * 2 ** Math.floor(consecutiveFailures);
+  return Math.min(delay, maxMs);
 }
 
 /**

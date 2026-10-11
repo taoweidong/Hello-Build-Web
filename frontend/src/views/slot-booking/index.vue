@@ -224,8 +224,12 @@ async function load() {
 }
 
 function setMonth(value: string) {
+  if (value === month.value) return;
   month.value = value;
   router.replace({ query: { ...route.query, month: value } });
+  // month.value 已同步，下方 watcher 的 value !== month.value 不会命中，
+  // 必须显式拉取（旧实现翻页后日历 42 格全空）；watcher 仅服务浏览器前进/后退
+  load();
 }
 
 function shiftMonth(delta: number) {

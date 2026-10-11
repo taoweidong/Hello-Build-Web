@@ -70,6 +70,8 @@ declare global {
     VITE_CDN: boolean;
     VITE_HIDE_HOME: string;
     VITE_COMPRESSION: ViteCompression;
+    /** 业务 API 地址（src/api/http.ts 的 baseURL），生产为 /api 或绝对地址 */
+    VITE_API_BASE_URL: string;
   }
 
   /**

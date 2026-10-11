@@ -106,4 +106,24 @@ describe("api/http 拦截器", () => {
     });
     expect(elMessageError).toHaveBeenCalledWith("不存在");
   });
+
+  it("silent 配置：失败不弹全局提示但仍 reject BizError（轮询用）", async () => {
+    elMessageError.mockClear();
+    useAdapter(httpErrorAdapter(500, { code: 50000, message: "内部错误" }));
+    await expect(service.get("/demo", { silent: true })).rejects.toMatchObject({
+      code: 50000
+    });
+    expect(elMessageError).not.toHaveBeenCalled();
+  });
+
+  it("网络层错误（无业务码）→ BizError 兜底 code -1，不与成功语义 0 冲突", async () => {
+    (service.defaults as any).adapter = async (config: any) => {
+      const error = new Error("Network Error") as any;
+      error.config = config;
+      throw error;
+    };
+    await expect(service.get("/demo", { silent: true })).rejects.toMatchObject({
+      code: -1
+    });
+  });
 });

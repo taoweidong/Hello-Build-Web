@@ -12,7 +12,7 @@ import {
   refreshTokenApi
 } from "@/api/user";
 // 后端认证接口（构建策略配置系统契约）
-import { loginApi } from "@/api/auth";
+import { loginApi, logoutApi } from "@/api/auth";
 import { useMultiTagsStoreHook } from "./multiTags";
 import { type DataInfo, setToken, removeToken, userKey } from "@/utils/auth";
 
@@ -20,6 +20,19 @@ import { type DataInfo, setToken, removeToken, userKey } from "@/utils/auth";
 // 业务存储键常量收敛到 store/constants（此处 re-export 保持既有导入兼容）
 export { businessUserKey } from "../constants";
 import { businessUserKey as _businessUserKey } from "../constants";
+
+/** 从 JWT payload 解析真实过期时间；解析失败回退 8 小时（后端默认 ACCESS 时效） */
+function tokenExpiresAt(token: string): Date {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1] ?? ""));
+    if (typeof payload?.exp === "number") {
+      return new Date(payload.exp * 1000);
+    }
+  } catch {
+    /* 非法 token 结构走默认时效 */
+  }
+  return new Date(Date.now() + 8 * 3600 * 1000);
+}
 
 export const useUserStore = defineStore("pure-user", {
   state: (): userType => ({
@@ -79,8 +92,8 @@ export const useUserStore = defineStore("pure-user", {
             setToken({
               accessToken: token,
               refreshToken: "",
-              // 后端未提供无感刷新，设置 30 天有效期
-              expires: new Date(Date.now() + 30 * 24 * 3600 * 1000),
+              // 有效期取 JWT 真实 exp（不再伪造 30 天，避免过期后基座误判仍有效）
+              expires: tokenExpiresAt(token),
               username: user.username,
               nickname: user.display_name,
               roles: [user.role],
@@ -95,8 +108,10 @@ export const useUserStore = defineStore("pure-user", {
           });
       });
     },
-    /** 前端登出（不调用接口） */
+    /** 登出：先请求后端将当前 token 拉黑（写安全日志），失败不阻塞本地清理 */
     logOut() {
+      // fire-and-forget：后端不可达/ token 已失效时本地登出照常完成
+      logoutApi().catch(() => undefined);
       this.username = "";
       this.roles = [];
       this.permissions = [];

@@ -56,7 +56,9 @@ const wrapperEnv = (envConf: Recordable): ViteEnv => {
     VITE_ROUTER_HISTORY: "",
     VITE_CDN: false,
     VITE_HIDE_HOME: "false",
-    VITE_COMPRESSION: "none"
+    VITE_COMPRESSION: "none",
+    // 业务 API 地址兜底（各 .env 文件按环境覆盖：开发直连 8000，生产同源 /api）
+    VITE_API_BASE_URL: "/api"
   };
 
   for (const envName of Object.keys(envConf)) {

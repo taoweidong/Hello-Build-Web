@@ -16,7 +16,6 @@ import {
   storageLocal,
   isIncludeAllChildren
 } from "@pureadmin/utils";
-import { getConfig } from "@/config";
 import { buildHierarchyTree } from "@/utils/tree";
 import { userKey, type DataInfo } from "@/utils/auth";
 import { type menuType, routerArrays } from "@/layout/types";
@@ -25,9 +24,6 @@ import { usePermissionStoreHook } from "@/store/modules/permission";
 const IFrame = () => import("@/layout/frame.vue");
 // https://cn.vitejs.dev/guide/features.html#glob-import
 const modulesRoutes = import.meta.glob("/src/views/**/*.{vue,tsx}");
-
-// 动态路由
-import { getAsyncRoutes } from "@/api/routes";
 
 function handRank(routeInfo: any) {
   const { name, path, parentId, meta } = routeInfo;
@@ -196,34 +192,19 @@ function handleAsyncRoutes(routeList) {
   addPathMatch();
 }
 
-/** 初始化路由（`new Promise` 写法防止在异步请求中造成无限循环）*/
+/** 初始化路由。
+
+业务路由已静态注册进 constantRoutes（router/index.ts 合并 asyncRoutes），
+菜单由 handleWholeMenus 基于 constantMenus 生成，无需请求后端动态路由。
+
+历史缺陷（2026-10-12 评估 F-P0-2）：旧实现请求 dev-only mock 端点
+/get-async-routes 且 Promise 无 reject 分支，生产环境该端点不存在 →
+登录后 await initRouter() 永久挂起、刷新后侧边菜单恒为空。现改为本地短路。 */
 function initRouter() {
-  if (getConfig()?.CachingAsyncRoutes) {
-    // 开启动态路由缓存本地localStorage
-    const key = "async-routes";
-    const asyncRouteList = storageLocal().getItem(key) as any;
-    if (asyncRouteList && asyncRouteList?.length > 0) {
-      return new Promise(resolve => {
-        handleAsyncRoutes(asyncRouteList);
-        resolve(router);
-      });
-    } else {
-      return new Promise(resolve => {
-        getAsyncRoutes().then(({ data }) => {
-          handleAsyncRoutes(cloneDeep(data));
-          storageLocal().setItem(key, data);
-          resolve(router);
-        });
-      });
-    }
-  } else {
-    return new Promise(resolve => {
-      getAsyncRoutes().then(({ data }) => {
-        handleAsyncRoutes(cloneDeep(data));
-        resolve(router);
-      });
-    });
-  }
+  return new Promise<typeof router>(resolve => {
+    handleAsyncRoutes([]);
+    resolve(router);
+  });
 }
 
 /**

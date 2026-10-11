@@ -189,8 +189,11 @@ const togglingId = ref<number | null>(null);
 async function onToggle(s: StrategyItem) {
   togglingId.value = s.id;
   try {
-    await toggleStrategy(s.id, s.enabled);
-    ElMessage.success(s.enabled ? "策略已启用" : "策略已停用");
+    // 后端为无参翻转语义：提示必须以返回的新状态为准（用旧值会文案反转）
+    const updated = await toggleStrategy(s.id);
+    ElMessage.success(updated.enabled ? "策略已启用" : "策略已停用");
+  } catch {
+    /* 失败已由拦截器提示，load() 刷新回真实状态 */
   } finally {
     togglingId.value = null;
     await load();

@@ -66,10 +66,9 @@ describe("api/strategy 契约", () => {
     expect(httpMock.post).toHaveBeenCalledWith("/strategies", form);
     await updateStrategy(9, form);
     expect(httpMock.patch).toHaveBeenCalledWith("/strategies/9", form);
-    await toggleStrategy(9, true);
-    expect(httpMock.patch).toHaveBeenCalledWith("/strategies/9/toggle", null, {
-      params: { enabled: true }
-    });
+    // 后端 toggle 为无参翻转语义：不再发送会被忽略的 enabled 参数
+    await toggleStrategy(9);
+    expect(httpMock.patch).toHaveBeenCalledWith("/strategies/9/toggle");
   });
 });
 

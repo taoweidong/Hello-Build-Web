@@ -11,9 +11,10 @@ export function loginApi(data: {
   return http.post("/auth/login", data);
 }
 
-/** 登出：写安全日志 */
+/** 登出：当前 token 写入后端黑名单即时失效 + 写安全日志。
+ * silent：登出失败无需打扰用户（本地清理照常进行）。 */
 export function logoutApi(): Promise<void> {
-  return http.post("/auth/logout");
+  return http.post("/auth/logout", null, { silent: true });
 }
 
 /** 当前用户信息（含权限元数据） */

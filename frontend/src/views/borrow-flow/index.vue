@@ -183,7 +183,7 @@
 
 <script setup lang="ts">
 // 借用审批页：借用电子流列表 + 复制（含直达链接）+ 通过/驳回（独立页面，与版本策略全景页不绑定）
-import { computed, onMounted, ref } from "vue";
+import { computed, h, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
@@ -196,6 +196,7 @@ import {
   type BorrowFlowItem
 } from "@/api/borrowFlow";
 import { getCurrentUser } from "@/utils/business";
+import { copyText } from "@/utils/clipboard";
 
 defineOptions({ name: "BorrowFlowIndex" });
 
@@ -243,19 +244,18 @@ function statusTag(status: BorrowFlowItem["status"]) {
 /** 复制电子流内容为纯文本（含可直达该条的审批链接），便于粘贴发给审核人员快速定位 */
 async function onCopy(flow: BorrowFlowItem) {
   const text = formatBorrowFlowText(flow, borrowFlowUrl(flow.id));
-  try {
-    await navigator.clipboard.writeText(text);
+  // 统一走带降级与假成功防护的 copyText（与 report 两页同款）
+  const copied = await copyText(text);
+  if (copied) {
     ElMessage.success("电子流内容（含审批链接）已复制到剪贴板");
-  } catch {
-    // 剪贴板 API 不可用时降级为手动复制
-    ElMessageBox.alert(
-      `<pre style="white-space:pre-wrap">${text}</pre>`,
-      "电子流内容（请手动复制）",
-      {
-        dangerouslyUseHTMLString: true
-      }
-    );
+    return;
   }
+  // 复制被浏览器策略拦截时降级为手动复制弹框；用 VNode 文本节点渲染，
+  // 杜绝 dangerouslyUseHTMLString 直插他人输入（reason/审批意见）的存储型 XSS
+  ElMessageBox.alert(
+    h("pre", { style: "white-space:pre-wrap;margin:0" }, text),
+    "电子流内容（请手动复制）"
+  );
 }
 
 async function onApprove(flow: BorrowFlowItem) {

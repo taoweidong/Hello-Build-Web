@@ -1,5 +1,6 @@
 // 分支配置 API 模块
 // 契约：统一响应 { code, message, data }；写接口权限门槛由后端校验
+import type { AxiosRequestConfig } from "axios";
 import http from "@/api/http";
 
 /** 分支角色（与后端 BranchPermission.ROLE_CHOICES 一致） */
@@ -149,8 +150,11 @@ export function createProject(data: {
 }
 
 // ---- 实例 ----
-export function getBranchInstances(branchId: number): Promise<InstanceRow[]> {
-  return http.get(`/branches/${branchId}/instances`);
+export function getBranchInstances(
+  branchId: number,
+  config?: AxiosRequestConfig
+): Promise<InstanceRow[]> {
+  return http.get(`/branches/${branchId}/instances`, config);
 }
 export function startBranchProject(bpId: number): Promise<InstanceItem> {
   return http.post(`/branch-projects/${bpId}/start`);

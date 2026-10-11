@@ -48,10 +48,7 @@ export function updateStrategy(
   return http.patch(`/strategies/${id}`, data);
 }
 
-/** 启用/停用 */
-export function toggleStrategy(
-  id: number,
-  enabled: boolean
-): Promise<StrategyItem> {
-  return http.patch(`/strategies/${id}/toggle`, null, { params: { enabled } });
+/** 启用/停用：后端为无参翻转语义，返回翻转后的策略（提示文案以返回值为准） */
+export function toggleStrategy(id: number): Promise<StrategyItem> {
+  return http.patch(`/strategies/${id}/toggle`);
 }

@@ -152,8 +152,11 @@ const togglingStrategyId = ref<number | null>(null);
 async function toggleAdminStrategy(s: StrategyItem) {
   togglingStrategyId.value = s.id;
   try {
-    await adminApi.toggleAdminStrategy(s.id);
-    ElMessage.success(s.enabled ? "策略已启用" : "策略已停用");
+    // 提示以返回的新状态为准（用翻转前旧值会文案反转）
+    const updated = await adminApi.toggleAdminStrategy(s.id);
+    ElMessage.success(updated.enabled ? "策略已启用" : "策略已停用");
+  } catch {
+    /* 失败已由拦截器提示，重载列表刷新回真实状态 */
   } finally {
     togglingStrategyId.value = null;
     loadAdminStrategies();
