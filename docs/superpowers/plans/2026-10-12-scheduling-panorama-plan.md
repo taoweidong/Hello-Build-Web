@@ -105,7 +105,7 @@
 - [ ] **新增** `layouts/s2-gantt/{LaneRow,TimeAxisRuler,PhaseBar,GanttLegend}.vue`（阶段色复用 `components/gantt/types.ts::STAGE_COLORS`）
 - [ ] 泳道 = 分支（按版本分组），百分比绝对定位；**「仅看有任务分支」开关**（无虚拟滚动，行 > 60 有 DOM 压力）
 - [ ] 默认**单日**；周模式默认关闭，开启时才并发 ≤ 7 次 `/api/plan`
-- [ ] 窄屏降级：强制 `min-width` + 横向滚动 + 明确提示
+- [ ] 小窗口处理（**PC only 口径**）：横向滚动 + 容器 `min-width`（甘特 ≥ 960px），**不要求内容重排、不做触屏适配**
 - [ ] **新增** `views/panorama/__tests__/s2-gantt.spec.ts`
 
 ### 2.3 S4 分组列表看板视图（2~3 人日）
@@ -130,7 +130,7 @@
 - [ ] 深链解析优先级 `query.layout > localStorage > month`（P1-R1）
 - [ ] 四路由全量注册到 `router/asyncRoutes.ts`（`meta.roles = ALL_ROLES`）
 - [ ] 跨源叠加同画布显示（P1-R3）：策略块 + 已抢占时段重合处加冲突标记，**仅视觉提示，不触碰后端互斥逻辑**
-- [ ] 无障碍（P1-R5）：芯片为 `<button>` + `aria-label`、焦点环可见、对比度抽样达 WCAG AA、状态不靠颜色单独表达
+- [ ] 无障碍（P1-R5，**PC 键盘可达口径**）：`Tab`/`Enter`/`Space` 可操作、`:focus-visible` 焦点环可见、芯片为 `<button>` + `aria-label`、对比度抽样达 WCAG AA、状态不靠颜色单独表达
 - [ ] 五布局**功能等价交叉验收**：同一份数据下四场景在 5 个布局逐一走通
 
 ### 2.6 视觉与配色统一（用户口径：与系统风格保持一致）——五布局通用约束
@@ -142,6 +142,12 @@
 - [ ] 过期/禁用沿用既有「置灰 + 删除线」、今日沿用 `HourGrid.vue`/`DayCell.vue` 既有标记并抽到 `shared/`
 - [ ] 页面内无硬编码 hex：校验命令 `grep -rn "#[0-9a-fA-F]\{6\}" views/panorama/`（除色板常量文件外必须为空）
 - [ ] 深浅色切换（`html.dark` + `data-theme`）下 5 布局**均无破面**，对比度抽样达 WCAG AA
+
+### 2.7 适配口径（PC only）——五布局通用约束
+- [ ] **仅桌面端**：目标环境为桌面浏览器，建议最小支持 **1280×720**；**不做移动端 / 平板 / 触屏适配**，不设响应式断点降级，不做触屏热区放大
+- [ ] **小窗口只允许横向滚动**：容器设 `min-width`（S2 甘特 ≥ 960px），内容不重排，此为既定取舍而非缺陷
+- [ ] **保留 PC 键盘可达性**：`Tab`/`Enter`/`Space` 可完成主要操作、`:focus-visible` 焦点环可见、可点元素为 `<button>` + `aria-label`
+- [ ] 自查：`grep -rn "窄屏\|移动端\|触屏\|响应式\|平板\|断点" views/panorama/` 不应出现「需支持移动端」类实现
 
 ---
 
