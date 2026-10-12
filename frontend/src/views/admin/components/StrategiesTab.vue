@@ -5,6 +5,8 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { adminApi } from "@/api/admin";
 import type { StrategyItem, TemplateItem, VersionItem } from "@/api/types";
 import type { StrategyForm } from "@/api/strategy";
+// 推送模式文案唯一来源（views/constants，页面内禁止复制措辞）
+import { pushModeMeta } from "@/views/constants";
 import { useStrategyPreview } from "@/composables/useStrategyPreview";
 
 defineOptions({ name: "AdminStrategiesTab" });
@@ -30,6 +32,8 @@ const adminStrategyForm = reactive<StrategyForm>({
 const adminEditingId = ref<number | null>(null);
 const adminDialogVersionId = ref<number | undefined>(undefined);
 const loading = ref(false);
+/** 弹窗保存请求进行中（按钮 :loading 防双击重复提交） */
+const savingStrategy = ref(false);
 
 // 弹窗策略预览（防抖 + 过期守卫，与 PM 策略页共用实现）
 // 编辑态透传 id，预览接口据此排除被编辑策略自身，避免原时间未变时误报自冲突
@@ -136,15 +140,23 @@ async function saveAdminStrategy() {
     push_mode: adminStrategyForm.push_mode,
     enabled: adminStrategyForm.enabled
   };
-  if (adminEditingId.value) {
-    await adminApi.updateAdminStrategy(adminEditingId.value, payload);
-    ElMessage.success("策略已更新");
-  } else {
-    await adminApi.createAdminStrategy(payload);
-    ElMessage.success("策略已创建");
+  // 动作路径必须 try/catch/finally 完整：失败由拦截器提示，禁止裸 await 逃逸（R3-F5）
+  savingStrategy.value = true;
+  try {
+    if (adminEditingId.value) {
+      await adminApi.updateAdminStrategy(adminEditingId.value, payload);
+      ElMessage.success("策略已更新");
+    } else {
+      await adminApi.createAdminStrategy(payload);
+      ElMessage.success("策略已创建");
+    }
+    adminStrategyDialog.value = false;
+    loadAdminStrategies();
+  } catch {
+    // 失败已由拦截器提示（含 40901 冲突专用弹框），保留弹窗便于修改重试
+  } finally {
+    savingStrategy.value = false;
   }
-  adminStrategyDialog.value = false;
-  loadAdminStrategies();
 }
 
 // 注意：adminApi.toggleAdminStrategy 是无参翻转语义（后端翻转 enabled），切不可传 enabled 参数
@@ -350,8 +362,12 @@ onMounted(loadAdminStrategies);
             v-model="adminStrategyForm.push_mode"
             @change="scheduleAdminPreview"
           >
-            <el-radio value="normal">正常流程推送</el-radio>
-            <el-radio value="sync">同步推送冒烟</el-radio>
+            <el-radio value="normal">{{
+              pushModeMeta("normal").fullLabel
+            }}</el-radio>
+            <el-radio value="sync">{{
+              pushModeMeta("sync").fullLabel
+            }}</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="启用">
@@ -367,6 +383,7 @@ onMounted(loadAdminStrategies);
         <el-button @click="adminStrategyDialog = false">取消</el-button>
         <el-button
           type="primary"
+          :loading="savingStrategy"
           :disabled="!!adminPreview?.conflict"
           @click="saveAdminStrategy"
           >保存</el-button

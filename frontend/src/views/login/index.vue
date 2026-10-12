@@ -10,6 +10,7 @@ import { useEventListener } from "@vueuse/core";
 import type { FormInstance } from "element-plus";
 import { useLayout } from "@/layout/hooks/useLayout";
 import { useUserStoreHook } from "@/store/modules/user";
+import { isBizError } from "@/api/http";
 import { initRouter, getTopMenu } from "@/router/utils";
 import { bg, avatar, illustration } from "./utils/static";
 import { useRenderIcon } from "@/components/ReIcon/src/hooks";
@@ -65,10 +66,13 @@ const onLogin = async (formEl: FormInstance | undefined) => {
     disabled.value = true;
     await router.push(getTopMenu(true).path);
     message("登录成功", { type: "success" });
-  } catch (e: any) {
-    // http 拦截器已对已知错误码弹提示，此处仅兜底未处理异常（如 500/断网）
-    if (e?.code === undefined && e?.response === undefined) {
-      message(e?.message || "登录失败，请检查账号密码", { type: "error" });
+  } catch (e) {
+    // http 拦截器已对契约内错误（BizError）弹提示，此处仅兜底非契约异常；
+    // isBizError 类型守卫收窄 unknown，替代 catch (e: any)（R3-F9）
+    if (!isBizError(e)) {
+      message((e instanceof Error && e.message) || "登录失败，请检查账号密码", {
+        type: "error"
+      });
     }
   } finally {
     disabled.value = false;

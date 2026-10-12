@@ -4,7 +4,10 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/api/http", () => ({ default: { get: vi.fn(), post: vi.fn() } }));
 
 import type { BorrowFlowItem } from "@/api/borrowFlow";
-import { formatBorrowFlowText } from "@/views/borrow-flow/format";
+import {
+  formatBorrowFlowText,
+  formatFlowTime
+} from "@/views/borrow-flow/format";
 
 function makeFlow(overrides: Partial<BorrowFlowItem> = {}): BorrowFlowItem {
   return {
@@ -80,5 +83,70 @@ describe("formatBorrowFlowText 借用电子流复制文案", () => {
   it("不传 detailUrl 时不含链接行", () => {
     const text = formatBorrowFlowText(makeFlow());
     expect(text).not.toContain("审批详情链接");
+  });
+
+  it("已通过流程：审批行用「通过」文案（第三轮补 approved 分支）", () => {
+    const text = formatBorrowFlowText(
+      makeFlow({
+        status: "approved",
+        approver_name: "27A负责人",
+        handle_comment: "同意借用",
+        handled_at: "2026-10-11T18:30:00"
+      })
+    );
+    expect(text).toContain("【借用电子流】#7 已通过");
+    expect(text).toContain(
+      "审批：27A负责人 通过（同意借用） 2026-10-11 18:30:00"
+    );
+  });
+
+  it("approver_name 为 null 时审批人兜底为 -", () => {
+    const text = formatBorrowFlowText(
+      makeFlow({
+        status: "approved",
+        approver_name: null,
+        handle_comment: "ok",
+        handled_at: "2026-10-11T18:30:00"
+      })
+    );
+    expect(text).toContain("审批：- 通过（ok） 2026-10-11 18:30:00");
+  });
+
+  it("handle_comment 为空时不拼括号", () => {
+    const text = formatBorrowFlowText(
+      makeFlow({
+        status: "approved",
+        approver_name: "27A负责人",
+        handle_comment: "",
+        handled_at: "2026-10-11T18:30:00"
+      })
+    );
+    expect(text).toContain("审批：27A负责人 通过 2026-10-11 18:30:00");
+    expect(text).not.toContain("通过（");
+  });
+
+  it("handled_at 为 null 时时间位保持空串不抛异常", () => {
+    const text = formatBorrowFlowText(
+      makeFlow({
+        status: "rejected",
+        approver_name: "27A负责人",
+        handle_comment: "时段冲突",
+        handled_at: null
+      })
+    );
+    expect(text).toContain("审批：27A负责人 驳回（时段冲突） ");
+    expect(text).not.toContain("Invalid Date");
+  });
+});
+
+describe("formatFlowTime 电子流时间格式化（替代手写 replace，输出逐字节等价）", () => {
+  it("合法时间串：T 分隔转空格，保留秒", () => {
+    expect(formatFlowTime("2026-10-11T16:30:00")).toBe("2026-10-11 16:30:00");
+  });
+
+  it("空值（null/undefined/空串）保持空串，不输出 Invalid Date", () => {
+    expect(formatFlowTime(null)).toBe("");
+    expect(formatFlowTime(undefined)).toBe("");
+    expect(formatFlowTime("")).toBe("");
   });
 });

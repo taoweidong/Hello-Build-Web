@@ -59,6 +59,21 @@ describe("utils/business", () => {
     it("formatTime 输出 MM-DD HH:mm", () => {
       expect(formatTime("2026-08-10T22:05:00")).toBe("08-10 22:05");
     });
+
+    it("带 Z 的 ISO 串按 UTC 时刻解析（时区无关断言）", () => {
+      expect(parseTime("2026-08-10T22:00:00Z").getTime()).toBe(
+        Date.UTC(2026, 7, 10, 22, 0, 0)
+      );
+    });
+
+    it("完全非法输入回退 new Date：Invalid Date 而非抛异常", () => {
+      const d = parseTime("garbage");
+      expect(Number.isNaN(d.getTime())).toBe(true);
+    });
+
+    it("formatTime 非法输入输出 Invalid Date（dayjs 语义，不抛异常）", () => {
+      expect(formatTime("garbage")).toBe("Invalid Date");
+    });
   });
 
   describe("canEditPanorama 全景编辑权限", () => {

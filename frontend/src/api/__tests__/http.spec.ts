@@ -87,6 +87,34 @@ describe("api/http 拦截器", () => {
     expect(window.location.hash).toContain("login");
   });
 
+  it("40101 登录态过期 → 同样清理并跳登录（与 40100 同路径）", async () => {
+    localStorage.setItem(
+      "build-user-info",
+      JSON.stringify({ username: "old" })
+    );
+    useAdapter(httpErrorAdapter(401, { code: 40101, message: "登录已过期" }));
+    await expect(service.get("/demo")).rejects.toMatchObject({ code: 40101 });
+    expect(removeTokenMock).toHaveBeenCalled();
+    expect(localStorage.getItem("build-user-info")).toBeNull();
+    expect(window.location.hash).toContain("login");
+  });
+
+  it("silent + 401 组合：静默请求也必须跳登录，但不弹 toast", async () => {
+    elMessageError.mockClear();
+    localStorage.setItem(
+      "build-user-info",
+      JSON.stringify({ username: "old" })
+    );
+    useAdapter(httpErrorAdapter(401, { code: 40100, message: "未认证" }));
+    await expect(service.get("/demo", { silent: true })).rejects.toMatchObject({
+      code: 40100
+    });
+    expect(removeTokenMock).toHaveBeenCalled();
+    expect(localStorage.getItem("build-user-info")).toBeNull();
+    expect(window.location.hash).toContain("login");
+    expect(elMessageError).not.toHaveBeenCalled();
+  });
+
   it("40301 → 无权限提示", async () => {
     useAdapter(
       httpErrorAdapter(403, { code: 40301, message: "仅管理员可操作" })

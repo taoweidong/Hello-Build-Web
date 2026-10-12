@@ -26,6 +26,8 @@ export type ReportConclusion = "pass" | "fail" | "risk";
 export type ReportStatus = "draft" | "published";
 /** 报告留痕动作（ReportRevisionLog.ACTION_CHOICES） */
 export type ReportAction = "create" | "update" | "publish";
+/** 版本状态（后端 views/admin.py _VALID_STATUSES 值域） */
+export type VersionStatus = "active" | "archived";
 
 /** 用户信息（含绑定版本元数据） */
 export interface UserInfo {
@@ -120,7 +122,7 @@ export interface VersionItem {
   name: string;
   pm_user_id?: number | null;
   pm_name?: string;
-  status: string;
+  status: VersionStatus;
   branches?: BranchBriefItem[];
 }
 

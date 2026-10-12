@@ -132,6 +132,38 @@ describe("useWeeklyPanorama 数据加载", () => {
     expect(api.stats.value.branches).toBe(1);
     expect(api.visibleBranches.value.map(b => b.branch_id)).toEqual([12]);
   });
+
+  it("weeklySeq 过期响应丢弃：慢的旧响应不得覆盖新周数据", async () => {
+    // 手动控制每个请求的 settle 时序，模拟快速翻周后旧响应晚归
+    const pending: Array<{
+      resolve: (v: WeeklyData) => void;
+      args: { week_start?: string };
+    }> = [];
+    weeklyMock.mockImplementation((params: any) => {
+      return new Promise<WeeklyData>(resolve => {
+        pending.push({ resolve, args: params ?? {} });
+      });
+    });
+    const { api } = mountPanorama();
+    // 首屏请求（旧周）挂起中
+    expect(pending).toHaveLength(1);
+    const oldWeek = api.weekStart.value;
+    // 翻到下一周 → 新请求挂起（周值动态取，不依赖测试运行日期）
+    api.shiftWeek(1);
+    await flushPromises();
+    const newWeek = api.weekStart.value;
+    expect(newWeek).not.toBe(oldWeek);
+    const newer = pending.find(p => p.args.week_start === newWeek);
+    expect(newer).toBeTruthy();
+    // 新请求先返回并生效（会回填 versionId 触发第三次拉取）
+    newer!.resolve(makeWeekly({ week_start: newWeek }));
+    await flushPromises();
+    expect(api.weekly.value?.week_start).toBe(newWeek);
+    // 旧请求晚归：序号已过期，必须被丢弃、不得覆盖新周数据
+    pending[0].resolve(makeWeekly({ week_start: oldWeek }));
+    await flushPromises();
+    expect(api.weekly.value?.week_start).toBe(newWeek);
+  });
 });
 
 describe("useWeeklyPanorama 时间点归行", () => {
@@ -159,6 +191,8 @@ describe("useWeeklyPanorama 时间点归行", () => {
       kind: "push",
       stageLabel: "推送"
     });
+    // R3-F7：同一时间点的任务数组只构建一次，7 个 cell 共享同一引用（渲染输出不变）
+    expect(new Set(first.cells.map(c => c.tasks)).size).toBe(1);
   });
 
   it("过期标记：过去日期的单元格 past=true", async () => {
@@ -247,6 +281,61 @@ describe("useWeeklyPanorama 任务点击分发", () => {
     await flushPromises();
     const result = await api.resolveTaskClick(buildTask, true);
     expect(result?.kind).toBe("detail");
+  });
+
+  it("详情拉取失败 → 返回 null 且不缓存失败结果（拦截器已提示）", async () => {
+    setUser("admin");
+    strategiesMock.mockRejectedValue(new Error("boom"));
+    const { api } = mountPanorama();
+    await flushPromises();
+    await flushPromises();
+    expect(await api.resolveTaskClick(buildTask, false)).toBeNull();
+    // 失败不写入缓存：恢复后再次点击可重新拉取并成功
+    strategiesMock.mockResolvedValue([
+      {
+        id: 101,
+        name: "早间回归",
+        template_id: 7,
+        branch_id: 11,
+        build_start_time: "06:30",
+        push_mode: "sync",
+        push_start_time: "09:00",
+        enabled: true
+      }
+    ] as never);
+    const retry = await api.resolveTaskClick(buildTask, false);
+    expect(retry?.kind).toBe("edit");
+  });
+
+  it("strategyDetailList 缓存：二次点击不重复请求，invalidate 后重拉", async () => {
+    setUser("admin");
+    strategiesMock.mockResolvedValue([
+      {
+        id: 101,
+        name: "早间回归",
+        template_id: 7,
+        branch_id: 11,
+        build_start_time: "06:30",
+        push_mode: "sync",
+        push_start_time: "09:00",
+        enabled: true
+      }
+    ] as never);
+    const { api } = mountPanorama();
+    await flushPromises();
+    await flushPromises();
+    const first = await api.resolveTaskClick(buildTask, false);
+    expect(first?.kind).toBe("edit");
+    expect(strategiesMock).toHaveBeenCalledTimes(1);
+    // 二次点击命中缓存，不再发起请求
+    const second = await api.resolveTaskClick(buildTask, false);
+    expect(second?.kind).toBe("edit");
+    expect(strategiesMock).toHaveBeenCalledTimes(1);
+    // 保存后缓存失效 → 再次点击重新拉取
+    api.invalidateStrategyCache();
+    const third = await api.resolveTaskClick(buildTask, false);
+    expect(third?.kind).toBe("edit");
+    expect(strategiesMock).toHaveBeenCalledTimes(2);
   });
 
   it("pm 未绑定该版本时只读，绑定后可编辑", async () => {

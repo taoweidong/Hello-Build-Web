@@ -96,6 +96,8 @@ import Calendar from "~icons/ep/calendar";
 import { getPlan } from "@/api/plan";
 import type { PlanVersion } from "@/api/plan";
 import { createBooking, type SlotTemplateItem } from "@/api/slotBooking";
+// 中文星期数组唯一来源（utils/week，页面内禁止手写复制）
+import { WEEKDAY_CN_SUN } from "@/utils/week";
 
 defineOptions({ name: "SlotBookingDialog" });
 
@@ -139,10 +141,7 @@ const branchOptions = computed(
 );
 
 const dateLabel = computed(() => dayjs(props.date).format("M月D日"));
-const weekLabel = computed(() => {
-  const names = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-  return names[dayjs(props.date).day()];
-});
+const weekLabel = computed(() => WEEKDAY_CN_SUN[dayjs(props.date).day()]);
 const durationText = computed(() => {
   if (!props.template) return "";
   const [sh, sm] = props.template.start_time.split(":").map(Number);

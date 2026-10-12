@@ -104,6 +104,17 @@ describe("computeKpis", () => {
     expect(k.latestBuild).toBe("--:--");
     expect(k.todayPending).toBe(0);
   });
+
+  it("today 不在展示周：待执行/已完成仍相对传入的 today 判定", () => {
+    // today 远早于 now（如查看历史周时传入的当天已整周过去）→ 全部已完成
+    const past = computeKpis(strategies, 3, "2020-01-01", now);
+    expect(past.todayDone).toBe(3);
+    expect(past.todayPending).toBe(0);
+    // today 远晚于 now → 全部待执行
+    const future = computeKpis(strategies, 3, "2030-01-01", now);
+    expect(future.todayDone).toBe(0);
+    expect(future.todayPending).toBe(3);
+  });
 });
 
 describe("computeBranchLoad", () => {
@@ -153,6 +164,44 @@ describe("computeHourTrend", () => {
       total: 2
     });
   });
+
+  it("非法时间守卫：越界/非数字/空串条目跳过，不 TypeError 也不误计入 0 点", () => {
+    const dirty = [
+      s({
+        strategy_id: 20,
+        strategy_name: "越界",
+        branch_id: 1,
+        build_start_time: "25:00", // 小时越界：跳过（旧实现 buckets[25] 直接 TypeError）
+        push_start_time: "26:30"
+      }),
+      s({
+        strategy_id: 21,
+        strategy_name: "非数字",
+        branch_id: 1,
+        build_start_time: "ab:cd", // 非数字：跳过（旧实现误计入 0 点）
+        push_start_time: "xx:00"
+      }),
+      s({
+        strategy_id: 22,
+        strategy_name: "空串",
+        branch_id: 1,
+        build_start_time: "", // 空串：跳过
+        push_start_time: null
+      }),
+      s({
+        strategy_id: 23,
+        strategy_name: "正常",
+        branch_id: 1,
+        build_start_time: "07:00"
+      })
+    ];
+    const buckets = computeHourTrend(dirty);
+    expect(buckets).toHaveLength(24);
+    // 仅合法条目计入
+    expect(buckets[7]).toMatchObject({ build: 1, push: 0, total: 1 });
+    expect(buckets[0].total).toBe(0);
+    expect(buckets.reduce((sum, b) => sum + b.total, 0)).toBe(1);
+  });
 });
 
 describe("computeTagCloud", () => {
@@ -174,5 +223,65 @@ describe("computeTagCloud", () => {
 
   it("空输入返回空数组", () => {
     expect(computeTagCloud([])).toEqual([]);
+  });
+
+  it("字号封顶 22px：次数 5 及以上不再增长", () => {
+    const many = Array.from({ length: 8 }, (_, i) =>
+      s({
+        strategy_id: 100 + i,
+        strategy_name: `策略${i}`,
+        branch_id: 1,
+        build_start_time: "08:00",
+        template_name: "高频模板"
+      })
+    );
+    const tags = computeTagCloud(many);
+    const hot = tags.find(t => t.text === "高频模板");
+    // 模板出现 8 次：12 + (8-1)*2.5 = 29.5 → 封顶 22
+    expect(hot?.count).toBe(8);
+    expect(hot?.size).toBe(22);
+    // 恰好 5 次到达封顶：12 + 4*2.5 = 22
+    const five = Array.from({ length: 5 }, (_, i) =>
+      s({
+        strategy_id: 200 + i,
+        strategy_name: `策略${i}`,
+        branch_id: 1,
+        build_start_time: "08:00",
+        template_name: "五连模板"
+      })
+    );
+    expect(computeTagCloud(five).find(t => t.text === "五连模板")?.size).toBe(
+      22
+    );
+  });
+
+  it("三键排序：次数相同 → 类型（策略<模板<分支）→ 名称升序", () => {
+    // 名称用 ASCII 前缀，规避中文 collation 的环境差异
+    const rows = [
+      s({
+        strategy_id: 31,
+        strategy_name: "S-b",
+        branch_id: 1,
+        build_start_time: "08:00",
+        template_name: "T-b"
+      }),
+      s({
+        strategy_id: 32,
+        strategy_name: "S-a",
+        branch_id: 2,
+        build_start_time: "09:00",
+        template_name: "T-a"
+      })
+    ];
+    const tags = computeTagCloud(rows);
+    // 全部条目次数=1：先按类型（strategy → template → branch），同类型按名称 localeCompare 升序
+    expect(tags.map(t => t.text)).toEqual([
+      "S-a",
+      "S-b",
+      "T-a",
+      "T-b",
+      "分支1",
+      "分支2"
+    ]);
   });
 });

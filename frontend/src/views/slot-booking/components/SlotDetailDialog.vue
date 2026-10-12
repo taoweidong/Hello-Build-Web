@@ -66,6 +66,8 @@ import {
   type CalendarDayCell,
   type SlotTemplateItem
 } from "@/api/slotBooking";
+// 中文星期数组唯一来源（utils/week，页面内禁止手写复制）
+import { WEEKDAY_CN_SUN } from "@/utils/week";
 
 defineOptions({ name: "SlotDetailDialog" });
 
@@ -85,10 +87,7 @@ const releasing = ref(false);
 
 const isMine = computed(() => props.entry?.booking?.is_mine === true);
 const dateLabel = computed(() => dayjs(props.date).format("YYYY年M月D日"));
-const weekLabel = computed(() => {
-  const names = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-  return names[dayjs(props.date).day()];
-});
+const weekLabel = computed(() => WEEKDAY_CN_SUN[dayjs(props.date).day()]);
 
 async function handleRelease() {
   if (!props.entry?.booking) return;

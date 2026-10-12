@@ -33,6 +33,11 @@ export class BizError extends Error {
   }
 }
 
+/** BizError 类型守卫：catch (e) 中收窄 unknown 为业务错误，替代 catch (e: any) */
+export function isBizError(e: unknown): e is BizError {
+  return e instanceof BizError;
+}
+
 const service = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL,
   timeout: 15000

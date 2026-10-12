@@ -9,7 +9,7 @@ const router = useRouter();
 const entries = [
   {
     title: "策略周报",
-    desc: "深色科技风周报看板：KPI / 分支负载 / 时段趋势 / 标签云",
+    desc: "周报看板：KPI / 分支负载 / 时段趋势 / 标签云",
     path: "/weekly-report/index"
   },
   {

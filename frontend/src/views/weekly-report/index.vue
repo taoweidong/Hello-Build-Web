@@ -135,7 +135,6 @@ const {
   versionId,
   versionOptions,
   branches,
-  strategies,
   currentVersionName,
   branchFilter,
   filteredStrategies,

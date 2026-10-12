@@ -188,13 +188,13 @@ import {
   watch
 } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
+import dayjs from "dayjs";
 import { getPlan } from "@/api/plan";
 import { pollDelay } from "@/utils/polling";
 import {
   addBranchPermission,
   addBranchProject,
   createBranch as apiCreateBranch,
-  deleteBranch,
   getBranches,
   getBranchConfig,
   getBranchInstances,
@@ -276,6 +276,9 @@ const POLL_MAX = 60_000;
 // 过期响应守卫：切分支时作废在途请求，防止 A 分支的响应晚于 B 返回、
 // 把 B 的实例列表覆盖成 A 的（视图与数据错配，要等下一轮轮询才被纠正）
 let pollSeq = 0;
+// 卸载守卫：在途请求 settle 后 finally 仍会触发 schedulePoll，无守卫会排上新定时器
+// 自我续命——离开页面后以 5s 间隔无限轮询直到关标签页（僵尸循环，R3-F1）
+let disposed = false;
 
 async function pollInstances() {
   const branchId = selectedId.value;
@@ -297,6 +300,7 @@ async function pollInstances() {
 }
 
 function schedulePoll() {
+  if (disposed) return; // 组件已卸载：不再排定任何新定时器
   if (pollTimer !== null) {
     window.clearTimeout(pollTimer);
     pollTimer = null;
@@ -339,6 +343,8 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  // 先置卸载标记再清定时器：此后任何在途请求 settle 都不会复活轮询链
+  disposed = true;
   document.removeEventListener("visibilitychange", onVisibilityChange);
   stopPoll();
 });
@@ -358,7 +364,8 @@ const newForm = reactive<{
 const versionOptions = ref<{ version_id: number; version_name: string }[]>([]);
 
 async function openNewDialog() {
-  const today = new Date().toISOString().slice(0, 10);
+  // dayjs 本地日期（旧实现 toISOString 取 UTC 日期，东八区 0:00-8:00 会拿到昨天）
+  const today = dayjs().format("YYYY-MM-DD");
   try {
     const plan = await getPlan({ date: today });
     versionOptions.value = plan.map(p => ({
@@ -391,6 +398,8 @@ async function createBranch() {
     branches.value.push(created);
     selectedId.value = created.id;
     await loadConfig();
+  } catch {
+    // 失败已由拦截器提示（如重名 40902），保留弹窗便于修改重试
   } finally {
     creatingBranch.value = false;
   }
@@ -409,6 +418,8 @@ async function addProject(projectId: number) {
     });
     ElMessage.success("工程已关联");
     await loadConfig();
+  } catch {
+    // 失败已由拦截器提示（如重复关联 40903），复位状态即可
   } finally {
     addingProject.value = false;
   }
@@ -426,7 +437,11 @@ async function removeProject(bpId: number) {
   } catch {
     return; // 用户取消
   }
-  await removeBranchProject(bpId);
+  try {
+    await removeBranchProject(bpId);
+  } catch {
+    return; // 失败已由拦截器提示，禁止裸 await 逃逸为 Uncaught rejection
+  }
   ElMessage.success("工程关联已移除");
   await loadConfig();
 }
@@ -455,6 +470,8 @@ async function saveConfig(form: StartupConfigItem) {
     });
     ElMessage.success("启动参数已保存");
     await loadConfig();
+  } catch {
+    // 失败已由拦截器提示，保留表单便于修改重试
   } finally {
     savingConfig.value = false;
   }
@@ -470,6 +487,8 @@ async function startInstance(bpId: number) {
     const inst = await startBranchProject(bpId);
     ElMessage.success(`已发起启动${inst.pid ? `（pid=${inst.pid}）` : ""}`);
     await refreshAfterOp();
+  } catch {
+    // 失败已由拦截器提示，复位按钮状态即可
   } finally {
     startingId.value = null;
   }
@@ -481,6 +500,8 @@ async function stopInstance(bpId: number) {
     await stopBranchProject(bpId);
     ElMessage.success("已发起停止");
     await refreshAfterOp();
+  } catch {
+    // 失败已由拦截器提示，复位按钮状态即可
   } finally {
     stoppingId.value = null;
   }
@@ -517,6 +538,8 @@ async function savePermission() {
     ElMessage.success("授权已保存");
     permDialogVisible.value = false;
     await loadConfig();
+  } catch {
+    // 失败已由拦截器提示（如重复授权 40903），保留弹窗便于修改重试
   } finally {
     savingPerm.value = false;
   }
@@ -530,7 +553,11 @@ async function removePermission(perm: PermissionItem) {
   } catch {
     return;
   }
-  await removeBranchPermission(perm.id);
+  try {
+    await removeBranchPermission(perm.id);
+  } catch {
+    return; // 失败已由拦截器提示，禁止裸 await 逃逸为 Uncaught rejection
+  }
   ElMessage.success("授权已移除");
   await loadConfig();
 }

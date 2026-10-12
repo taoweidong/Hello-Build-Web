@@ -23,12 +23,22 @@ function pmCandidates(currentVersion?: VersionItem) {
 }
 
 const versionDialog = ref(false);
-const versionForm = reactive({
-  id: null as number | null,
+// status 用后端值域字面量联合（VersionItem["status"]），不再 `as string` 放弃类型检查
+const versionForm = reactive<{
+  id: number | null;
+  name: string;
+  pm_user_id: number | null;
+  status: VersionItem["status"];
+}>({
+  id: null,
   name: "",
-  pm_user_id: null as number | null,
-  status: "active" as string
+  pm_user_id: null,
+  status: "active"
 });
+/** 版本弹窗保存请求进行中（按钮 :loading 防双击重复提交） */
+const savingVersion = ref(false);
+/** 行内添加分支请求进行中（按钮 :loading 防双击重复提交） */
+const savingBranch = ref(false);
 
 function openVersionDialog(v?: VersionItem) {
   versionDialog.value = true;
@@ -50,22 +60,30 @@ async function saveVersion() {
     ElMessage.warning("请输入版本名称");
     return;
   }
-  if (versionForm.id) {
-    await adminApi.updateVersion(versionForm.id, {
-      name: versionForm.name,
-      pm_user_id: versionForm.pm_user_id,
-      status: versionForm.status
-    });
-    ElMessage.success("版本已更新");
-  } else {
-    await adminApi.createVersion({
-      name: versionForm.name,
-      pm_user_id: versionForm.pm_user_id
-    });
-    ElMessage.success("版本已创建");
+  // 动作路径必须 try/catch/finally 完整：失败由拦截器提示，禁止裸 await 逃逸（R3-F5）
+  savingVersion.value = true;
+  try {
+    if (versionForm.id) {
+      await adminApi.updateVersion(versionForm.id, {
+        name: versionForm.name,
+        pm_user_id: versionForm.pm_user_id,
+        status: versionForm.status
+      });
+      ElMessage.success("版本已更新");
+    } else {
+      await adminApi.createVersion({
+        name: versionForm.name,
+        pm_user_id: versionForm.pm_user_id
+      });
+      ElMessage.success("版本已创建");
+    }
+    versionDialog.value = false;
+    emit("refresh");
+  } catch {
+    // 失败已由拦截器提示（如重名 40902、PM 绑定校验），保留弹窗便于修改重试
+  } finally {
+    savingVersion.value = false;
   }
-  versionDialog.value = false;
-  emit("refresh");
 }
 
 const branchInput = reactive<{ vid: number; name: string }>({
@@ -82,10 +100,17 @@ async function addBranch() {
     ElMessage.warning("请输入分支名称");
     return;
   }
-  await adminApi.addBranch(branchInput.vid, branchInput.name);
-  ElMessage.success("分支已添加");
-  branchInput.name = "";
-  emit("refresh");
+  savingBranch.value = true;
+  try {
+    await adminApi.addBranch(branchInput.vid, branchInput.name);
+    ElMessage.success("分支已添加");
+    branchInput.name = "";
+    emit("refresh");
+  } catch {
+    // 失败已由拦截器提示（如重名 40902），保留输入便于修改重试
+  } finally {
+    savingBranch.value = false;
+  }
 }
 </script>
 
@@ -119,6 +144,7 @@ async function addBranch() {
                 v-if="branchInput.vid === row.id"
                 size="small"
                 type="primary"
+                :loading="savingBranch"
                 @click="addBranch"
               >
                 保存
@@ -201,7 +227,9 @@ async function addBranch() {
       </el-form>
       <template #footer>
         <el-button @click="versionDialog = false">取消</el-button>
-        <el-button type="primary" @click="saveVersion">保存</el-button>
+        <el-button type="primary" :loading="savingVersion" @click="saveVersion"
+          >保存</el-button
+        >
       </template>
     </el-dialog>
   </div>

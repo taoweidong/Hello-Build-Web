@@ -1,7 +1,34 @@
-// utils/week 单测：ISO 周序号与本月周列表（weekly-new 页核心纯函数）
+// utils/week 单测：ISO 周序号、本月周列表与中文星期数组（weekly-new 页核心纯函数）
 import { describe, expect, it } from "vitest";
 import dayjs from "dayjs";
-import { buildMonthWeeks, isoWeek } from "@/utils/week";
+import {
+  buildMonthWeeks,
+  isoWeek,
+  WEEKDAY_CN_MON,
+  WEEKDAY_CN_SUN
+} from "@/utils/week";
+
+describe("WEEKDAY_CN_MON / WEEKDAY_CN_SUN 中文星期数组", () => {
+  it("周一开头：长度 7、首周一末周日（isoweekday 1-7 口径，下标 0 = 周一）", () => {
+    expect(WEEKDAY_CN_MON).toHaveLength(7);
+    expect(WEEKDAY_CN_MON[0]).toBe("周一");
+    expect(WEEKDAY_CN_MON[6]).toBe("周日");
+  });
+
+  it("周日开头：长度 7、首周日末周六（配合 dayjs().day() 0-6 下标取值）", () => {
+    expect(WEEKDAY_CN_SUN).toHaveLength(7);
+    expect(WEEKDAY_CN_SUN[0]).toBe("周日");
+    expect(WEEKDAY_CN_SUN[6]).toBe("周六");
+  });
+
+  it("两数组星期名集合一致，且与 dayjs 下标对齐", () => {
+    expect([...WEEKDAY_CN_MON].sort()).toEqual([...WEEKDAY_CN_SUN].sort());
+    // dayjs("2026-10-12") 为周一：day()=1 → 周日开头数组下标 1 = 周一
+    expect(WEEKDAY_CN_SUN[dayjs("2026-10-12").day()]).toBe("周一");
+    // isoweekday 1 → 周一开头数组下标 0 = 周一
+    expect(WEEKDAY_CN_MON[1 - 1]).toBe("周一");
+  });
+});
 
 describe("isoWeek", () => {
   it("2021-01-01（周五）属于 2020 年第 53 周", () => {

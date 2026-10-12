@@ -24,10 +24,28 @@ export interface ReportQuery {
   version_name?: string;
   strategy_name?: string;
   keyword?: string;
+  /** 页码：携带后返回分页包装 { items, total, page, page_size }；不携带保持全量数组（后端向后兼容） */
+  page?: number;
+  /** 每页条数（后端上限 100） */
+  page_size?: number;
 }
 
-/** 报告列表：支持按状态/版本/策略/关键词过滤 */
-export function getReports(params?: ReportQuery): Promise<ReportItem[]> {
+/** 报告列表分页包装（携带 page 参数时的响应结构） */
+export interface ReportPageData {
+  items: ReportItem[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+/** 报告列表：支持按状态/版本/策略/关键词过滤；带 page 时返回分页包装 */
+export function getReports(
+  params: ReportQuery & { page: number }
+): Promise<ReportPageData>;
+export function getReports(params?: ReportQuery): Promise<ReportItem[]>;
+export function getReports(
+  params?: ReportQuery
+): Promise<ReportItem[] | ReportPageData> {
   return http.get("/reports", { params });
 }
 export function getReport(id: number): Promise<ReportItem> {

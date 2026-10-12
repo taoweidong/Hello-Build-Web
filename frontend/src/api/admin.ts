@@ -4,6 +4,7 @@ import http from "@/api/http";
 import type { StrategyForm } from "@/api/strategy";
 import type {
   VersionItem,
+  VersionStatus,
   UserInfo,
   TemplateItem,
   GlobalConfig,
@@ -20,7 +21,7 @@ export const adminApi = {
   }): Promise<VersionItem> => http.post("/admin/versions", d),
   updateVersion: (
     id: number,
-    d: { name?: string; pm_user_id?: number | null; status?: string }
+    d: { name?: string; pm_user_id?: number | null; status?: VersionStatus }
   ): Promise<VersionItem> => http.patch(`/admin/versions/${id}`, d),
   addBranch: (vid: number, branchName: string): Promise<void> =>
     http.post(`/admin/versions/${vid}/branches`, { name: branchName }),

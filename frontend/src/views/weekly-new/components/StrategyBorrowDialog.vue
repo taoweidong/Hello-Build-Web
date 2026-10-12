@@ -25,7 +25,7 @@
         {{ strategy?.build_start_time }}
       </el-descriptions-item>
       <el-descriptions-item label="推送模式">
-        {{ strategy?.push_mode === "sync" ? "同步推送" : "正常流程" }}
+        {{ pushModeMeta(strategy?.push_mode).label }}
       </el-descriptions-item>
       <el-descriptions-item label="推送时间">
         {{ strategy?.push_start_time || "结论后推导" }}
@@ -110,6 +110,8 @@ import { getPlan, type PlanVersion } from "@/api/plan";
 import { createBorrowFlow } from "@/api/borrowFlow";
 import type { WeeklyStrategy } from "@/api/types";
 import { getCurrentUser } from "@/utils/business";
+// 推送模式文案唯一来源（views/constants，页面内禁止复制措辞）
+import { pushModeMeta } from "@/views/constants";
 
 defineOptions({ name: "WeeklyNewStrategyBorrowDialog" });
 
@@ -204,6 +206,8 @@ async function onSubmit() {
     )
       .then(() => router.push("/borrow-flow"))
       .catch(() => undefined);
+  } catch {
+    // 失败已由拦截器提示（如同策略重复 pending 40903），保留弹窗便于修改重试
   } finally {
     submitting.value = false;
   }

@@ -137,6 +137,7 @@ import {
   type SlotCalendarResponse,
   type SlotTemplateItem
 } from "@/api/slotBooking";
+import { isBizError } from "@/api/http";
 import MonthGrid from "./components/MonthGrid.vue";
 import BookingDialog from "./components/BookingDialog.vue";
 import SlotDetailDialog from "./components/SlotDetailDialog.vue";
@@ -156,6 +157,9 @@ const loading = ref(false);
 const loadError = ref("");
 const calendar = ref<SlotCalendarResponse | null>(null);
 
+/** 后端未返回 horizon_days 时的默认可抢占窗口（天），与后端配置默认值一致（R3-F11 提常量） */
+const DEFAULT_HORIZON_DAYS = 60;
+
 const month = ref<string>(
   typeof route.query.month === "string"
     ? route.query.month
@@ -169,7 +173,7 @@ const monthLabel = computed(() => {
 });
 const horizonEnd = computed(() =>
   dayjs()
-    .add(calendar.value?.horizon_days ?? 60, "day")
+    .add(calendar.value?.horizon_days ?? DEFAULT_HORIZON_DAYS, "day")
     .format("YYYY-MM-DD")
 );
 const templateMap = computed<Record<number, SlotTemplateItem>>(() => {
@@ -188,8 +192,9 @@ async function load() {
   loadError.value = "";
   try {
     calendar.value = await getSlotCalendar(month.value);
-  } catch (e: any) {
-    loadError.value = e?.message || "请求失败";
+  } catch (e) {
+    // isBizError 类型守卫收窄 unknown，替代 catch (e: any)（R3-F9）
+    loadError.value = (isBizError(e) && e.message) || "请求失败";
   } finally {
     loading.value = false;
   }
@@ -254,7 +259,9 @@ function onChipClick(dateStr: string, entry: CalendarDayCell) {
   }
   if (dateStr > horizonEnd.value) {
     ElMessage.warning(
-      `超出可抢占窗口（最多提前 ${calendar.value?.horizon_days ?? 60} 天）`
+      `超出可抢占窗口（最多提前 ${
+        calendar.value?.horizon_days ?? DEFAULT_HORIZON_DAYS
+      } 天）`
     );
     return;
   }

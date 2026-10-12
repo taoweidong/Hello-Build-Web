@@ -58,8 +58,10 @@
       </el-form-item>
       <el-form-item label="推送模式">
         <el-radio-group v-model="form.push_mode" @change="schedule">
-          <el-radio value="normal">正常流程推送</el-radio>
-          <el-radio value="sync">同步推送冒烟</el-radio>
+          <el-radio value="normal">{{
+            pushModeMeta("normal").fullLabel
+          }}</el-radio>
+          <el-radio value="sync">{{ pushModeMeta("sync").fullLabel }}</el-radio>
         </el-radio-group>
       </el-form-item>
       <el-form-item label="推送时间">
@@ -118,10 +120,12 @@
 import { computed, reactive, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import QuestionFilled from "~icons/ep/question-filled";
-import http from "@/api/http";
+import { adminApi } from "@/api/admin";
 import { updateStrategy, type StrategyForm } from "@/api/strategy";
 import type { StrategyItem, TemplateItem } from "@/api/types";
 import { formatTime } from "@/utils/business";
+// 推送模式文案唯一来源（views/constants，页面内禁止复制措辞）
+import { pushModeMeta } from "@/views/constants";
 import { useStrategyPreview } from "@/composables/useStrategyPreview";
 
 defineOptions({ name: "WeeklyNewStrategyEditDialog" });
@@ -160,9 +164,8 @@ watch(
     fillForm();
     if (templateOptions.value.length === 0) {
       try {
-        templateOptions.value = (await http.get(
-          "/admin/templates"
-        )) as TemplateItem[];
+        // 统一走 API 层（禁止裸 http.get 绕过模块封装，R3-F6）
+        templateOptions.value = await adminApi.getTemplates();
       } catch {
         templateOptions.value = [
           {
@@ -250,6 +253,8 @@ async function onSave() {
     ElMessage.success("策略已更新");
     emit("update:modelValue", false);
     emit("saved");
+  } catch {
+    // 失败已由拦截器提示（含 40901 冲突专用弹框），保留弹窗便于修改重试
   } finally {
     saving.value = false;
   }

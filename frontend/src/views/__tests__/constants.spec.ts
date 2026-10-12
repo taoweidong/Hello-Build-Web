@@ -1,9 +1,11 @@
 // views/constants 展示映射唯一来源单测（徽标文案/颜色语义锁定）
 import { describe, expect, it } from "vitest";
 import {
+  bookingStatusMeta,
   borrowStatusMeta,
   branchRoleMeta,
   instanceStatusMeta,
+  pushModeMeta,
   reportConclusionMeta,
   reportStatusMeta,
   revisionTagType,
@@ -49,6 +51,41 @@ describe("借用电子流状态", () => {
       type: "danger"
     });
     expect(borrowStatusMeta("x")).toEqual({ text: "x", type: "info" });
+  });
+});
+
+describe("策略推送模式与抢占状态（第三轮收敛的展示映射）", () => {
+  it("pushModeMeta 命中：normal/sync 各含短文案与长文案两套 label", () => {
+    expect(pushModeMeta("normal")).toEqual({
+      label: "正常流程",
+      fullLabel: "正常流程推送"
+    });
+    expect(pushModeMeta("sync")).toEqual({
+      label: "同步推送",
+      fullLabel: "同步推送冒烟"
+    });
+  });
+
+  it("pushModeMeta 未知值原样兜底、空值返回空文案", () => {
+    expect(pushModeMeta("weird")).toEqual({
+      label: "weird",
+      fullLabel: "weird"
+    });
+    expect(pushModeMeta(undefined)).toEqual({ label: "", fullLabel: "" });
+    expect(pushModeMeta(null)).toEqual({ label: "", fullLabel: "" });
+    expect(pushModeMeta("")).toEqual({ label: "", fullLabel: "" });
+  });
+
+  it("bookingStatusMeta 命中 reserved/released（过期不落库，无 expired 分支）", () => {
+    expect(bookingStatusMeta("reserved")).toEqual({
+      text: "已抢占",
+      type: "success"
+    });
+    expect(bookingStatusMeta("released")).toEqual({
+      text: "已释放",
+      type: "info"
+    });
+    expect(bookingStatusMeta("x")).toEqual({ text: "x", type: "info" });
   });
 });
 

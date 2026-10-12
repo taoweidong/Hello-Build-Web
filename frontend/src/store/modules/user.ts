@@ -10,26 +10,17 @@ import {
 import { type RefreshTokenResult, refreshTokenApi } from "@/api/user";
 // 后端认证接口（构建策略配置系统契约）
 import { loginApi, logoutApi } from "@/api/auth";
+import type { UserInfo } from "@/api/types";
 import { useMultiTagsStoreHook } from "./multiTags";
 import { type DataInfo, setToken, removeToken, userKey } from "@/utils/auth";
+// JWT 过期时间解析（纯函数已抽到 utils/token 便于单测，此处 re-export 保持既有引用路径可用）
+import { tokenExpiresAt } from "@/utils/token";
+export { tokenExpiresAt } from "@/utils/token";
 
 /** 登录用户信息存储 key（含绑定版本等业务元数据） */
 // 业务存储键常量收敛到 store/constants（此处 re-export 保持既有导入兼容）
 export { businessUserKey } from "../constants";
 import { businessUserKey as _businessUserKey } from "../constants";
-
-/** 从 JWT payload 解析真实过期时间；解析失败回退 8 小时（后端默认 ACCESS 时效） */
-function tokenExpiresAt(token: string): Date {
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1] ?? ""));
-    if (typeof payload?.exp === "number") {
-      return new Date(payload.exp * 1000);
-    }
-  } catch {
-    /* 非法 token 结构走默认时效 */
-  }
-  return new Date(Date.now() + 8 * 3600 * 1000);
-}
 
 export const useUserStore = defineStore("pure-user", {
   state: (): userType => ({
@@ -79,31 +70,33 @@ export const useUserStore = defineStore("pure-user", {
       this.loginDay = Number(value);
     },
     /** 登入 */
-    async loginByUsername(data) {
-      return new Promise<any>((resolve, reject) => {
-        // 对接后端 /api/auth/login 契约：{ token, user }
-        loginApi(data)
-          .then(res => {
-            const { token, user } = res;
-            // 写入基座 Token 与用户信息（角色用于菜单/路由权限过滤）
-            setToken({
-              accessToken: token,
-              refreshToken: "",
-              // 有效期取 JWT 真实 exp（不再伪造 30 天，避免过期后基座误判仍有效）
-              expires: tokenExpiresAt(token),
-              username: user.username,
-              nickname: user.display_name,
-              roles: [user.role],
-              permissions: ["*:*:*"]
+    async loginByUsername(data: { username: string; password: string }) {
+      return new Promise<{ success: boolean; user: UserInfo }>(
+        (resolve, reject) => {
+          // 对接后端 /api/auth/login 契约：{ token, user }
+          loginApi(data)
+            .then(res => {
+              const { token, user } = res;
+              // 写入基座 Token 与用户信息（角色用于菜单/路由权限过滤）
+              setToken({
+                accessToken: token,
+                refreshToken: "",
+                // 有效期取 JWT 真实 exp（不再伪造 30 天，避免过期后基座误判仍有效）
+                expires: tokenExpiresAt(token),
+                username: user.username,
+                nickname: user.display_name,
+                roles: [user.role],
+                permissions: ["*:*:*"]
+              });
+              // 额外存储业务用户信息（PM 绑定版本等）
+              localStorage.setItem(_businessUserKey, JSON.stringify(user));
+              resolve({ success: true, user });
+            })
+            .catch(error => {
+              reject(error);
             });
-            // 额外存储业务用户信息（PM 绑定版本等）
-            localStorage.setItem(_businessUserKey, JSON.stringify(user));
-            resolve({ success: true, user });
-          })
-          .catch(error => {
-            reject(error);
-          });
-      });
+        }
+      );
     },
     /** 登出：先请求后端将当前 token 拉黑（写安全日志），失败不阻塞本地清理 */
     logOut() {

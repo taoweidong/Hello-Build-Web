@@ -27,12 +27,10 @@ import {
   addBranchPermission,
   addBranchProject,
   createBranch,
-  createProject,
   deleteBranch,
   getBranchConfig,
   getBranches,
   getBranchInstances,
-  getProjects,
   getUsersAll,
   removeBranchPermission,
   removeBranchProject,
@@ -163,7 +161,12 @@ describe("api/auth 契约", () => {
       silent: true
     });
     await getMe();
-    expect(httpMock.get).toHaveBeenCalledWith("/auth/me");
+    expect(httpMock.get).toHaveBeenCalledWith("/auth/me", undefined);
+  });
+
+  it("getMe 透传请求级配置（启动静默刷新用 silent: true，R3-F10）", async () => {
+    await getMe({ silent: true });
+    expect(httpMock.get).toHaveBeenCalledWith("/auth/me", { silent: true });
   });
 });
 
@@ -238,13 +241,9 @@ describe("api/branchConfig 契约", () => {
     expect(httpMock.delete).toHaveBeenCalledWith("/branch-permissions/13");
   });
 
-  it("用户/工程库/实例（实例请求透传 silent 配置）", async () => {
+  it("用户/实例（实例请求透传 silent 配置；工程库 getProjects/createProject 无消费者已随死代码删除）", async () => {
     await getUsersAll();
     expect(httpMock.get).toHaveBeenCalledWith("/users/all");
-    await getProjects();
-    expect(httpMock.get).toHaveBeenCalledWith("/projects");
-    await createProject({ name: "工程A" });
-    expect(httpMock.post).toHaveBeenCalledWith("/projects", { name: "工程A" });
     await getBranchInstances(3, { silent: true });
     expect(httpMock.get).toHaveBeenCalledWith("/branches/3/instances", {
       silent: true

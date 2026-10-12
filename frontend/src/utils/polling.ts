@@ -5,8 +5,9 @@
  * 后端持续 500 时会每 30s 弹一次 ElMessage.error（拦截器无条件弹），
  * 空 catch 只挡得住 rejection、挡不住 toast，形成错误弹窗轰炸。
  *
- * 修复：失败按指数退避递增（30s→60s→120s→240s→300s 封顶），成功即重置；
- * 且仅首次失败提示，后续静默。
+ * 修复：失败按指数退避递增（30s→60s→120s→240s→300s 封顶），成功即重置。
+ * （原「仅首次失败提示」的 shouldNotify 无生产调用者，2026-10-13 第三轮质量优化随死代码删除；
+ * 轮询请求统一走 silent: true，由拦截器层决定是否提示。）
  */
 
 /** 正常轮询间隔 */
@@ -32,12 +33,4 @@ export function pollDelay(
   }
   const delay = baseMs * 2 ** Math.floor(consecutiveFailures);
   return Math.min(delay, maxMs);
-}
-
-/**
- * 是否应当提示用户。
- * 仅连续失败第一次提示，避免错误弹窗按秒轰炸。
- */
-export function shouldNotify(consecutiveFailures: number): boolean {
-  return consecutiveFailures === 0;
 }

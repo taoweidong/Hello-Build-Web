@@ -104,11 +104,12 @@ const elapsed = computed(() => {
   return now.diff(start, "day") + 1;
 });
 
-/** 7 天格点：已过=实心、今天=呼吸圈、未来=空心 */
+/** 7 天格点：已过=实心、今天=呼吸圈、未来=空心；
+ * 整周已过去（elapsed=7，查看历史周）时不再有「今天」，末格不标呼吸圈（R3-F11） */
 const pips = computed(() =>
   Array.from({ length: 7 }, (_, i) => ({
     done: i < elapsed.value,
-    today: i === elapsed.value - 1 && elapsed.value > 0
+    today: i === elapsed.value - 1 && elapsed.value > 0 && elapsed.value < 7
   }))
 );
 </script>

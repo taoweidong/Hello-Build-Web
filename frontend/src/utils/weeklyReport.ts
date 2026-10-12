@@ -126,7 +126,17 @@ export function computeBranchLoad(
     .sort((a, b) => b.total - a.total || a.branch_id - b.branch_id);
 }
 
-/** 24 小时趋势：按小时聚合构建/推送数（小时由 HH:mm 前两位取） */
+/**
+ * 解析 "HH:mm" 的小时位：非数字、空串或越界（如 "25:00"）返回 null 由调用方跳过。
+ * 旧实现 `parseInt(...) || 0` 会把非法值计入 0 点、越界值直接下标越界 TypeError（R3-F12 加守卫）。
+ */
+function hourOf(t: string | null | undefined): number | null {
+  if (!t) return null;
+  const h = Number.parseInt(t.slice(0, 2), 10);
+  return Number.isInteger(h) && h >= 0 && h < 24 ? h : null;
+}
+
+/** 24 小时趋势：按小时聚合构建/推送数（小时由 HH:mm 前两位取；非法时间条目跳过不计） */
 export function computeHourTrend(strategies: WeeklyStrategy[]): HourBucket[] {
   const buckets: HourBucket[] = Array.from({ length: 24 }, (_, hour) => ({
     hour,
@@ -134,15 +144,18 @@ export function computeHourTrend(strategies: WeeklyStrategy[]): HourBucket[] {
     push: 0,
     total: 0
   }));
-  const hourOf = (t: string) => Number.parseInt(t.slice(0, 2), 10) || 0;
   for (const s of strategies) {
     const h = hourOf(s.build_start_time);
-    buckets[h].build += 1;
-    buckets[h].total += 1;
+    if (h !== null) {
+      buckets[h].build += 1;
+      buckets[h].total += 1;
+    }
     if (s.push_start_time) {
       const ph = hourOf(s.push_start_time);
-      buckets[ph].push += 1;
-      buckets[ph].total += 1;
+      if (ph !== null) {
+        buckets[ph].push += 1;
+        buckets[ph].total += 1;
+      }
     }
   }
   return buckets;

@@ -1,6 +1,7 @@
 // 借用电子流 API 模块
 // 契约：GET/POST /borrow-flows，POST /borrow-flows/:id/approve | reject
 import http from "@/api/http";
+import { appHashUrl } from "@/utils/appUrl";
 
 /** 借用电子流条目 */
 export interface BorrowFlowItem {
@@ -63,9 +64,9 @@ export function rejectBorrowFlow(
   return http.post(`/borrow-flows/${id}/reject`, { comment });
 }
 
-/** 借用电子流审批页的直达链接（hash 路由，携带 focus 参数定位并打开该条） */
+/** 借用电子流审批页的直达链接（hash 路由，携带 focus 参数定位并打开该条）
+ * URL 拼装统一走 utils/appUrl（origin + 部署子路径 + hash），此处不再手写 */
 export function borrowFlowUrl(id: number): string {
   if (typeof window === "undefined") return `#/borrow-flow/index?focus=${id}`;
-  const { origin, pathname } = window.location;
-  return `${origin}${pathname}#/borrow-flow/index?focus=${id}`;
+  return appHashUrl(`/borrow-flow/index?focus=${id}`);
 }

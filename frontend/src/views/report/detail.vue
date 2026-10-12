@@ -14,11 +14,14 @@ import {
   type ReportForm
 } from "@/api/report";
 import type { ReportItem } from "@/api/types";
+import { isBizError } from "@/api/http";
 import { getCurrentUser, formatTime } from "@/utils/business";
 import { useReportForm } from "@/composables/useReportForm";
 import { useStrategyOptions } from "@/composables/useStrategyOptions";
 import { copyText } from "@/utils/clipboard";
 import { appHashUrl } from "@/utils/appUrl";
+// 截图 dataURL 纯函数（已抽取到 utils/screenshot 并单测锁定，R3-F8）
+import { base64Bytes, dataUrlToBlob } from "@/utils/screenshot";
 import { reportConclusionMeta, reportStatusMeta } from "@/views/constants";
 
 // 图标：~icons/ri（Remix Icon）+ ~icons/ep（Element Plus Icon）
@@ -58,6 +61,8 @@ function goBack() {
 }
 
 const MAX_SCREENSHOT_BYTES = 2 * 1024 * 1024; // 2MB，与后端校验一致
+/** 历史报告下拉单页拉取条数（后端 page_size 上限 100，一页足够下拉框用） */
+const HISTORY_PAGE_SIZE = 100;
 
 // ---- 路由态 ----
 const routeId = computed(() => String(route.params.id ?? ""));
@@ -192,9 +197,9 @@ async function loadReport() {
     if (route.query.edit === "1" && canEdit(data)) {
       editing.value = true;
     }
-  } catch (e: any) {
-    const code = e?.code;
-    if (code === 40401) {
+  } catch (e) {
+    // isBizError 类型守卫收窄 unknown，替代 catch (e: any)（R3-F9）
+    if (isBizError(e) && e.code === 40401) {
       ElMessage.error("报告不存在或已删除");
       router.replace("/report/index");
     }
@@ -221,6 +226,9 @@ async function saveDraft(): Promise<ReportItem | null> {
     report.value = saved;
     ElMessage.success("报告已保存");
     return saved;
+  } catch {
+    // 失败已由拦截器提示，保留编辑态便于修改重试（R3-F5）
+    return null;
   } finally {
     saving.value = false;
   }
@@ -237,12 +245,6 @@ async function captureCard(): Promise<string> {
     logging: false
   });
   return canvas.toDataURL("image/png");
-}
-
-/** base64 字节数估算（dataURL 主体 4 字符 ≈ 3 字节） */
-function base64Bytes(dataUrl: string): number {
-  const body = dataUrl.split(",")[1] || "";
-  return Math.floor(body.length * 0.75);
 }
 
 async function onPublish() {
@@ -273,9 +275,10 @@ async function onPublish() {
       await updateReport(report.value.id, toPayload());
       savedReportId = report.value.id;
     }
-    // 等卡片重渲染完成再截图
+    // 等卡片重渲染完成再截图：双 nextTick（第一次冲刷响应式状态、第二次确认 DOM 更新完成），
+    // 替代原 setTimeout(100) 魔法等待（R3-F8）
     await nextTick();
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await nextTick();
     const screenshot = await captureCard();
     if (base64Bytes(screenshot) > MAX_SCREENSHOT_BYTES) {
       ElMessage.error("截图超过 2MB，请精简报告内容后重试");
@@ -311,14 +314,6 @@ async function onPublish() {
 
 // ---- 复制报告：报告单截图写入剪贴板（图片），供用户粘贴到文档/聊天等 ----
 const copying = ref(false);
-function dataUrlToBlob(dataUrl: string): Blob {
-  const [head, body] = dataUrl.split(",");
-  const mime = head.match(/data:(.*?);/)?.[1] || "image/png";
-  const bin = atob(body);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return new Blob([bytes], { type: mime });
-}
 async function copyReport() {
   if (!cardWrapRef.value || copying.value) return;
   copying.value = true;
@@ -357,7 +352,9 @@ async function copyLink() {
 const historyList = ref<ReportItem[]>([]);
 async function loadHistory() {
   try {
-    historyList.value = await getReports();
+    // 分页拉取一页（page_size=100）足够下拉框用，不再全量拉整表（R3-F8）
+    const data = await getReports({ page: 1, page_size: HISTORY_PAGE_SIZE });
+    historyList.value = data.items;
   } catch {
     historyList.value = [];
   }
@@ -370,8 +367,9 @@ async function openHistory(id: number | string) {
     fillForm(data);
     editing.value = false;
     await router.replace(`/report/detail/${data.id}`);
-  } catch (e: any) {
-    ElMessage.error(e?.message || "报告加载失败");
+  } catch (e) {
+    // isBizError 类型守卫收窄 unknown，替代 catch (e: any)（R3-F9）
+    ElMessage.error((isBizError(e) && e.message) || "报告加载失败");
   }
 }
 

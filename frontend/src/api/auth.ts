@@ -1,5 +1,6 @@
 // 认证 API 模块
 // 契约基准：设计文档 7.2 认证接口
+import type { AxiosRequestConfig } from "axios";
 import http from "@/api/http";
 import type { LoginResult, UserInfo } from "@/api/types";
 
@@ -17,7 +18,7 @@ export function logoutApi(): Promise<void> {
   return http.post("/auth/logout", null, { silent: true });
 }
 
-/** 当前用户信息（含权限元数据） */
-export function getMe(): Promise<UserInfo> {
-  return http.get("/auth/me");
+/** 当前用户信息（含权限元数据）；启动静默刷新等场景可传 { silent: true } 失败不弹 toast */
+export function getMe(config?: AxiosRequestConfig): Promise<UserInfo> {
+  return http.get("/auth/me", config);
 }

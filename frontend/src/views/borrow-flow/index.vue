@@ -60,7 +60,7 @@
         </el-table-column>
         <el-table-column label="申请时间" width="150">
           <template #default="{ row }">
-            {{ (row.created_at || "").replace("T", " ") }}
+            {{ formatFlowTime(row.created_at) }}
           </template>
         </el-table-column>
         <el-table-column label="审批" min-width="140">
@@ -152,7 +152,7 @@
           {{ detailFlow.reason || "（未填写）" }}
         </el-descriptions-item>
         <el-descriptions-item label="申请时间" :span="2">
-          {{ (detailFlow.created_at || "").replace("T", " ") }}
+          {{ formatFlowTime(detailFlow.created_at) }}
         </el-descriptions-item>
         <el-descriptions-item
           v-if="detailFlow.status !== 'pending'"
@@ -164,7 +164,7 @@
           }}{{
             detailFlow.handle_comment ? `（${detailFlow.handle_comment}）` : ""
           }}
-          {{ (detailFlow.handled_at || "").replace("T", " ") }}
+          {{ formatFlowTime(detailFlow.handled_at) }}
         </el-descriptions-item>
       </el-descriptions>
       <template #footer>
@@ -193,7 +193,7 @@ import {
   rejectBorrowFlow,
   type BorrowFlowItem
 } from "@/api/borrowFlow";
-import { formatBorrowFlowText } from "./format";
+import { formatBorrowFlowText, formatFlowTime } from "./format";
 import { borrowStatusMeta } from "@/views/constants";
 import { canApproveBorrowFlow, getCurrentUser } from "@/utils/business";
 import { copyText } from "@/utils/clipboard";

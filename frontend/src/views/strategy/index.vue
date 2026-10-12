@@ -16,6 +16,8 @@ import { useStrategyPreview } from "@/composables/useStrategyPreview";
 import { getPlan } from "@/api/plan";
 import type { StrategyItem, TemplateItem } from "@/api/types";
 import { getCurrentUser, dayjs, parseTime, timeToMs } from "@/utils/business";
+// 推送模式文案唯一来源（views/constants，页面内禁止复制措辞）
+import { pushModeMeta } from "@/views/constants";
 import { STAGE_COLORS } from "@/components/gantt/types";
 
 defineOptions({ name: "StrategyIndex" });
@@ -277,7 +279,7 @@ onMounted(async () => {
         <el-table-column prop="build_start_time" label="构建开始" width="110" />
         <el-table-column label="推送模式" width="130">
           <template #default="{ row }">
-            {{ row.push_mode === "sync" ? "同步推送冒烟" : "正常流程推送" }}
+            {{ pushModeMeta(row.push_mode).fullLabel }}
           </template>
         </el-table-column>
         <el-table-column label="启用" width="90">
@@ -357,8 +359,12 @@ onMounted(async () => {
         </el-form-item>
         <el-form-item label="推送模式">
           <el-radio-group v-model="form.push_mode">
-            <el-radio value="normal">正常流程推送</el-radio>
-            <el-radio value="sync">同步推送冒烟</el-radio>
+            <el-radio value="normal">{{
+              pushModeMeta("normal").fullLabel
+            }}</el-radio>
+            <el-radio value="sync">{{
+              pushModeMeta("sync").fullLabel
+            }}</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="推送时间（可空）">

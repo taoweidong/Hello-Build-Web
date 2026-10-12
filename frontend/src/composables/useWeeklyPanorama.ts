@@ -44,17 +44,6 @@ export type TaskClickResult =
   | { kind: "borrow"; strategy: WeeklyStrategy & { version_name?: string } }
   | { kind: "edit"; detail: StrategyItem };
 
-/** 后端返回英文星期（Monday…Sunday），统一转中文展示 */
-export const WEEKDAY_CN: Record<string, string> = {
-  Monday: "周一",
-  Tuesday: "周二",
-  Wednesday: "周三",
-  Thursday: "周四",
-  Friday: "周五",
-  Saturday: "周六",
-  Sunday: "周日"
-};
-
 export function useWeeklyPanorama() {
   const today = dayjs().format("YYYY-MM-DD");
   const thisWeekMonday = dayjs(today)
@@ -132,11 +121,11 @@ export function useWeeklyPanorama() {
   // 分支配色：固定色板、按 branch_id 稳定取色（与 weekly 共用）
   const { branchColor } = useBranchColors(branches);
 
-  /** 列头 7 天：星期转中文 */
+  /** 列头 7 天：后端 weekly.py 直接返回中文星期（周一~周日），透传即可；?? 兜底防空值 */
   const weekDays = computed(() =>
     (weekly.value?.days ?? []).map(d => ({
       date: d.date,
-      weekday: WEEKDAY_CN[d.weekday] ?? d.weekday
+      weekday: d.weekday ?? ""
     }))
   );
 
@@ -212,14 +201,20 @@ export function useWeeklyPanorama() {
       if (s.push_start_time) times.add(s.push_start_time);
     }
     const now = new Date();
-    return [...times].sort().map(t => ({
-      time: t,
-      cells: weekDays.value.map(d => ({
-        date: d.date,
-        past: isPastSlot(d.date, t, now),
-        tasks: tasksAtTime(t)
-      }))
-    }));
+    return [...times].sort().map(t => {
+      // 策略每日循环：同一时间点的任务数组 7 天内容一致，只构建一次共享引用
+      //（旧实现每格各调一次 tasksAtTime，O(时间点×7×策略数) 重复构建，R3-F7；
+      // 渲染输出不变——展示层只读该数组，逐格的 past 仍按日期独立判定）
+      const tasks = tasksAtTime(t);
+      return {
+        time: t,
+        cells: weekDays.value.map(d => ({
+          date: d.date,
+          past: isPastSlot(d.date, t, now),
+          tasks
+        }))
+      };
+    });
   });
 
   const stats = computed(() => ({

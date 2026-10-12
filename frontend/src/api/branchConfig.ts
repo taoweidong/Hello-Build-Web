@@ -138,18 +138,6 @@ export function getUsersAll(): Promise<UserOption[]> {
   return http.get("/users/all");
 }
 
-// ---- 工程库 ----
-export function getProjects(): Promise<ProjectItem[]> {
-  return http.get("/projects");
-}
-export function createProject(data: {
-  name: string;
-  repository_url?: string;
-  description?: string;
-}): Promise<ProjectItem> {
-  return http.post("/projects", data);
-}
-
 // ---- 实例 ----
 export function getBranchInstances(
   branchId: number,

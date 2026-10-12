@@ -15,10 +15,10 @@
             >
             <el-tag
               size="small"
-              :type="statusTagType(row.status)"
+              :type="bookingStatusMeta(row.status).type"
               effect="plain"
             >
-              {{ statusLabel(row.status) }}
+              {{ bookingStatusMeta(row.status).text }}
             </el-tag>
           </div>
           <div class="item-slot">
@@ -52,6 +52,7 @@
           text
           type="primary"
           class="load-more"
+          :loading="loadingMore"
           @click="loadMore"
         >
           加载更多（{{ rows.length }}/{{ total }}）
@@ -75,8 +76,14 @@ import {
   releaseBooking,
   type BookingRow
 } from "@/api/slotBooking";
+// 展示映射/星期数组唯一来源（views/constants 与 utils/week，页面内禁止复制）
+import { bookingStatusMeta } from "@/views/constants";
+import { WEEKDAY_CN_SUN } from "@/utils/week";
 
 defineOptions({ name: "MyBookingsDrawer" });
+
+/** 分页大小（列表/加载更多共用，避免魔法数字散落） */
+const PAGE_SIZE = 20;
 
 defineProps<{
   modelValue: boolean;
@@ -97,7 +104,7 @@ async function load() {
   loading.value = true;
   page.value = 1;
   try {
-    const data = await getMyBookings(1, 20);
+    const data = await getMyBookings(1, PAGE_SIZE);
     rows.value = data.items;
     total.value = data.total;
   } catch {
@@ -107,34 +114,25 @@ async function load() {
   }
 }
 
+const loadingMore = ref(false);
 async function loadMore() {
-  const next = page.value + 1;
-  const data = await getMyBookings(next, 20).catch(() => null);
-  if (data) {
-    page.value = next;
-    rows.value = [...rows.value, ...data.items];
+  // 在途守卫：连点时并发请求同一页会重复 append（R3-F11）
+  if (loadingMore.value) return;
+  loadingMore.value = true;
+  try {
+    const next = page.value + 1;
+    const data = await getMyBookings(next, PAGE_SIZE).catch(() => null);
+    if (data) {
+      page.value = next;
+      rows.value = [...rows.value, ...data.items];
+    }
+  } finally {
+    loadingMore.value = false;
   }
 }
 
 function weekdayLabel(dateStr: string) {
-  const names = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-  return names[dayjs(dateStr).day()];
-}
-
-function statusLabel(status: BookingRow["status"]) {
-  return status === "reserved"
-    ? "已抢占"
-    : status === "released"
-      ? "已释放"
-      : "已过期";
-}
-
-function statusTagType(status: BookingRow["status"]) {
-  return status === "reserved"
-    ? "success"
-    : status === "released"
-      ? "info"
-      : "warning";
+  return WEEKDAY_CN_SUN[dayjs(dateStr).day()];
 }
 
 async function handleRelease(row: BookingRow) {

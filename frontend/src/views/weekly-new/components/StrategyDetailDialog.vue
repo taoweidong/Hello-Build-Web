@@ -25,7 +25,7 @@
         {{ strategy?.build_start_time }}
       </el-descriptions-item>
       <el-descriptions-item label="推送模式">
-        {{ strategy?.push_start_time ? "同步推送" : "正常流程" }}
+        {{ pushModeMeta(strategy?.push_mode).label }}
       </el-descriptions-item>
       <el-descriptions-item label="推送时间">
         {{ strategy?.push_start_time || "结论后推导" }}
@@ -43,6 +43,9 @@
 <script setup lang="ts">
 // 版本策略全景页 - 已过期历史任务的只读详情弹窗（不支持任何修改/借用操作）
 import type { WeeklyStrategy } from "@/api/types";
+// 推送模式判定以 push_mode 字段为准（勿再用 push_start_time 猜测：
+// normal + 固定推送时间的策略会被误标「同步推送」，R3-F2）；文案唯一来源 views/constants
+import { pushModeMeta } from "@/views/constants";
 
 defineOptions({ name: "WeeklyNewStrategyDetailDialog" });
 

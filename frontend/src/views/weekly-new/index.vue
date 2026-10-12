@@ -51,7 +51,6 @@
             size="small"
             placeholder="选择本周"
             style="width: 210px; margin-left: 8px"
-            @change="onMonthWeekChange"
           >
             <el-option
               v-for="w in monthWeeks"
@@ -178,8 +177,6 @@ defineOptions({ name: "WeeklyNewIndex" });
 
 const {
   today,
-  thisWeekMonday,
-  weekStart,
   weekRangeText,
   weekNumber,
   isCurrentWeek,
@@ -190,8 +187,6 @@ const {
   versionId,
   versionOptions,
   branches,
-  strategies,
-  currentVersionName,
   branchFilter,
   filteredStrategies,
   visibleBranches,
@@ -208,10 +203,8 @@ const {
 } = useWeeklyPanorama();
 
 // ---- 弹窗状态（编辑 / 借用 / 只读详情）----
-/** 月周下拉：清空（value 为空）时回退本周一，避免 weekStart 被置空 */
-function onMonthWeekChange(value: string) {
-  weekStart.value = value || thisWeekMonday;
-}
+// 月周下拉直接 v-model 绑定 selectedWeek：composable 内 watcher 已负责同步 weekStart
+//（原 onMonthWeekChange 的空值回退为死逻辑——下拉无 clearable，value 恒为选项值，R3-F11 已删）
 
 const editVisible = ref(false);
 const editStrategy = ref<StrategyItem | null>(null);

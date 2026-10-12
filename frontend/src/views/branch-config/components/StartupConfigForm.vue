@@ -56,7 +56,7 @@
         <pre class="raw-json">{{ form.raw_json }}</pre>
       </el-form-item>
       <el-form-item v-if="myRole === 'ADMIN'">
-        <el-button type="primary" :loading="saving" @click="$emit('save', form)"
+        <el-button type="primary" :loading="saving" @click="onSaveClick"
           >保存参数</el-button
         >
       </el-form-item>
@@ -127,12 +127,23 @@ function renameEnv(idx: number, newKey: string) {
 }
 
 function addEnv() {
+  // 空键守卫：已有未填写 KEY 的空键行时不再新增（避免重复写入 env_vars[""]，R3-F11）
+  if ("" in form.env_vars) return;
   form.env_vars[""] = "";
 }
 
 function removeEnv(idx: number) {
   const key = envKeys.value[idx];
   if (key !== undefined) delete form.env_vars[key];
+}
+
+/** 保存前过滤空键行：未填写 KEY 的占位行不应进入提交载荷（R3-F11） */
+function onSaveClick() {
+  const envVars: Record<string, string> = {};
+  for (const [k, v] of Object.entries(form.env_vars)) {
+    if (k.trim()) envVars[k] = v;
+  }
+  emit("save", { ...form, env_vars: envVars });
 }
 </script>
 

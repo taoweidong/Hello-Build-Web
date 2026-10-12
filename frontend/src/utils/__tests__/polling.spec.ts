@@ -1,11 +1,7 @@
-// 轮询退避策略单测：锁定「失败递增、成功重置、封顶 5min、仅首次提示」
+// 轮询退避策略单测：锁定「失败递增、成功重置、封顶 5min」
+//（shouldNotify 无生产调用者，2026-10-13 第三轮质量优化随死代码一并删除其 2 例测试）
 import { describe, expect, it } from "vitest";
-import {
-  pollDelay,
-  shouldNotify,
-  POLL_BASE_MS,
-  POLL_MAX_MS
-} from "@/utils/polling";
+import { pollDelay, POLL_BASE_MS, POLL_MAX_MS } from "@/utils/polling";
 
 describe("pollDelay 退避间隔", () => {
   it("无失败时为基准间隔", () => {
@@ -38,17 +34,5 @@ describe("pollDelay 退避间隔", () => {
     for (let i = 1; i < 4; i++) {
       expect(pollDelay(i)).toBeGreaterThan(pollDelay(i - 1));
     }
-  });
-});
-
-describe("shouldNotify 错误提示节流", () => {
-  it("仅首次失败提示", () => {
-    expect(shouldNotify(0)).toBe(true);
-  });
-
-  it("后续失败静默，避免弹窗轰炸", () => {
-    expect(shouldNotify(1)).toBe(false);
-    expect(shouldNotify(2)).toBe(false);
-    expect(shouldNotify(50)).toBe(false);
   });
 });

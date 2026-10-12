@@ -121,6 +121,8 @@ import {
 } from "@/api/slotBooking";
 import TemplateDialog from "./components/TemplateDialog.vue";
 import RecordsPanel from "./components/RecordsPanel.vue";
+// 中文星期数组唯一来源（utils/week，isoweekday 1-7 口径：下标 0 = 周一）
+import { WEEKDAY_CN_MON } from "@/utils/week";
 
 defineOptions({ name: "SlotConfigIndex" });
 
@@ -132,10 +134,8 @@ const editing = ref<SlotTemplateItem | null>(null);
 const togglingId = ref<number | null>(null);
 const recordsRef = ref<InstanceType<typeof RecordsPanel>>();
 
-const WEEKDAY_NAMES = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
-
 function weekdayLabel(w: string) {
-  return WEEKDAY_NAMES[Number(w) - 1] ?? w;
+  return WEEKDAY_CN_MON[Number(w) - 1] ?? w;
 }
 
 async function load() {

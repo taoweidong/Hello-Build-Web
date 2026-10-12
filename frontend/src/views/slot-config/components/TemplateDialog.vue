@@ -111,6 +111,8 @@ import {
   updateSlotTemplate,
   type SlotTemplateItem
 } from "@/api/slotBooking";
+// 中文星期数组唯一来源（utils/week），选项对象由数组派生
+import { WEEKDAY_CN_MON } from "@/utils/week";
 
 defineOptions({ name: "SlotTemplateDialog" });
 
@@ -135,15 +137,11 @@ const COLOR_PRESETS = [
   "#ff7d00"
 ];
 
-const WEEKDAYS = [
-  { value: "1", label: "周一" },
-  { value: "2", label: "周二" },
-  { value: "3", label: "周三" },
-  { value: "4", label: "周四" },
-  { value: "5", label: "周五" },
-  { value: "6", label: "周六" },
-  { value: "7", label: "周日" }
-];
+// 适用星期选项：isoweekday 1-7（1=周一…7=周日），由共享常量数组派生
+const WEEKDAYS = WEEKDAY_CN_MON.map((label, i) => ({
+  value: String(i + 1),
+  label
+}));
 
 const formRef = ref<FormInstance>();
 const saving = ref(false);

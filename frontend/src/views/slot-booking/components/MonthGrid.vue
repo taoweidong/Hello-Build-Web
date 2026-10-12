@@ -24,11 +24,13 @@
 
 <script setup lang="ts">
 import type { CalendarDayCell, SlotTemplateItem } from "@/api/slotBooking";
+// 中文星期数组唯一来源（utils/week，页面内禁止手写复制）
+import { WEEKDAY_CN_MON } from "@/utils/week";
 import DayCell from "./DayCell.vue";
 
 defineOptions({ name: "SlotMonthGrid" });
 
-const WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+const WEEKDAYS = WEEKDAY_CN_MON;
 
 defineProps<{
   cells: { date: string; inMonth: boolean }[];

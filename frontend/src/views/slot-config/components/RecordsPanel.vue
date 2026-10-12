@@ -100,8 +100,12 @@
       <el-table-column label="抢占人" prop="user_name" width="110" />
       <el-table-column label="状态" width="90" align="center">
         <template #default="{ row }">
-          <el-tag size="small" :type="statusTagType(row.status)" effect="plain">
-            {{ statusLabel(row.status) }}
+          <el-tag
+            size="small"
+            :type="bookingStatusMeta(row.status).type"
+            effect="plain"
+          >
+            {{ bookingStatusMeta(row.status).text }}
           </el-tag>
         </template>
       </el-table-column>
@@ -146,6 +150,8 @@ import {
   releaseBooking,
   type BookingRow
 } from "@/api/slotBooking";
+// 抢占状态文案/颜色映射唯一来源（页面内禁止复制，含不可达 expired 死分支已删除）
+import { bookingStatusMeta } from "@/views/constants";
 
 defineOptions({ name: "SlotRecordsPanel" });
 
@@ -209,22 +215,6 @@ function resetFilters() {
   load();
 }
 
-function statusLabel(status: BookingRow["status"]) {
-  return status === "reserved"
-    ? "已抢占"
-    : status === "released"
-      ? "已释放"
-      : "已过期";
-}
-
-function statusTagType(status: BookingRow["status"]) {
-  return status === "reserved"
-    ? "success"
-    : status === "released"
-      ? "info"
-      : "warning";
-}
-
 async function handleRelease(row: BookingRow) {
   let reason = "";
   try {
@@ -254,13 +244,14 @@ async function handleRelease(row: BookingRow) {
 }
 
 onMounted(async () => {
-  load();
-  // 默认筛选近一个月
+  // 默认筛选近一个月（前 7 天 ~ 后 30 天）：赋值必须先于首次 load()，
+  // 否则首查不带日期条件、表格展示未过滤全量而筛选器却显示着范围（R3-F3）
   const today = dayjs();
   dateRange.value = [
     today.subtract(7, "day").format("YYYY-MM-DD"),
     today.add(30, "day").format("YYYY-MM-DD")
   ];
+  load();
   const [plan, users] = await Promise.all([
     getPlan({ date: today.format("YYYY-MM-DD") }).catch(() => []),
     getUsersAll().catch(() => [])
