@@ -44,8 +44,7 @@ flowchart TB
     R --> ACT["useScheduleActions 六动作"] -->|onDirty| HUB
   end
 ```
-> **改造前**：4 个页面各自 `import api` → 各自拼数据 → 各自绑定特定 DOM；新增一种布局 = 复制一份编排逻辑。
-> **改造后**：只有中枢直连 API，5 个路由仅消费 `ScheduleEvent[]` + `selectors`；**加第 6 种布局不碰后端、不碰其余 5 个布局**。
+> **改造前**：4 个页面各自 `import api` → 各自拼数据 → 各自绑定特定 DOM，新增一种布局 = 复制一份编排逻辑。**改造后**：只有中枢直连 API，5 个路由仅消费 `ScheduleEvent[]` + `selectors`；**加第 6 种布局不碰后端、不碰其余 5 个布局**。
 
 ### 1.4 数据口径统一清单（5 布局共用，任一处不得自行换算）
 | 口径项 | 统一约定 | 唯一来源 / 处置 |
@@ -61,7 +60,7 @@ flowchart TB
 | 状态中文文案 | 待审批 / 已通过 / 已驳回 / 已抢占 / 已释放 / 草稿 / 已发布 / 正常 / 同步 | `views/constants.ts`（`borrowStatusMap` 已有；**新增 `slotStatusMap`**） |
 | 可见性口径 | 借用流：admin 全量；pm = `Q(borrower=self)` ∪ `Q(strategy__branch__version__pm_user=self)`；其余仅自己发起 | 后端 `views/borrow_flow.py`；前端只读不重算 |
 | 复制文案 XSS | VNode 文本渲染，**禁用 `dangerouslyUseHTMLString`** | PRD 场景 D 边界②；`utils/clipboard.ts` |
-
+| 配色口径 | 5 布局共用**唯一配色映射表**：业务色板外一律用 `.biz-*` 类 + `--el-*` 语义变量；分支色走 `BRANCH_PALETTE`、阶段色走 `STAGE_COLORS`、时段色取服务端 `SlotTemplate.color`、状态徽标走 `TagMeta.type`；**禁止页面硬编码 hex** | 唯一出处见 **§4.1**（含用户裁定口径与反例说明） |
 
 ## §2 优化目标与任务分工
 ### 2.1 可度量优化目标
@@ -102,7 +101,6 @@ graph LR
 ```
 > **实现顺序建议：先 S3（复用 `MonthGrid`/`SlotChip` 最多，最快端到端跑通），再 S1/S2，最后 S4/S5** —— 理由是 S3 能最早验证「中枢 → 选择器 → 既有组件改造」这条链路是否真的省事。
 
-
 ## §3 业务场景拆解（引用 PRD，不重写细节）
 > 四场景的完整流程、Mermaid 状态图、角色矩阵、错误码表，**一律以 PRD 为唯一出处**：`.../2026-10-12-scheduling-panorama-prd.md` §3 A/B/C/D。**5 种布局共享本节全部内容，不做任何分支定义。**
 
@@ -114,7 +112,6 @@ graph LR
 | **D 借出** | **新增** `BorrowApprovalDrawer.vue`（红点 + 抽屉） | 「待我审批」入口 / 借用事件卡上的审批按钮 | **待审批** → **已通过**（事务内建策略）/ **已驳回**（意见必填） | `views/borrow_flow.py::_can_approve` / `canApproveBorrowFlow(user,{source_version_id})` | 40301、40903、42201、40901/40902 |
 
 **需求池落位**（详见 PRD §5）：P0 = R1~R6（本文 Phase 1）；P1 = R1~R5（切换器 / 统一筛选 / 跨源叠加 / 批量 / 无障碍）；P2 = R1~R5，**其中 R1/R2/R3 才是真正需要后端改造的三项**，其余为决策项。
-
 
 ## §4 五种布局方案（本文核心）
 > 通用约定：5 方案均为**独立路由 + 独立 `.vue` 页面**，共享 `useScheduleData` 中枢、`useScheduleActions` 动作总线、`usePanoramaFilter` 筛选栏、`views/constants.ts` 文案与权限；**切换布局不换数据、不换动作语义**。
@@ -128,6 +125,27 @@ graph LR
 | 共享权限与文案 | `SchedulePermissions` 权限包；状态中文文案（待审批/已通过/已驳回/已抢占/已释放/正常/同步） | `utils/business.ts` + `views/constants.ts` |
 | 共享筛选与刷新 | 时间范围 / 版本 / 分支 / 状态 / 仅看我的；成功后统一 `onDirty()` → `refresh()` | `usePanoramaFilter.ts`（**新增**）+ `utils/polling.ts` |
 | 禁止事项 | 页面自造权限判断、自造状态中文文案、直接 `import` 业务 API、绕开动作总线 | AGENTS.md 已有纪律 + 本文 §5.3 |
+
+### 4.1 视觉与配色规范（5 布局共用）
+
+> **用户口径裁定**：「页面风格保持与系统一致，配色等保持与系统样式差不多的」——差异化仅限信息排布与交互，配色/圆角/间距/深浅色一律随系统全局；**反例**：`views/weekly-report/theme.scss` 的「子树局部覆盖 `--el-*`」深色科技风手法本次不采用。
+
+**唯一配色映射表（5 布局逐项一致，禁止自造）**
+
+| 用途 | 取色来源 | 具体值 / 变量 | 备注 |
+|---|---|---|---|
+| 页面容器 / 卡片 / 筛选栏 / 标题 / 辅助文字 / 统计卡 / 可点元素 | `src/style/business.scss` 既有类 | `.biz-page` / `.biz-card` / `.biz-filter-bar`（+`.biz-filter-left`）/ `.biz-card-head` / `.biz-card-title` / `.biz-sub` / `.biz-tip` / `.biz-stat-grid` / `.biz-clickable` | **不新建 scoped 主题、不复制改写**；统计卡一律 `.biz-stat-grid` |
+| 主题色 / 背景 / 边框 / 文字（业务色板以外的一切） | Element Plus 语义变量 + 全局主题 | `--el-color-primary`、`--el-fill-color`、`--el-border-color-*`、`--el-text-color-*` | 深浅色由 `html.dark` + `data-theme` 统一切换，**页面不参与** |
+| 分支色 | `composables/useBranchColors.ts` → `BRANCH_PALETTE` | 6 色：`#3b82f6`、`#8b5cf6`、`#f59e0b`、`#10b981`、`#ef4444`、`#06b6d4` | **同一 `branch_id` 在 5 布局内必须同色**；首位 `#3b82f6` 保留作 UI 主色（未知分支回退色），分支从第二位起按 `branch_id` 稳定取色 |
+| 策略四阶段色 | `src/components/gantt/types.ts` → `STAGE_COLORS` | `build:#3b82f6`、`smoke:#8b5cf6`、`analysis:#f59e0b`、`push:#10b981` | 仅用于「按阶段展开区块」的布局（S2 主用、S5 次用）；**推送仍沿用既有「虚线描边」区分法**，不额外加新色 |
+| 抢占时段色 | `SlotTemplateItem.color`（后端字段） | 默认 `#409eff`；预设 Element Plus 8 色板由 admin 在 `/slot-config` 配置 | 色值与 `enabled`/`color` 一样属**服务端下发**，前端原样使用、禁止覆盖 |
+| 借用 / 审批等状态徽标色 | `views/constants.ts` 的 `TagMeta.type` | `success` / `danger` / `warning` / `info` / `primary` → `el-tag` 语义类型 | **不写死 hex**；冲突/告警复用同表语义色（`danger`/`warning`）与既有斜纹、闪烁表现，**不新增 keyframes**；新增状态文案走同一张映射表（含本次新增的 `slotStatusMap`） |
+| 过期 / 禁用 / 「今天」高亮 | 沿用既有表现 | `isPastSlot = true` → **置灰 + 删除线**且不可交互；今日沿用 `HourGrid.vue` / `DayCell.vue` 现有 today 标记 | **无 `expired` 枚举**（惰性判定）；今日标记统一抽到 `shared/`，不得各自实现 |
+
+**执行约束**
+- 5 布局只允许在「网格结构、行列定义、区块顺序、交互手势」上差异化；**任何新色值、新主题作用域、新 CSS 变量均需架构师书面确认**。
+- 页面内**禁止硬编码 hex**（色板常量文件除外）；验收命令：`grep -rn "#[0-9a-fA-F]\\{6\\}" views/panorama/`。
+- 深浅色切换（`html.dark` / `data-theme`）下 5 布局均不得出现破面、对比度不足或不可读文本。
 
 ### S1 调度大屏态势视图 — `/panorama/dashboard`
 **1）定位**：给「值不值得点进去看」一个答案。**适用**：版本负责人每日晨会投屏、版本经理判断本周资源紧张度、值班人员快速发现异常。
@@ -156,14 +174,12 @@ graph LR
 | D 借出 | ①「待我审批」红点 KPI → ④待办队列 | 抽屉内 `approve` / `reject`（意见必填） |
 
 **4）交互**：导航粒度**周**（默认本周，可切月）；主手势 = 单击下钻；hover 显示该时刻全部事件 Popover；批量**仅**在 ④（批量释放 / 批量驳回）。工具栏差异：独有「投屏模式」（`useFullscreen` 已在用）与「自动刷新」（接 `polling.ts`：30s→300s 退避 + `document.hidden` 暂停 + `silent:true`）。
-**5）渲染技术**：**纯自绘** `.biz-stat-grid` 卡片 + CSS Grid 热力矩阵；告警榜用现有 `el-table`（行数 ≤ 20，无需虚拟滚动）。**不引入新依赖**。
+**5）渲染技术**：**纯自绘** `.biz-stat-grid` 卡片 + CSS Grid 热力矩阵；告警榜用现有 `el-table`（行数 ≤ 20，无需虚拟滚动）。**不引入新依赖**。**配色约束**：KPI 磁贴与热力矩阵的容器沿用 `.biz-card/.biz-stat-grid` + `--el-*` 语义变量；热力色阶按「以业务基准色（策略=分支色 / 抢占=模板色）叠加透明度」实现，**不新增色板**；色阶、告警、状态徽标一律走 `TagMeta.type` 语义色 —— 详见 §4.1。
 **6）优劣权衡**
 - 优：①决策效率最高，5 秒内判断是否需要下钻；②天然适合投屏 / 大字号 / 低交互密度；③聚合口径对大规模数据友好；④KPI 直接回答「今天有没有事」。
 - 劣：①**不承载精确排班**，时间点被热力压缩会失真；②负载低时整屏空白，信息密度骤降；③冲突数依赖 `/api/plan` **单日** `conflict` 标记，P0 仅做**锚点日（今日）**，全周须 7 次调用；④每次深度操作都要跳转，路径最长。
-
 **7）选型建议**：推荐 **admin / pm 日常巡检与投屏**。**不要选它**：需要精确改某个策略时间、需看 20+ 分支完整排布、或在低带宽环境下只看一眼就走。
 **8）组件清单**：新增 `layouts/s1-dashboard/{index.vue,KpiCards.vue,LoadHeatmap.vue,AlertList.vue,TodoQueue.vue}`；复用 `shared/{PanoramaFilterBar,ScheduleEventCard}.vue`、`style/business.scss`。
-
 ### S2 时空甘特视图 — `/panorama/gantt`
 **1）定位**：把「线性时间」还给调度。**适用**：pm 排查同版本跨分支构建互斥、integrator 找集成窗口、需要看时间空档与阶段重叠的人。
 
@@ -190,14 +206,12 @@ graph LR
 | D 借出 | 「借用事件」独立泳道（◇ 标记） | 点 ◇ → `BorrowApprovalDrawer` → `approve`/`reject` |
 
 **4）交互**：导航粒度**单日**（默认今日）+ 可扩到周（横向缩略，不铺满 24h×7 像素）；主手势 = 单击选块 / 横向滚轮平移 / 标尺缩放（60 / 30 / 15 分钟三档）；hover 显示阶段 tooltip；**无跨块批量**。
-**5）渲染技术**：**CSS Grid + 百分比绝对定位**（`left=(start-dayStart)/跨度`、`width=时长比`），row = 分支泳道 —— 延续 `2026-10-10-slot-booking-design.md` §3「自绘、不引入重型表格库」的既有决策。**不引入新依赖**。**关键约束**：阶段时长必须来自服务端 → 默认取 `GET /api/plan?date=<锚点日>` 的 `timeline`，**禁止前端按 `build_minutes=30` 硬算**（会与 `RuntimeConfig` 漂移）；周模式并发 7 次 `/plan`，首屏只拉锚点日，其余懒加载。
+**5）渲染技术**：**CSS Grid + 百分比绝对定位**（`left=(start-dayStart)/跨度`、`width=时长比`），row = 分支泳道 —— 延续 `2026-10-10-slot-booking-design.md` §3「自绘、不引入重型表格库」的既有决策。**不引入新依赖**。**配色约束**：4 个阶段色块**只取** `STAGE_COLORS`（build/smoke/analysis/push），推送沿用既有「虚线描边」区分；分支泳道标签与图例取 `useBranchColors` 的 `BRANCH_PALETTE`；冲突标记走 `danger` 语义色与既有斜纹 —— **本布局不引入任何新色值或主题作用域**，详见 §4.1。**关键约束**：阶段时长必须来自服务端 → 默认取 `GET /api/plan?date=<锚点日>` 的 `timeline`，**禁止前端按 `build_minutes=30` 硬算**（会与 `RuntimeConfig` 漂移）；周模式并发 7 次 `/plan`，首屏只拉锚点日，其余懒加载。
 **6）优劣权衡**
 - 优：①冲突与空档**肉眼可读**，唯一能回答「这段被谁占了」的布局；②与既有阶段色标对齐（`components/gantt/types.ts::STAGE_COLORS`）；③借用前后变化可级联演示；④row hover 便于同分支纵向对比。
 - 劣：①**首屏信息密度最低**，一行一分支且横向成本高；②无虚拟滚动（`@pureadmin/table` 不支持），> 60 行有 DOM 压力 → 须加「仅看有任务分支」开关；③窄屏彻底不可用（强制 `min-width` + 横向滚动提示）；④依赖单日接口，周模式请求放大 7 倍。
-
 **7）选型建议**：推荐 **pm（互斥排查）/ integrator（集成窗口）**。**不要选它**：分支数 > 30、以抢占为主（去 S3）、或需在移动端完成操作时。
 **8）组件清单**：新增 `layouts/s2-gantt/{index.vue,LaneRow.vue,TimeAxisRuler.vue,PhaseBar.vue,GanttLegend.vue}`；复用 `STAGE_COLORS`、`useBranchColors.ts`、`useStrategyPreview.ts`。
-
 ### S3 月历时段矩阵视图 — `/panorama/month`
 **1）定位**：抢占主战场 + 策略标记叠加；也是**成本最低、最快落地**的布局，建议作为 5 布局默认落点。
 
@@ -224,14 +238,12 @@ graph LR
 | D 借出 | 日格「◇ 待审借用」标记 + 顶部红点 | → `BorrowApprovalDrawer` |
 
 **4）交互**：导航粒度**月**（`‹ ›` + `?month=YYYY-MM` 深链）；主手势 = 单击芯片；支持**日多选**（S4 的批量能力在此收口复用）；独有「回到今天」与「我的抢占」抽屉（直接复用 `MyBookingsDrawer`）。
-**5）渲染技术**：**改造既有组件而非重写** —— 复用 `MonthGrid.vue`（42 格）/`DayCell.vue`/`SlotChip.vue`/`BookingDialog`/`SlotDetailDialog`/`DayDetailDialog`/`MyBookingsDrawer`；策略标记由 `selectors.matrix()` 把 `ScheduleEvent` 投影成既有 `CalendarDayCell` 形状。**不引入新依赖**（成本最低正因如此）。
+**5）渲染技术**：**改造既有组件而非重写** —— 复用 `MonthGrid.vue`（42 格）/`DayCell.vue`/`SlotChip.vue`/`BookingDialog`/`SlotDetailDialog`/`DayDetailDialog`/`MyBookingsDrawer`；策略标记由 `selectors.matrix()` 把 `ScheduleEvent` 投影成既有 `CalendarDayCell` 形状。**不引入新依赖**（成本最低正因如此）。**配色约束**：时段芯片沿用既有 `SlotChip.vue` 表现（取服务端 `SlotTemplate.color`），策略/借用标记沿用 `BRANCH_PALETTE` 与 `TagMeta.type`，过期沿用既有置灰 —— **本布局不引入新色板**，详见 §4.1。
 **6）优劣权衡**
 - 优：①**实现成本最低**（复用 7 个现成组件 + `buildMonthCells`）；②抢占心智最自然（月/日/时段三级天然）；③42 格 DOM 量固定，无需虚拟滚动；④窄屏可降级为单列周列表。
 - 劣：①**时间精度最粗**，策略时刻在月格里压缩成「有几个」标记，看不出先后；②跨 `weekdays` 模板让日历出现空洞，视觉参差；③三类标记同时塞入易「过度标记」，须定优先级（抢占 > 借用 > 策略）与「+N」折叠；④过去日期惰性置灰可能让用户困惑为何不可点。
-
 **7）选型建议**：推荐给 **所有角色作为默认首选**（默认 `layout=month`）。**不要选它**：需精确看阶段顺序（去 S2）、需分钟级流水（去 S5）。
 **8）组件清单**：新增 `layouts/s3-month/index.vue` + `shared/StrategyMarker.vue`；**改造**（不新增）`views/slot-booking/components/{MonthGrid,DayCell,SlotChip}.vue` 增加「非抢占事件标记」slot。
-
 ### S4 分组列表看板视图 — `/panorama/board`
 **1）定位**：以「我接下来要做什么」驱动。**适用**：pm/admin 批量清待办；低分辨率笔记本、键盘操作、导出核对清单。
 
@@ -259,14 +271,12 @@ graph LR
 | D 借出 | 「待我审批」分组，卡上 `[通过][驳回]` | `approve` / `reject` |
 
 **4）交互**：导航粒度**范围**（起止日期，默认本周，无月/日切换）；主手势 = 单击行展开抽屉 + 复选框批量；支持折叠/展开全部、按列排序；**唯一支持键盘全流程**（Tab + Enter + Space 多选）。
-**5）渲染技术**：`@pureadmin/table` 或纯 DIV 卡片墙（**推荐后者**以保持 5 布局视觉同源）；批量走串行 for-of + 逐条汇总，禁止批量接口。**不引入新依赖**。
+**5）渲染技术**：`@pureadmin/table` 或纯 DIV 卡片墙（**推荐后者**以保持 5 布局视觉同源）；批量走串行 for-of + 逐条汇总，禁止批量接口。**不引入新依赖**。**配色约束**：卡片墙复用 `.biz-card` + `--el-*` 语义变量，行左侧色条取 `BRANCH_PALETTE` / `SlotTemplate.color`，状态徽标走 `TagMeta.type` —— **本布局不引入新色板**，详见 §4.1。
 **6）优劣权衡**
 - 优：①**唯一支持完整批量**；②无障碍与键盘可达最好（`role="listitem"` + `aria-label` + 焦点环 + 状态不靠颜色）；③窄屏自然降级为卡片栈；④可按 `分组▾` 重组，适合导出核对。
 - 劣：①**完全丢失空间直觉**，看不出时间先后与重叠；②长列表 DOM 量大，**当前无虚拟滚动库** ⇒ 硬性加「每组默认收起 + 每组 ≤ 50 条 + 超出提示筛选」；③30s 轮询与勾选态会打架，须在中枢做「刷新按 id 保留 selection」；④列表形态对汇报/演示不够直观。
-
 **7）选型建议**：推荐 **admin / pm 批处理与合规核对，以及所有需要无障碍/键盘操作的场景**。**不要选它**：做排班决策、对外汇报、投屏。
 **8）组件清单**：新增 `layouts/s4-board/{index.vue,GroupSection.vue,EventRow.vue,BatchBar.vue,BoardDrawer.vue}`；复用 `views/constants.ts` 状态 meta 与 `shared/ScheduleEventCard.vue`。
-
 ### S5 时间轴流水视图 — `/panorama/timeline`
 **1）定位**：单日纵向时间轴，把「那一刻发生了什么」串成可回溯的线。**适用**：tester 复盘冒烟冲突、admin 排查「谁在何时改了什么」、值班交接。
 
@@ -295,14 +305,12 @@ graph LR
 | D 借出 | 借用事件条目（◇） | `approve` / `reject` |
 
 **4）交互**：导航粒度**单日**（前后翻天 + 回到今天）；主手势 = 纵向滚动 + 点击条目；独有「只看我的 / 只看冲突 / 只看借用」三态切换；因是单日，**最适合接 `polling.ts` 近实时刷新**（30s→300s 退避 + `document.hidden` 暂停）。
-**5）渲染技术**：**纯 CSS Grid 自绘**（`grid-template-rows: repeat(96, 8px)` = 15 分钟粒度，事件用 `grid-row-start/end` 定位；重合事件的左右分列复用 S2 的 `selectors.lanePack()`）。**不引入新依赖**。
+**5）渲染技术**：**纯 CSS Grid 自绘**（`grid-template-rows: repeat(96, 8px)` = 15 分钟粒度，事件用 `grid-row-start/end` 定位；重合事件的左右分列复用 S2 的 `selectors.lanePack()`）。**不引入新依赖**。**配色约束**：阶段条目取 `STAGE_COLORS`，抢占条取 `SlotTemplate.color`，借用/冲突标记走 `TagMeta.type` 语义色，容器与间隔用 `--el-*` 语义变量 —— **本布局不引入新色板**，详见 §4.1。
 **6）优劣权衡**
 - 优：①**时间先后与并发重合最直观**；②单日数据量小（≤ 200 条），DOM 可控，无需虚拟滚动；③轮询近实时收益最大；④天然契合排障与交接场景。
 - 劣：①**单日视野**，跨周趋势须来回翻；②空档多时页面冗长且信息稀薄 → 需「折叠空闲时段」开关；③依赖滚轮滚动，触屏体验一般；④同刻重合 > 3 条时分列会挤成细条 → 降级为「+N」聚合。
-
 **7）选型建议**：推荐 **tester / admin 排障与交接，以及所有「某天出了事，还原一下」的场景**。**不要选它**：做月度资源规划、给上级汇报全貌、需要批量处理时。
 **8）组件清单**：新增 `layouts/s5-timeline/{index.vue,DayTrack.vue,HourTick.vue,AgendaRow.vue,ConflictBadge.vue}`；复用 `polling.ts`、`selectors.lanePack()`（与 S2 共用，**新增**纯函数）。
-
 ### 4.6 五方案横向对比总表
 | 方案 | 适用规模 | 主交互 | 需新依赖 | 实现成本 | 首屏信息密度 | 批量能力 | 窄屏表现 | 推荐角色 | 选择优先级 |
 |---|---|---|---|---|---|---|---|---|---|
@@ -314,17 +322,16 @@ graph LR
 
 > 五方案**均零新增依赖**（符合依赖红线与既有设计哲学）。布局合计 **11~15 人日**（不含 §5 中枢 3~4 人日与 QA 8~10 人日）。
 
-
 ## §5 落地实施路径
 ### 5.1 多方案共存的最小改造架构
 核心手法：`useWeeklyPanorama` **进化**为布局无关的数据中枢 `useScheduleData`（**保留原 composable 不动**，供 `/weekly-new` 继续使用并作回归基线），把「三源 → 同构事件」与「事件 → 某种布局结构」彻底分离。
 ```
-src/views/panorama/                    ← 新增：调度全景域
+src/views/panorama/            ← 新增：调度全景域
 ├─ types.ts / useScheduleData.ts / useScheduleActions.ts / usePanoramaFilter.ts / context.ts
-├─ sources/{strategySource,slotSource,borrowSource}.ts   ← 三源 → ScheduleEvent[]
-├─ selectors.ts                        ← 纯投影 heat/lanes/matrix/agenda/kpi + lanePack
+├─ sources/{strategySource,slotSource,borrowSource}.ts ← 三源 → ScheduleEvent[]
+├─ selectors.ts                ← 纯投影 heat/lanes/matrix/agenda/kpi + lanePack
 ├─ shared/{PanoramaFilterBar,ScheduleEventCard,PermissionsChips,StrategyMarker}.vue
-├─ LayoutSwitcher.vue                  ← 5 布局互跳（?layout= 深链 + 偏好持久化）
+├─ LayoutSwitcher.vue          ← 5 布局互跳（?layout= 深链 + 偏好持久化）
 └─ layouts/s1-dashboard|s2-gantt|s3-month|s4-board|s5-timeline/index.vue ← 5 个独立页面
 改造：views/constants.ts（新增 slotStatusMap）、store/constants.ts（新增 panoramaLayoutKey）、
       utils/week.ts（新增 buildDateRange）、slot-booking 三个组件加事件标记 slot
@@ -350,7 +357,6 @@ export interface SchedulePermissions {
   canApprove: boolean;         // D 借出审批
   canViewDetail: boolean;      // 详情（恒 true）
 }
-
 /** 三条来源归约后的最小渲染单元 —— 5 个布局的唯一输入 */
 export interface ScheduleEvent {
   id: string;                  // 稳定 key：`${source}:${pk}` 或 `${source}:${pk}#${kind}`
@@ -373,10 +379,9 @@ export interface ScheduleEvent {
 }
 
 /** 流水推进器（S4/S5 消费的有序列表项） */
-export type AgendaItem = Pick<ScheduleEvent,
-  "id" | "source" | "kind" | "date" | "time" | "endTime" | "durationMin" |
-  "title" | "subtitle" | "branchName" | "versionName" | "color" |
-  "statusText" | "past" | "mine" | "permissions">;
+export type AgendaItem = Pick<ScheduleEvent, "id" | "source" | "kind" | "date" | "time"
+  | "endTime" | "durationMin" | "title" | "subtitle" | "branchName" | "versionName"
+  | "color" | "statusText" | "past" | "mine" | "permissions">;
 /** 布局无关的一天（替代 useWeeklyPanorama 固定 7 天的 weekDays） */
 export interface ScheduleDay { date: string; weekday: string; isToday: boolean; isPast: boolean; }
 /** 聚合指标（S1 消费） */
@@ -404,13 +409,10 @@ export interface ScheduleQuery {
 }
 export interface ScheduleData {
   loading: boolean; lastLoadedAt: Date | null;
-  days: ScheduleDay[];                     // 连续日期轴
-  events: ScheduleEvent[];                 // 扁平事件，按 start 升序
-  byDay: Record<string, ScheduleEvent[]>;  // 布局无关索引
-  byBranch: Record<number, ScheduleEvent[]>;
+  days: ScheduleDay[]; events: ScheduleEvent[];  // 连续日期轴 / 扁平事件（按 start 升序）
+  byDay: Record<string, ScheduleEvent[]>; byBranch: Record<number, ScheduleEvent[]>;
   agenda: AgendaItem[]; kpi: ScheduleKpi;  // S4 / S5 与 S1 消费
-  versionOptions: { version_id: number; version_name: string }[];
-  branchOptions: { branch_id: number; branch_name: string }[];
+  versionOptions: { version_id: number; version_name: string }[]; branchOptions: { branch_id: number; branch_name: string }[];
   refresh(): Promise<void>;                // 动作成功后统一调用
   // 内部实现：自增序号守卫丢弃过期响应 · document.hidden 暂停 · silent 轮询（30s→300s 退避）
 }
@@ -431,12 +433,10 @@ export function useScheduleActions(opts: { onDirty: () => void }): {
 ```mermaid
 sequenceDiagram
     participant UI as S1~S5 任一布局
-    participant ACT as useScheduleActions
-    participant DLG as 既有 Dialog（复用不重写）
+    participant ACT as useScheduleActions + 既有 Dialog（复用不重写）
     participant HUB as api/*.ts + useScheduleData
     UI->>ACT: edit / borrow / occupy / release / approve / reject（携带 ScheduleEvent）
-    ACT->>DLG: permissions 二次校验后打开弹窗、预填 raw
-    DLG->>HUB: preview(透传 id) → PATCH / POST（成功或 BizError）
+    ACT->>HUB: permissions 二次校验 → 弹窗预填 raw → preview(透传 id) → PATCH / POST
     alt 成功
         HUB->>UI: onDirty() → refresh() → events 更新
     else 40901
@@ -457,7 +457,10 @@ sequenceDiagram
 
 - 父菜单 `/panorama`（`asyncRoutes.ts` rank 16，`meta.roles = ALL_ROLES`）；进入 `/panorama` 无子路径时按偏好重定向。
 - **互跳与默认**：`LayoutSwitcher.vue` 提供 5 段式切换，切换时 `router.push` + 写 localStorage（`store/constants.ts` **新增** `panoramaLayoutKey`）；**路由本身即状态**，刷新天然保持；跨页面临时切布局仍支持 `?layout=gantt` 深链，解析优先级 `query.layout > localStorage > month`（PRD P1-R1）。
-- **视觉共存范式**：照搬 `views/weekly-report/theme.scss` 的**子树局部覆盖 `--el-*` 变量**手法，5 个布局各自 `.s1-scope` ~ `.s5-scope` 作用域，与全局 `html.dark` + `data-theme` 互不干扰 —— 从而实现**同一套 API、同一批业务组件、5 套局部视觉**共存。
+- **视觉共存范式（用户口径：页面风格与系统保持一致）**：5 个布局**共用同一套系统样式层**，差异只体现在**信息排布与交互**（网格结构、行列定义、卡片顺序），**不含配色**：
+  - 一律复用 `src/style/business.scss` 既有类（`.biz-page`/`.biz-card`/`.biz-filter-bar`/`.biz-card-head`/`.biz-card-title`/`.biz-sub`/`.biz-tip`/`.biz-stat-grid`/`.biz-clickable`）；**不新建主题作用域、不新增色板**。
+  - 主题色与深浅色完全交给全局 `html.dark` + `data-theme` 与 Element Plus 语义变量（`--el-color-primary` / `--el-fill-color` / `--el-border-color-*` / `--el-text-color-*` 等），**页面与业务色板之外禁止硬编码 hex**。
+  - 业务取色统一按 **§4.1** 执行；**反例（不采用）**：`views/weekly-report/theme.scss` 的「子树局部覆盖 `--el-*`」深色科技风手法，会造成观感割裂。验收：`grep -rn "#[0-9a-fA-F]\{6\}" views/panorama/` 除色板常量文件外**为空**。
 
 #### 5.1.5 渐进式落地（每步均：改后端 = 否，改已有布局 = 否）
 - ① 先建 `types.ts` + `sources/*` + `useScheduleData`（**不删** `useWeeklyPanorama`，保留 `/weekly-new` 作回归基线）。
@@ -479,7 +482,6 @@ sequenceDiagram
 - **既有已定纪律不得破坏**：weekdays 严守 isoweekday 1-7；错误码只用既有 10 个；`40901` 保留为策略冲突专用并保留专用弹框；状态中文文案只用既有 9 个；借用复制文案**禁 `dangerouslyUseHTMLString`**；轮询必须接退避 + `document.hidden` 暂停 + `silent:true`；表格启停用 `:model-value` 受控。
 - **旧页面处置**（回滚兜底）：`/weekly-new`、`/slot-booking`、`/borrow-flow`、`/strategy` 在 P0/P1 **一律保留不删**（这正是「万一出问题可回滚」的兜底）；是否下线见 §6-Q9。
 
-
 ## §6 待明确事项（PRD Q1~Q8 + 本文补充 Q9/Q10）
 > 以下均为**架构推荐默认**，**待用户 / 产品经理确认后方可实施**；确认后回填 PRD §6 与本文。
 
@@ -495,6 +497,5 @@ sequenceDiagram
 | Q8 | 过期策略是否允许「改明天及以后」？ | **按格子判定**（`isPastSlot`）：历史格只读、未来格可改 | 已写入 §1.4，5 布局共用 |
 | **Q9（本文补充）** | 现状 `/weekly-new`（PRD L1 周×时刻矩阵）如何处置？ | **Phase 1/2 保留不动**（回归基线 + 回滚兜底）；P2 再评估是否重定向到 `/panorama/month`。`useWeeklyPanorama.ts` 中枢上线后**冻结不再迭代** | 决定是否需重写 `HourGrid.vue`，或将其作为既有第 6 张布局长期保留 |
 | **Q10（本文补充）** | 借用事件在时间轴上锚在哪一天？`BorrowFlow` **不持久化执行日期** | 默认锚**发起日 `created_at`**，并在卡片/tooltip 显式提示「实际执行日取决于目标分支的新构建时间」；**不臆造日期字段** | 决定 S1/S5 借用条位置；若产品要求锚执行日 ⇒ 需后端返回，列入 P2 |
-
 
 **变更记录**：2026-10-12 初稿（高见远）。输入基线：PRD `2026-10-12-scheduling-panorama-prd.md`；后端 279 例 / 前端 104 例测试全绿；依赖红线已实测（无 vxe-table、无 vuedraggable；echarts 6.1.0 已装未用；sortablejs 仅基座用）。

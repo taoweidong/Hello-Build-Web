@@ -73,7 +73,7 @@
 - [ ] **新增** `views/panorama/shared/StrategyMarker.vue`：日格上的策略/借用标记（优先级 抢占 > 借用 > 策略，超出「+N」折叠）
 - [ ] **新增** `views/panorama/shared/BorrowApprovalDrawer.vue`：场景 D 红点 + 审批抽屉（通过 / 驳回必填意见）
 - [ ] 路由注册：`/panorama` 父菜单（rank 16，`meta.roles = ALL_ROLES`）+ `/panorama/month`（其它 4 个子路由本阶段先留占位注释）
-- [ ] 局部视觉：建 `.s3-scope` 作用域并局部覆盖 `--el-*`（照搬 `views/weekly-report/theme.scss` 手法），与全局 `html.dark` 互不干扰
+- [ ] 视觉落地（**按用户新裁定修订**）：**不建 scoped 主题、不局部覆盖 `--el-*`**；S3 的容器/筛选栏/统计卡一律用 `.biz-*` 类，配色按设计文档 **§4.1** 与本节「2.6 视觉与配色统一」执行
 
 ### 1.5 阶段 1 测试与验收（QA 严过关）
 - [ ] **新增** `views/panorama/__tests__/types.spec.ts`：事件归约幂等、id 稳定性
@@ -129,10 +129,19 @@
 - [ ] `/panorama` 无子路径时按偏好重定向；无偏好落 `/panorama/month`
 - [ ] 深链解析优先级 `query.layout > localStorage > month`（P1-R1）
 - [ ] 四路由全量注册到 `router/asyncRoutes.ts`（`meta.roles = ALL_ROLES`）
-- [ ] 五布局各自 `.s1-scope` ~ `.s5-scope` 局部 `--el-*` 覆盖，互不干扰
 - [ ] 跨源叠加同画布显示（P1-R3）：策略块 + 已抢占时段重合处加冲突标记，**仅视觉提示，不触碰后端互斥逻辑**
 - [ ] 无障碍（P1-R5）：芯片为 `<button>` + `aria-label`、焦点环可见、对比度抽样达 WCAG AA、状态不靠颜色单独表达
 - [ ] 五布局**功能等价交叉验收**：同一份数据下四场景在 5 个布局逐一走通
+
+### 2.6 视觉与配色统一（用户口径：与系统风格保持一致）——五布局通用约束
+- [ ] 5 布局容器统一用 `.biz-page` / `.biz-card` / `.biz-filter-bar` / `.biz-card-head` / `.biz-card-title` / `.biz-sub` / `.biz-tip` / `.biz-stat-grid` / `.biz-clickable`，**不新建主题作用域**
+- [ ] 分支色统一走 `composables/useBranchColors.ts`（`BRANCH_PALETTE`），同一 `branch_id` 在 5 布局内**必须同色**
+- [ ] 策略阶段色统一走 `components/gantt/types.ts` 的 `STAGE_COLORS`，推送沿用既有「虚线描边」区分法
+- [ ] 抢占时段色统一取服务端 `SlotTemplate.color`，前端**不覆盖、不自造默认值**
+- [ ] 状态徽标统一走 `views/constants.ts` 的 `TagMeta.type` → `el-tag` 语义类型（含新增 `slotStatusMap`），**不写死 hex**
+- [ ] 过期/禁用沿用既有「置灰 + 删除线」、今日沿用 `HourGrid.vue`/`DayCell.vue` 既有标记并抽到 `shared/`
+- [ ] 页面内无硬编码 hex：校验命令 `grep -rn "#[0-9a-fA-F]\{6\}" views/panorama/`（除色板常量文件外必须为空）
+- [ ] 深浅色切换（`html.dark` + `data-theme`）下 5 布局**均无破面**，对比度抽样达 WCAG AA
 
 ---
 
