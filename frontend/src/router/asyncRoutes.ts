@@ -233,5 +233,51 @@ export const asyncRoutes = [
         }
       }
     ]
+  },
+  {
+    path: "/panorama",
+    name: "Panorama",
+    component: Layout,
+    // 默认落点：月历矩阵（S3，复用最多、成本最低，设计文档 §4.6 推荐默认首选）
+    redirect: "/panorama/month",
+    meta: {
+      icon: "ep/grid",
+      title: "调度全景",
+      rank: 16
+    },
+    children: [
+      {
+        path: "/panorama/dashboard",
+        name: "PanoramaDashboard",
+        component: () =>
+          import("@/views/panorama/layouts/s1-dashboard/index.vue"),
+        meta: { title: "调度全景 · 态势大屏", roles: ALL_ROLES }
+      },
+      {
+        path: "/panorama/gantt",
+        name: "PanoramaGantt",
+        component: () => import("@/views/panorama/layouts/s2-gantt/index.vue"),
+        meta: { title: "调度全景 · 时空甘特", roles: ALL_ROLES }
+      },
+      {
+        path: "/panorama/month",
+        name: "PanoramaMonth",
+        component: () => import("@/views/panorama/layouts/s3-month/index.vue"),
+        meta: { title: "调度全景 · 月历矩阵", roles: ALL_ROLES }
+      },
+      {
+        path: "/panorama/board",
+        name: "PanoramaBoard",
+        component: () => import("@/views/panorama/layouts/s4-board/index.vue"),
+        meta: { title: "调度全景 · 分组看板", roles: ALL_ROLES }
+      },
+      {
+        path: "/panorama/timeline",
+        name: "PanoramaTimeline",
+        component: () =>
+          import("@/views/panorama/layouts/s5-timeline/index.vue"),
+        meta: { title: "调度全景 · 时间轴流水", roles: ALL_ROLES }
+      }
+    ]
   }
 ];

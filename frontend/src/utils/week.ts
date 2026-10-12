@@ -56,3 +56,20 @@ export function buildMonthWeeks(
   }
   return result;
 }
+
+/**
+ * 闭区间日期列表 ["YYYY-MM-DD"]（含首尾），按日升序；入参非法返回 []。
+ * 调度全景各布局的日期轴统一由此生成（周/月/单日/自定义范围）。
+ */
+export function buildDateRange(from: string, to: string): string[] {
+  const start = dayjs(from);
+  const end = dayjs(to);
+  if (!start.isValid() || !end.isValid() || end.isBefore(start)) return [];
+  const out: string[] = [];
+  let cur = start;
+  while (cur.isBefore(end) || cur.isSame(end, "day")) {
+    out.push(cur.format("YYYY-MM-DD"));
+    cur = cur.add(1, "day");
+  }
+  return out;
+}

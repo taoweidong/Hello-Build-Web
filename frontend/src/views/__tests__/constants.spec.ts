@@ -9,7 +9,8 @@ import {
   reportConclusionMeta,
   reportStatusMeta,
   revisionTagType,
-  roleTextMap
+  roleTextMap,
+  slotStatusText
 } from "@/views/constants";
 
 describe("报告结论/状态", () => {
@@ -76,7 +77,11 @@ describe("策略推送模式与抢占状态（第三轮收敛的展示映射）"
     expect(pushModeMeta("")).toEqual({ label: "", fullLabel: "" });
   });
 
-  it("bookingStatusMeta 命中 reserved/released（过期不落库，无 expired 分支）", () => {
+  it("bookingStatusMeta 覆盖日历格 available + 抢占 reserved/released（无 expired 分支）", () => {
+    expect(bookingStatusMeta("available")).toEqual({
+      text: "空闲",
+      type: "info"
+    });
     expect(bookingStatusMeta("reserved")).toEqual({
       text: "已抢占",
       type: "success"
@@ -86,6 +91,13 @@ describe("策略推送模式与抢占状态（第三轮收敛的展示映射）"
       type: "info"
     });
     expect(bookingStatusMeta("x")).toEqual({ text: "x", type: "info" });
+  });
+
+  it("slotStatusText 只取文案，与 bookingStatusMeta.text 同源", () => {
+    expect(slotStatusText("available")).toBe("空闲");
+    expect(slotStatusText("reserved")).toBe("已抢占");
+    expect(slotStatusText("released")).toBe("已释放");
+    expect(slotStatusText("weird")).toBe("weird");
   });
 });
 

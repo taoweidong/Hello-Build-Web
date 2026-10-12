@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import dayjs from "dayjs";
 import {
+  buildDateRange,
   buildMonthWeeks,
   isoWeek,
   WEEKDAY_CN_MON,
@@ -76,5 +77,38 @@ describe("buildMonthWeeks", () => {
         expect(dayjs(w.value).diff(prev, "day")).toBe(7);
       }
     });
+  });
+});
+
+describe("buildDateRange", () => {
+  it("闭区间：from 与 to 都包含在内", () => {
+    expect(buildDateRange("2026-10-12", "2026-10-14")).toEqual([
+      "2026-10-12",
+      "2026-10-13",
+      "2026-10-14"
+    ]);
+  });
+
+  it("单日区间返回一日", () => {
+    expect(buildDateRange("2026-10-13", "2026-10-13")).toEqual(["2026-10-13"]);
+  });
+
+  it("跨月跨年连续无跳日（覆盖月份长度不等）", () => {
+    const range = buildDateRange("2026-12-30", "2027-01-02");
+    expect(range).toEqual([
+      "2026-12-30",
+      "2026-12-31",
+      "2027-01-01",
+      "2027-01-02"
+    ]);
+  });
+
+  it("to 早于 from 返回空数组", () => {
+    expect(buildDateRange("2026-10-14", "2026-10-12")).toEqual([]);
+  });
+
+  it("非法日期返回空数组", () => {
+    expect(buildDateRange("not-a-date", "2026-10-12")).toEqual([]);
+    expect(buildDateRange("2026-10-12", "")).toEqual([]);
   });
 });

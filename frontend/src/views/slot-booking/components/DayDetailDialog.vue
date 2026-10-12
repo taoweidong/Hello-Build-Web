@@ -26,10 +26,10 @@
           </span>
           <el-tag
             size="small"
-            :type="entry.status === 'reserved' ? 'info' : 'success'"
+            :type="statusMeta(entry.status).type"
             effect="plain"
           >
-            {{ entry.status === "reserved" ? "已抢占" : "空闲" }}
+            {{ statusMeta(entry.status).text }}
           </el-tag>
         </div>
         <div v-if="entry.booking" class="card-booking">
@@ -81,6 +81,7 @@
 import { computed } from "vue";
 import dayjs from "dayjs";
 import type { CalendarDayCell, SlotTemplateItem } from "@/api/slotBooking";
+import { bookingStatusMeta } from "@/views/constants";
 
 defineOptions({ name: "SlotDayDetailDialog" });
 
@@ -99,6 +100,11 @@ const emit = defineEmits<{
 }>();
 
 const dateLabel = computed(() => dayjs(props.date).format("M月D日"));
+
+/** 时段状态徽标：文案与语义色单一出处 views/constants.ts */
+function statusMeta(status: CalendarDayCell["status"]) {
+  return bookingStatusMeta(status);
+}
 </script>
 
 <style scoped lang="scss">

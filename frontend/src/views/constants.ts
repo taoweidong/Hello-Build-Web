@@ -58,14 +58,21 @@ export function pushModeMeta(
   return pushModeMap[code as PushMode] ?? { label: code, fullLabel: code };
 }
 
-// ---- 时段抢占状态（SlotBooking.status：过期不落库，仅 reserved/released 两态）----
+// ---- 时段状态（SlotBooking.status 与 CalendarDayCell.status 共用同一映射）----
+// 过期不落库，无 expired 分支；available 仅存在于日历单元格（未抢占）
 export const bookingStatusMap: Record<string, TagMeta> = {
+  available: { text: "空闲", type: "info" },
   reserved: { text: "已抢占", type: "success" },
   released: { text: "已释放", type: "info" }
 };
 
 export function bookingStatusMeta(code: string): TagMeta {
   return bookingStatusMap[code] || { text: code, type: "info" };
+}
+
+/** 只要中文文案的场景（toast / 列表纯文本），避免调用方再写三元 */
+export function slotStatusText(code: string): string {
+  return bookingStatusMeta(code).text;
 }
 
 // ---- 分支权限角色（BranchPermission.role）----
