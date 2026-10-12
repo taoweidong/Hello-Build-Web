@@ -39,11 +39,16 @@
         </div>
       </div>
 
-      <span
-        class="wk-pill"
-        :class="canEdit ? 'wk-pill--violet' : 'wk-pill--accent'"
-      >
-        <i class="wk-dot" :class="canEdit ? '' : 'wk-dot--push'" />
+      <span class="wk-pill" :class="canEdit ? '' : 'wk-pill--plain'">
+        <i
+          class="wk-dot"
+          :class="canEdit ? '' : 'wk-dot--push'"
+          :style="
+            canEdit
+              ? { background: 'var(--wk-accent)' }
+              : { color: 'var(--wk-text-3)' }
+          "
+        />
         {{ canEdit ? "维护模式" : "只读查看" }}
       </span>
 
@@ -115,7 +120,7 @@ const pips = computed(() =>
   gap: 14px;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 18px;
+  padding: 12px 16px;
 }
 
 .head-left {
@@ -125,18 +130,18 @@ const pips = computed(() =>
   min-width: 0;
 }
 
+/* 徽标：主色淡底图标（与系统统计卡一致） */
 .head-badge {
   display: flex;
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 42px;
-  height: 42px;
+  width: 40px;
+  height: 40px;
   font-size: 22px;
-  color: #061020;
-  background: var(--wk-grad-primary);
-  border-radius: 12px;
-  box-shadow: 0 8px 22px -8px rgb(56 189 248 / 75%);
+  color: var(--wk-accent);
+  background: var(--wk-accent-light);
+  border-radius: var(--el-border-radius-base);
 }
 
 .head-titles {
@@ -145,12 +150,9 @@ const pips = computed(() =>
 
 .head-title {
   margin: 0;
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  background: var(--wk-grad-text);
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--wk-text-1);
 }
 
 .head-sub {
@@ -158,14 +160,14 @@ const pips = computed(() =>
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
-  margin: 3px 0 0;
+  margin: 4px 0 0;
   font-size: 12px;
   color: var(--wk-text-3);
 }
 
 .head-version {
-  font-weight: 600;
-  color: var(--wk-cyan);
+  font-weight: 500;
+  color: var(--wk-accent);
 }
 
 .head-sep {
@@ -211,15 +213,14 @@ const pips = computed(() =>
   width: 120px;
   height: 6px;
   overflow: hidden;
-  background: rgb(99 138 206 / 14%);
+  background: var(--el-fill-color-darker);
   border-radius: 999px;
 }
 
 .wp-fill {
   height: 100%;
-  background: var(--wk-grad-primary);
+  background: var(--wk-accent);
   border-radius: 999px;
-  box-shadow: var(--wk-glow-cyan);
   transition: width 0.6s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
@@ -237,19 +238,25 @@ const pips = computed(() =>
   border-radius: 2px;
 
   &.done {
-    background: var(--wk-cyan);
+    background: var(--wk-accent);
     border-color: transparent;
   }
 
   &.today {
-    background: rgb(56 189 248 / 25%);
-    border-color: var(--wk-cyan);
-    animation: wk-breathe 2.4s ease-in-out infinite;
+    background: var(--wk-accent-light);
+    border-color: var(--wk-accent);
   }
 }
 
+/* 刷新中：图标旋转（与 el-icon is-loading 一致） */
 .spinning {
-  animation: wk-pulse 1s ease-in-out infinite;
+  animation: rh-spin 1s linear infinite;
+}
+
+@keyframes rh-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (width <= 768px) {

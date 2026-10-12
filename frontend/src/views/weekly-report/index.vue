@@ -75,32 +75,26 @@
       <TagCloudPanel :tags="tagCloud" />
     </section>
 
-    <!-- 弹窗：复用周视图(New)三个业务弹窗（接口/交互完全一致），class 透传完成暗色化 -->
+    <!-- 弹窗：复用周视图(New)三个业务弹窗（接口/交互完全一致，样式随系统默认） -->
     <StrategyEditDialog
       v-model="editVisible"
       :strategy="editStrategy"
       :branches="branches"
-      class="wk-dialog"
       @saved="onStrategySaved"
     />
     <StrategyBorrowDialog
       v-model="borrowVisible"
       :strategy="borrowStrategy"
       :current-version-id="versionId"
-      class="wk-dialog"
     />
-    <StrategyDetailDialog
-      v-model="detailVisible"
-      :strategy="detailStrategy"
-      class="wk-dialog"
-    />
+    <StrategyDetailDialog v-model="detailVisible" :strategy="detailStrategy" />
   </div>
 </template>
 
 <script setup lang="ts">
-// 策略周报页：weekly-new 的视觉重塑版（深色科技风 + 数据可视化看板）
+// 策略周报页：weekly-new 的数据看板重塑版（浅色系统风 + 数据可视化），
 // 数据逻辑复用 composables/useWeeklyPanorama，接口/交互与原页面完全一致，不新增后端调用
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, ref } from "vue";
 import type { StrategyItem, WeeklyStrategy } from "@/api/types";
 import { useWeeklyPanorama } from "@/composables/useWeeklyPanorama";
 import {
@@ -229,18 +223,10 @@ function onStrategySaved() {
   invalidateStrategyCache();
   loadWeekly();
 }
-
-/* ---- teleport 至 body 的浮层（下拉/消息/时间面板）统一暗色化 ---- */
-onMounted(() => {
-  document.body.classList.add("wk-tech-on");
-});
-onUnmounted(() => {
-  document.body.classList.remove("wk-tech-on");
-});
 </script>
 
 <style lang="scss">
-/* 集中样式（主题变量 / Element Plus 深色覆盖 / 弹窗暗色化） */
+/* 集中样式（主题变量 / 共享面板与徽标类，浅色 EP 令牌体系） */
 @use "./theme.scss";
 </style>
 

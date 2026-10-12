@@ -6,23 +6,12 @@
       class="kpi-tile wk-panel wk-enter"
       :style="{ animationDelay: `${i * 60}ms` }"
     >
-      <!-- 角落水印大图标（低透明度装饰） -->
-      <IconifyIconOffline :icon="tile.icon" class="kpi-watermark" />
       <div class="kpi-main">
-        <span
-          class="kpi-icon"
-          :style="{
-            color: tile.color,
-            background: tile.tint,
-            borderColor: tile.border
-          }"
-        >
+        <span class="kpi-icon" :class="tile.tone">
           <IconifyIconOffline :icon="tile.icon" />
         </span>
         <div class="kpi-text">
-          <b class="kpi-value" :style="{ backgroundImage: tile.grad }">{{
-            tile.value
-          }}</b>
+          <b class="kpi-value">{{ tile.value }}</b>
           <span class="kpi-label">{{ tile.label }}</span>
         </div>
       </div>
@@ -31,7 +20,8 @@
           <span class="kpi-bar">
             <span
               class="kpi-bar-fill"
-              :style="{ width: `${tile.progress}%`, background: tile.grad }"
+              :class="tile.tone"
+              :style="{ width: `${tile.progress}%` }"
             />
           </span>
           {{ tile.sub }}
@@ -45,6 +35,7 @@
 <script setup lang="ts">
 // 顶部 KPI 磁贴：策略任务 / 构建任务 / 推送任务 / 今日待执行
 // 数据来自 computeKpis（纯函数，单测锁定），不新增接口
+// 配色走 Element Plus 语义色板（primary/success/warning/danger），与系统一致
 import { computed } from "vue";
 import type { WeeklyKpis } from "@/utils/weeklyReport";
 import BoxIcon from "~icons/ep/box";
@@ -57,6 +48,9 @@ defineOptions({ name: "WeeklyReportKpiTiles" });
 
 const props = defineProps<{ kpis: WeeklyKpis }>();
 
+/** 图标/进度条色调，对应 EP 语义色 */
+type TileTone = "primary" | "success" | "warning" | "danger";
+
 interface Tile {
   key: string;
   icon: unknown;
@@ -64,10 +58,7 @@ interface Tile {
   value: string;
   sub: string;
   progress?: number;
-  color: string;
-  tint: string;
-  border: string;
-  grad: string;
+  tone: TileTone;
 }
 
 const tiles = computed<Tile[]>(() => [
@@ -77,10 +68,7 @@ const tiles = computed<Tile[]>(() => [
     label: "策略任务",
     value: String(props.kpis.tasks),
     sub: `覆盖 ${props.kpis.timePoints} 个时间点 · ${props.kpis.branchCount}/${props.kpis.branchTotal} 分支`,
-    color: "var(--wk-cyan)",
-    tint: "rgb(56 189 248 / 12%)",
-    border: "rgb(56 189 248 / 35%)",
-    grad: "linear-gradient(180deg, #7dd9fb, #38bdf8)"
+    tone: "primary"
   },
   {
     key: "build",
@@ -88,10 +76,7 @@ const tiles = computed<Tile[]>(() => [
     label: "构建任务",
     value: String(props.kpis.buildTasks),
     sub: `最早 ${props.kpis.earliestBuild} · 最晚 ${props.kpis.latestBuild}`,
-    color: "var(--wk-indigo)",
-    tint: "rgb(129 140 248 / 12%)",
-    border: "rgb(129 140 248 / 35%)",
-    grad: "linear-gradient(180deg, #aeb6fd, #818cf8)"
+    tone: "success"
   },
   {
     key: "push",
@@ -99,10 +84,7 @@ const tiles = computed<Tile[]>(() => [
     label: "推送任务",
     value: String(props.kpis.pushTasks),
     sub: `同步 ${props.kpis.syncPush} · 正常流程 ${props.kpis.normalPush}`,
-    color: "var(--wk-violet)",
-    tint: "rgb(167 139 250 / 12%)",
-    border: "rgb(167 139 250 / 35%)",
-    grad: "linear-gradient(180deg, #c4b2fd, #a78bfa)"
+    tone: "warning"
   },
   {
     key: "today",
@@ -113,10 +95,7 @@ const tiles = computed<Tile[]>(() => [
     progress: props.kpis.tasks
       ? Math.round((props.kpis.todayDone / props.kpis.tasks) * 100)
       : 0,
-    color: "var(--wk-emerald)",
-    tint: "rgb(52 211 153 / 12%)",
-    border: "rgb(52 211 153 / 35%)",
-    grad: "linear-gradient(180deg, #6ee7b7, #34d399)"
+    tone: "danger"
   }
 ]);
 </script>
@@ -129,47 +108,13 @@ const tiles = computed<Tile[]>(() => [
 }
 
 .kpi-tile {
-  position: relative;
   gap: 10px;
   padding: 14px 16px;
-  overflow: hidden;
-  transition:
-    transform 0.25s,
-    box-shadow 0.25s,
-    border-color 0.25s;
-}
-
-/* 顶部渐变发丝线 */
-.kpi-tile::before {
-  position: absolute;
-  inset: 0 0 auto;
-  height: 1px;
-  content: "";
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgb(56 189 248 / 55%),
-    rgb(129 140 248 / 45%),
-    transparent
-  );
 }
 
 .kpi-tile:hover {
-  border-color: var(--wk-border-strong);
-  box-shadow:
-    var(--wk-shadow-panel),
-    0 0 24px -8px rgb(56 189 248 / 45%);
-  transform: translateY(-2px);
-}
-
-.kpi-watermark {
-  position: absolute;
-  right: -10px;
-  bottom: -14px;
-  font-size: 76px;
-  color: #fff;
-  pointer-events: none;
-  opacity: 0.05;
+  border-color: var(--wk-accent-border);
+  box-shadow: var(--el-box-shadow-light);
 }
 
 .kpi-main {
@@ -178,6 +123,7 @@ const tiles = computed<Tile[]>(() => [
   align-items: center;
 }
 
+/* 图标 chip：EP 语义色淡底 + 同色图标（对齐系统统计卡样式） */
 .kpi-icon {
   display: flex;
   flex: none;
@@ -186,8 +132,27 @@ const tiles = computed<Tile[]>(() => [
   width: 38px;
   height: 38px;
   font-size: 20px;
-  border: 1px solid;
-  border-radius: 11px;
+  border-radius: var(--el-border-radius-base);
+}
+
+.kpi-icon.primary {
+  color: var(--wk-accent);
+  background: var(--wk-accent-light);
+}
+
+.kpi-icon.success {
+  color: var(--wk-mint);
+  background: var(--wk-mint-light);
+}
+
+.kpi-icon.warning {
+  color: var(--wk-amber);
+  background: var(--wk-amber-light);
+}
+
+.kpi-icon.danger {
+  color: var(--wk-danger);
+  background: var(--wk-danger-light);
 }
 
 .kpi-text {
@@ -201,9 +166,8 @@ const tiles = computed<Tile[]>(() => [
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
+  color: var(--wk-text-1);
   letter-spacing: 0.01em;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
 }
 
 .kpi-label {
@@ -226,7 +190,7 @@ const tiles = computed<Tile[]>(() => [
   width: 56px;
   height: 4px;
   overflow: hidden;
-  background: rgb(99 138 206 / 16%);
+  background: var(--el-border-color-lighter);
   border-radius: 999px;
 }
 
@@ -235,6 +199,22 @@ const tiles = computed<Tile[]>(() => [
   height: 100%;
   border-radius: 999px;
   transition: width 0.6s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.kpi-bar-fill.primary {
+  background: var(--wk-accent);
+}
+
+.kpi-bar-fill.success {
+  background: var(--wk-mint);
+}
+
+.kpi-bar-fill.warning {
+  background: var(--wk-amber);
+}
+
+.kpi-bar-fill.danger {
+  background: var(--wk-danger);
 }
 
 @media (width <= 1200px) {

@@ -73,18 +73,15 @@ defineProps<{ tags: TagItem[] }>();
 }
 
 .tc-swatch--strategy {
-  background: var(--wk-cyan);
-  box-shadow: 0 0 7px -1px rgb(56 189 248 / 85%);
+  background: var(--wk-accent);
 }
 
 .tc-swatch--template {
-  background: var(--wk-violet);
-  box-shadow: 0 0 7px -1px rgb(167 139 250 / 85%);
+  background: var(--wk-mint);
 }
 
 .tc-swatch--branch {
-  background: var(--wk-emerald);
-  box-shadow: 0 0 7px -1px rgb(52 211 153 / 85%);
+  background: var(--wk-amber);
 }
 
 .tc-cloud {
@@ -103,39 +100,26 @@ defineProps<{ tags: TagItem[] }>();
   font-weight: 600;
   line-height: 1.5;
   cursor: default;
-  border-radius: 6px;
+  border-radius: 4px;
   transition:
-    transform 0.2s,
-    text-shadow 0.2s,
+    background-color 0.2s,
     color 0.2s;
 }
 
 .tc-tag:hover {
-  transform: translateY(-2px) scale(1.06);
+  background: var(--el-fill-color-light);
 }
 
 .tc-tag--strategy {
-  color: var(--wk-cyan);
-
-  &:hover {
-    text-shadow: 0 0 14px rgb(56 189 248 / 75%);
-  }
+  color: var(--wk-accent);
 }
 
 .tc-tag--template {
-  color: var(--wk-violet);
-
-  &:hover {
-    text-shadow: 0 0 14px rgb(167 139 250 / 75%);
-  }
+  color: var(--wk-mint);
 }
 
 .tc-tag--branch {
-  color: var(--wk-emerald);
-
-  &:hover {
-    text-shadow: 0 0 14px rgb(52 211 153 / 75%);
-  }
+  color: var(--wk-amber);
 }
 
 .tc-count {
@@ -144,8 +128,8 @@ defineProps<{ tags: TagItem[] }>();
   font-style: normal;
   font-weight: 700;
   line-height: 14px;
-  color: var(--wk-text-3);
-  border: 1px solid var(--wk-grid-line-strong);
+  color: var(--el-text-color-secondary);
+  border: 1px solid var(--el-border-color-lighter);
   border-radius: 999px;
 }
 

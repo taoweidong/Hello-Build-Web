@@ -129,13 +129,11 @@ const nowPct = ((nowHour + now.getMinutes() / 60) / 24) * 100;
 }
 
 .ht-swatch--build {
-  background: linear-gradient(180deg, #22d3ee, #0ea5e9);
-  box-shadow: 0 0 8px -1px rgb(34 211 238 / 80%);
+  background: var(--wk-accent);
 }
 
 .ht-swatch--push {
-  background: linear-gradient(180deg, #a5b4fc, #6366f1);
-  box-shadow: 0 0 8px -1px rgb(129 140 248 / 80%);
+  background: var(--el-color-primary-light-3);
 }
 
 .ht-chart {
@@ -203,7 +201,7 @@ const nowPct = ((nowHour + now.getMinutes() / 60) / 24) * 100;
 }
 
 .ht-bar:hover .ht-stack {
-  filter: brightness(1.25);
+  filter: brightness(1.1);
 }
 
 .ht-seg {
@@ -213,12 +211,11 @@ const nowPct = ((nowHour + now.getMinutes() / 60) / 24) * 100;
 }
 
 .ht-seg--build {
-  background: linear-gradient(180deg, #38dcf8, #0284c7);
-  box-shadow: 0 0 10px -2px rgb(56 189 248 / 70%);
+  background: var(--wk-accent);
 }
 
 .ht-seg--push {
-  background: linear-gradient(180deg, #a5b4fc, #4f46e5);
+  background: var(--el-color-primary-light-3);
 }
 
 /* 无任务小时的基线点 */
@@ -234,7 +231,7 @@ const nowPct = ((nowHour + now.getMinutes() / 60) / 24) * 100;
   position: absolute;
   inset: 0;
   content: "";
-  background: rgb(56 189 248 / 7%);
+  background: var(--el-color-primary-light-9);
   border-radius: 4px;
 }
 
@@ -244,7 +241,7 @@ const nowPct = ((nowHour + now.getMinutes() / 60) / 24) * 100;
   inset: 12px 20px 16px 0;
   width: 0;
   pointer-events: none;
-  border-left: 1px dashed rgb(52 211 153 / 75%);
+  border-left: 1px dashed var(--wk-mint);
 }
 
 .ht-now-label {
@@ -253,7 +250,7 @@ const nowPct = ((nowHour + now.getMinutes() / 60) / 24) * 100;
   left: 3px;
   font-size: 9px;
   font-weight: 700;
-  color: var(--wk-emerald);
+  color: var(--wk-mint);
   white-space: nowrap;
 }
 

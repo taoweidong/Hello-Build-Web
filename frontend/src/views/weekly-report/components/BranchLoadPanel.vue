@@ -29,7 +29,7 @@
             :style="{
               width: `${(r.total / maxTotal) * 100}%`,
               color: r.color,
-              background: `linear-gradient(90deg, ${hexToRgba(r.color, 0.55)}, ${r.color})`,
+              background: r.color,
               animationDelay: `${i * 70}ms`
             }"
           >
@@ -48,7 +48,6 @@
 <script setup lang="ts">
 // 分支负载面板：堆叠进度条（构建实心 + 推送淡段），宽度按最大分支归一
 import { computed } from "vue";
-import { hexToRgba } from "@/utils/color";
 import type { BranchLoadRow } from "@/utils/weeklyReport";
 
 defineOptions({ name: "WeeklyReportBranchLoad" });
@@ -110,7 +109,7 @@ const maxTotal = computed(
   grid-column: 1 / 3;
   height: 8px;
   overflow: hidden;
-  background: rgb(99 138 206 / 12%);
+  background: var(--el-border-color-lighter);
   border-radius: 999px;
 }
 
@@ -118,7 +117,6 @@ const maxTotal = computed(
   position: relative;
   height: 100%;
   border-radius: 999px;
-  box-shadow: 0 0 12px -2px currentcolor;
   transform-origin: left center;
   transition: width 0.5s cubic-bezier(0.22, 0.61, 0.36, 1);
   animation: wk-bar-grow 0.7s cubic-bezier(0.22, 0.61, 0.36, 1) both;

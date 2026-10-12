@@ -11,7 +11,7 @@
         <IconifyIconOffline :icon="ArrowLeft" />
       </button>
       <span class="tb-week-range">{{ weekRangeText }}</span>
-      <span class="wk-pill wk-pill--accent">第 {{ weekNumber }} 周</span>
+      <span class="wk-pill">第 {{ weekNumber }} 周</span>
       <button
         class="wk-icon-btn"
         type="button"

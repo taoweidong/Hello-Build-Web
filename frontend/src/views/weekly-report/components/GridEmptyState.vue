@@ -38,22 +38,22 @@ defineProps<{
   width: 56px;
   height: 56px;
   font-size: 26px;
-  color: var(--wk-text-3);
-  background: rgb(99 138 206 / 6%);
-  border: 1px dashed var(--wk-border-strong);
-  border-radius: 16px;
+  color: var(--el-text-color-placeholder);
+  background: var(--el-fill-color-light);
+  border: 1px dashed var(--el-border-color);
+  border-radius: var(--el-border-radius-base);
 }
 
 .ge-title {
   margin: 4px 0 0;
   font-size: 14px;
   font-weight: 600;
-  color: var(--wk-text-2);
+  color: var(--el-text-color-regular);
 }
 
 .ge-hint {
   margin: 0;
   font-size: 12px;
-  color: var(--wk-text-3);
+  color: var(--el-text-color-secondary);
 }
 </style>

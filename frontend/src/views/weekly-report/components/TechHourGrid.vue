@@ -13,7 +13,13 @@
       >
         <span class="tg-weekday">{{ d.weekday }}</span>
         <span class="tg-date">{{ shortDate(d.date) }}</span>
-        <span v-if="d.date === today" class="tg-today-pill">今天</span>
+        <el-tag
+          v-if="d.date === today"
+          size="small"
+          effect="light"
+          class="tg-today-pill"
+          >今天</el-tag
+        >
       </div>
     </div>
 
@@ -34,8 +40,7 @@
         class="tg-cell"
         :class="{
           weekend: isWeekend(cell.date),
-          today: cell.date === today,
-          past: cell.past
+          today: cell.date === today
         }"
       >
         <span
@@ -46,7 +51,13 @@
             task.kind === 'push' ? 'tg-chip--push' : 'tg-chip--build',
             { 'tg-chip--past': cell.past }
           ]"
-          :style="cell.past ? undefined : chipVars(task)"
+          :style="
+            cell.past
+              ? undefined
+              : task.kind === 'build'
+                ? { background: task.color }
+                : { borderColor: task.color, color: task.color }
+          "
           :title="cell.past ? `${task.title}（已过期，仅可查看）` : task.title"
           @click="emit('task-click', task, cell.past)"
         >
@@ -64,10 +75,8 @@
 </template>
 
 <script setup lang="ts">
-// 周报调度网格（时间点 × 周一~周日）：深色科技风重绘，交互与原 HourGrid 一致
-// 构建 = 分支色渐变实底；推送 = 分支色虚线描边 + 同色淡底；过期 = 置灰删除线仅可查看
-import type { CSSProperties } from "vue";
-import { hexToRgba } from "@/utils/color";
+// 周报调度网格（时间点 × 周一~周日）：视觉与原 HourGrid 保持一致（浅色 + EP 令牌），
+// 交互完全不变；构建 = 分支色实底白字；推送 = 分支色虚线描边透明底；过期 = 置灰删除线仅可查看
 import type { HourTaskItem, WeekCell } from "@/composables/useWeeklyPanorama";
 
 defineOptions({ name: "WeeklyReportTechGrid" });
@@ -99,14 +108,6 @@ function shortDate(dateStr: string) {
 function rowDelay(index: number) {
   return `${Math.min(index * 45, 270)}ms`;
 }
-
-/** 芯片主题变量：分支色 + 派生淡色（推送底色/光晕用） */
-function chipVars(task: HourTaskItem): CSSProperties {
-  return {
-    "--chip": task.color,
-    "--chip-tint": hexToRgba(task.color, 0.14)
-  } as CSSProperties;
-}
 </script>
 
 <style scoped lang="scss">
@@ -123,29 +124,28 @@ function chipVars(task: HourTaskItem): CSSProperties {
   grid-template-columns: 72px repeat(7, minmax(0, 1fr));
 }
 
-/* ---- 表头 ---- */
+/* ---- 表头（对齐 HourGrid：浅灰底 + 下边框） ---- */
 .tg-header {
   position: sticky;
   top: 0;
   z-index: 2;
   flex: none;
-  background: linear-gradient(180deg, rgb(19 29 51 / 96%), rgb(15 24 44 / 88%));
-  border-bottom: 1px solid var(--wk-grid-line-strong);
-  backdrop-filter: blur(6px);
+  background: var(--el-fill-color-light);
+  border-bottom: 1px solid var(--el-border-color);
 }
 
 .tg-corner {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-right: 1px solid var(--wk-grid-line);
+  border-right: 1px solid var(--el-border-color-lighter);
 }
 
 .tg-corner-text {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--wk-text-3);
-  letter-spacing: 0.08em;
+  color: var(--el-text-color-regular);
+  white-space: nowrap;
 }
 
 .tg-day {
@@ -153,48 +153,41 @@ function chipVars(task: HourTaskItem): CSSProperties {
   flex-direction: column;
   gap: 1px;
   align-items: center;
-  padding: 8px 4px 9px;
-  border-right: 1px solid var(--wk-grid-line);
+  justify-content: center;
+  padding: 6px 4px;
+  border-right: 1px solid var(--el-border-color-lighter);
 
   &:last-child {
     border-right: none;
   }
 
   &.weekend {
-    background: rgb(129 140 248 / 6%);
+    background: var(--el-fill-color-light);
   }
 
-  /* 今天列：顶部青色光带 */
+  /* 今天列：主色淡底（EP primary-light-9） */
   &.today {
-    background: rgb(56 189 248 / 8%);
-    box-shadow:
-      inset 0 2px 0 var(--wk-cyan),
-      inset 0 0 24px -8px rgb(56 189 248 / 55%);
+    background: var(--el-color-primary-light-9);
   }
 }
 
 .tg-weekday {
   font-size: 13px;
   font-weight: 600;
-  color: var(--wk-text-1);
+  font-variant-numeric: tabular-nums;
+  color: var(--el-text-color-primary);
+  white-space: nowrap;
 }
 
 .tg-date {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  color: var(--wk-text-3);
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
 }
 
 .tg-today-pill {
-  padding: 0 7px;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 15px;
-  color: #041022;
-  background: var(--wk-grad-primary);
-  border-radius: 999px;
-  box-shadow: 0 0 12px -2px rgb(56 189 248 / 75%);
-  animation: wk-pulse 2.4s ease-in-out infinite;
+  transform: scale(0.85);
 }
 
 /* ---- 行 ---- */
@@ -204,11 +197,7 @@ function chipVars(task: HourTaskItem): CSSProperties {
 }
 
 .tg-row + .tg-row {
-  border-top: 1px solid var(--wk-grid-line);
-}
-
-.tg-row:hover .tg-cell:not(.past) {
-  background: rgb(56 189 248 / 4%);
+  border-top: 1px solid var(--el-border-color-lighter);
 }
 
 .tg-time {
@@ -220,18 +209,19 @@ function chipVars(task: HourTaskItem): CSSProperties {
   font-size: 12px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--wk-text-1);
-  background: rgb(13 21 39 / 55%);
-  border-right: 1px solid var(--wk-grid-line);
+  color: var(--el-text-color-primary);
+  white-space: nowrap;
+  background: var(--el-fill-color-light);
+  border-right: 1px solid var(--el-border-color-lighter);
 }
 
-/* 时刻左侧小光点 */
+/* 时刻左侧主色小点（无光晕） */
 .tg-time-dot {
+  flex: none;
   width: 5px;
   height: 5px;
-  background: var(--wk-cyan);
+  background: var(--wk-accent);
   border-radius: 50%;
-  box-shadow: 0 0 8px 0 rgb(56 189 248 / 85%);
 }
 
 .tg-cell {
@@ -241,30 +231,23 @@ function chipVars(task: HourTaskItem): CSSProperties {
   justify-content: center;
   min-width: 0;
   padding: 5px 7px;
-  border-right: 1px solid var(--wk-grid-line);
-  transition: background 0.2s;
+  border-right: 1px solid var(--el-border-color-lighter);
 
   &:last-child {
     border-right: none;
   }
 
   &.weekend {
-    background: rgb(129 140 248 / 5%);
+    background: var(--el-fill-color-lighter);
   }
 
-  /* 今天列：左右淡青描边，纵向贯穿 */
+  /* 今天列：主色淡底，纵向贯通 */
   &.today {
-    box-shadow:
-      inset 1px 0 0 rgb(56 189 248 / 30%),
-      inset -1px 0 0 rgb(56 189 248 / 30%);
-  }
-
-  &.past {
-    box-shadow: none;
+    background: var(--el-color-primary-light-9);
   }
 }
 
-/* ---- 任务芯片 ---- */
+/* ---- 任务芯片（对齐 HourGrid 视觉） ---- */
 .tg-chip {
   display: flex;
   flex: 1 1 auto;
@@ -272,65 +255,35 @@ function chipVars(task: HourTaskItem): CSSProperties {
   gap: 2px;
   justify-content: center;
   width: 100%;
-  min-height: 46px;
-  padding: 5px 9px;
+  min-height: 44px;
+  padding: 4px 8px;
   overflow: hidden;
+  color: #fff;
   cursor: pointer;
   border: 1px solid transparent;
-  border-radius: 8px;
-  transition:
-    transform 0.18s,
-    box-shadow 0.18s,
-    opacity 0.18s;
+  border-radius: 6px;
+  transition: opacity 0.18s;
 
   &:hover {
-    transform: translateY(-1px);
-  }
-
-  &:active {
-    transform: translateY(0);
+    opacity: 0.85;
   }
 }
 
-/* 构建：分支色实底 + 立体高光渐变 */
+/* 构建：分支色实底白字 */
 .tg-chip--build {
-  color: #fff;
-  text-shadow: 0 1px 2px rgb(0 0 0 / 38%);
-  background-color: var(--chip);
-  background-image: linear-gradient(
-    160deg,
-    rgb(255 255 255 / 26%),
-    rgb(0 0 0 / 24%) 85%
-  );
-  border-color: rgb(255 255 255 / 16%);
-
-  &:hover {
-    box-shadow:
-      0 8px 20px -8px var(--chip),
-      0 0 0 1px var(--chip);
+  .tg-stage {
+    background: rgb(255 255 255 / 22%);
   }
 }
 
-/* 推送：分支色虚线描边 + 同色淡底 */
+/* 推送：分支色虚线描边 + 透明底 */
 .tg-chip--push {
-  color: var(--chip);
-  background-color: var(--chip-tint);
-  border-color: var(--chip);
+  background: transparent;
   border-style: dashed;
 
-  &:hover {
-    background-color: var(--chip);
-    box-shadow: 0 8px 20px -8px var(--chip);
-
-    .tg-name,
-    .tg-meta {
-      color: #fff;
-    }
-
-    .tg-stage {
-      color: #fff;
-      border-color: rgb(255 255 255 / 70%);
-    }
+  .tg-stage {
+    background: transparent;
+    border: 1px solid currentcolor;
   }
 }
 
@@ -343,21 +296,11 @@ function chipVars(task: HourTaskItem): CSSProperties {
 
 .tg-stage {
   flex: none;
-  padding: 0 6px;
+  padding: 0 5px;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 16px;
-  letter-spacing: 0.04em;
-  border: 1px solid transparent;
-  border-radius: 4px;
-}
-
-.tg-chip--build .tg-stage {
-  background: rgb(255 255 255 / 22%);
-}
-
-.tg-chip--push .tg-stage {
-  border-color: currentcolor;
+  border-radius: 3px;
 }
 
 .tg-name {
@@ -374,30 +317,36 @@ function chipVars(task: HourTaskItem): CSSProperties {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  opacity: 0.82;
+  opacity: 0.78;
 }
 
-/* 过期历史任务：置灰 + 删除线，仅支持查看详情 */
+/* 过期历史任务：浅灰底 + 可读灰字 + 删除线，仅支持查看详情 */
 .tg-chip--past {
-  color: var(--wk-text-3) !important;
-  text-shadow: none;
-  background: rgb(99 138 206 / 7%) !important;
-  background-image: none !important;
-  border-color: var(--wk-grid-line) !important;
-  box-shadow: none !important;
-  opacity: 0.85;
-  filter: saturate(0.15);
+  color: var(--el-text-color-secondary) !important;
+  background: var(--el-fill-color-light) !important;
+  border-color: var(--el-border-color-lighter) !important;
+  border-style: solid !important;
 
-  .tg-stage {
-    color: var(--wk-text-3);
-    background: rgb(99 138 206 / 10%);
-    border-color: var(--wk-grid-line-strong);
+  &:hover {
+    background: var(--el-fill-color) !important;
+    opacity: 1;
   }
 
-  .tg-name,
-  .tg-meta {
-    color: var(--wk-text-3);
+  .tg-stage {
+    color: var(--el-text-color-secondary);
+    background: var(--el-fill-color);
+    border-color: transparent;
+  }
+
+  .tg-name {
+    color: var(--el-text-color-regular);
     text-decoration: line-through;
+  }
+
+  .tg-meta {
+    color: var(--el-text-color-secondary);
+    text-decoration: line-through;
+    opacity: 1;
   }
 }
 </style>
