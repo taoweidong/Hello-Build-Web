@@ -148,3 +148,10 @@ ReportPublishRecord（发布暨推送记录）
 - **publish_count 原子自增**：发布改用 `F("publish_count") + 1` 条件更新并整体包事务，消除并发双发布丢计数；create/update 的正文与修订留痕同事务，不再出现半套痕迹。
 - **列表可选分页**：`GET /reports` 携带 `page` 参数时返回 `{items,total,page,page_size}`（page_size 默认 20 最大 100）；不携带保持全量数组（向后兼容，前端下拉仍全量）。
 - **新建报告不再预填演示内容**：前端 `useReportForm.initNewForm` 移除 DEV 假数据（旧行为下「新建→直接发布」会落库假报告）。
+
+## 修订记录（2026-10-13 第三轮质量优化）
+
+- **publish 截图类型守卫（R3-B2）**：`screenshot` 传对象/数组/数字经 `body_str` 归一为 `""` 走「缺少页面截图」42201——此前在 `.encode("utf-8")` 处冒 AttributeError 变 500；base64 串不 strip，与旧 `or ""` 完全同口径。
+- **列表分页实现收敛（R3-B11）**：内联分页改用 `views/__init__.paginate_qs` 共享助手（与 slot 记录列表合一），响应结构与非法参数回退语义不变。
+- **前端历史报告下拉改分页拉取（R3-F8）**：`loadHistory` 用 `page=1&page_size=100` 单页（`ReportQuery` 补分页参数、`getReports` 增加分页重载签名），不再全量拉整表。
+- **截图纯函数抽取（R3-F8）**：`base64Bytes`/`dataUrlToBlob` 自 `report/detail.vue` 抽到 `utils/screenshot.ts` 并单测锁定（无逗号 dataURL、空主体、mime 兜底 image/png 边界）——第二轮阶段六唯一未完成项本轮落地；发布前等待卡片重渲染由 `setTimeout(100)` 魔法等待改双 `nextTick`。

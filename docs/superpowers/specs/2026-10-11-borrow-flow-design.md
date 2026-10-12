@@ -20,7 +20,7 @@
 | 借用表单 | 目标版本（排除当前版本，PM 默认选绑定版本）/ 目标分支（甘特聚合接口按版本取分支）/ 新构建时间（默认沿用原时间）/ 借用原因 |
 | 电子流页面 | 独立一级菜单「借用审批」（`/borrow-flow/index`，rank 14，全角色可见），与全景页不绑定 |
 | 审批权限 | admin 全部；pm 仅来源版本 = 自己绑定版本的电子流（前端隐藏按钮 + 服务端 `_can_approve` 双重校验） |
-| 通过的落地动作 | 在目标分支按新时间创建策略，命名 `{原策略名}({目标版本}借用)`，沿用原模板、普通推送模式；经 `svc_create` 统一校验，冲突 → 40901/40902 且电子流保持待审批 |
+| 通过的落地动作 | 在目标分支按新时间创建策略，命名 `{原策略名}({目标版本}借用)`，沿用原模板与推送配置（`push_mode`/`push_start_time` 从源策略复制，2026-10-13 修订——此前固定普通推送模式且丢弃推送时间）；经 `svc_create` 统一校验，冲突 → 40901/40902 且电子流保持待审批 |
 | 防重复 | 同一策略同一借用人存在待审批申请时再次发起 → 40903 |
 | 驳回 | 必填审批意见（前后端均校验） |
 | 数据快照 | 电子流仅存 FK（strategy/borrower/target_branch），展示字段经 relation 实时读取；不冗余快照 |
@@ -55,3 +55,11 @@
 - **pending 唯一约束落 DB**：新增部分唯一约束 `uniq_pending_borrow_flow`（同策略 + 同借用人仅一条 pending，迁移 0012），并发重复发起由 IntegrityError → 40903 兜底，视图层预检查保留作友好路径。
 - **状态参数值域校验**：`GET /borrow-flows?status=` 仅接受 pending/approved/rejected。
 - **展示文案迁出 API 层**：状态文案唯一来源为 `frontend/src/views/constants.ts`（borrowStatusMeta），复制文案 `formatBorrowFlowText` 移至 `frontend/src/views/borrow-flow/format.ts`；复制降级弹框改用 VNode 文本渲染，消除 dangerouslyUseHTMLString 存储型 XSS。
+
+## 修订记录（2026-10-13 第三轮质量优化）
+
+- **审批通过保留推送配置（R3-B15）**：通过建新策略时 `push_mode`/`push_start_time` 从源策略复制——此前固定 `push_mode="normal"` 且丢弃 `push_start_time`，sync/固定推送策略被借用后推送配置丢失。
+- **方法守卫（R3-B16）**：`approve`/`reject` 仅允许 POST（此前 GET 也会执行审批产生副作用）；列表端点非 GET/POST → 42201（此前 DELETE/PUT 被当列表请求执行）。
+- **请求体类型守卫（R3-B2）**：`new_build_time`/`reason`/`comment` 非字符串一律经 `body_str` 归一为 `""` 走既有校验分支（42201），此前在 `.strip()` 处冒 AttributeError 变 500。
+- **时间序列化统一上海墙钟（R3-B3）**：`handled_at`/`created_at` 走 `fmt_dt`（此前手工 strftime 输出 UTC 墙钟，前端早 8 小时展示）。
+- **联动变更**：策略删除前拦截 pending 借用流（40903，防 `BorrowFlow.strategy` CASCADE 静默抹掉进行中电子流，见 build-strategy-web spec 同日修订）；前端时间格式化统一 `formatFlowTime`（内部走 `utils/business.formatTime`，输出与手写 `.replace("T"," ")` 逐字节等价）；`borrowFlowUrl` 改用 `utils/appUrl.appHashUrl` 拼装；`formatBorrowFlowText` 补 approved 分支与 approver_name/handle_comment/handled_at 空值兜底测试（`api/__tests__/borrowFlow.spec.ts`）。

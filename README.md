@@ -10,6 +10,7 @@
 
 | 模块 | 说明 |
 |---|---|
+| **策略周报** | 与版本策略全景同源数据的看板重塑版：KPI 指标、时间点 × 周历网格、24h 时段趋势、分支负载与热点标签可视化 |
 | **版本策略全景(New)** | 「时间点 × 周一~周日」调度矩阵；对外只读查看、对内维护修改；已过期的历史任务自动置灰、仅可查看详情 |
 | **借用审批** | 非本版本人员借用某时段发起电子流，由来源版本负责人审批，通过即在目标分支按新时间建策略；支持一键复制转发 |
 | **策略配置** | 版本负责人维护本版本分支的构建策略（时间 / 模板 / 推送模式），实时时间线预览与时间冲突拦截 |
@@ -26,7 +27,7 @@
 | 前端 | Vue 3 · Vite · TypeScript · Element Plus（基于 pure-admin-thin v6.2.0）· Pinia · Vue Router |
 | 后端 | Django 5 · Django REST Framework · SimpleJWT · django-filter · django-cors-headers |
 | 数据库 | SQLite（开发 / 演示），可平滑迁移 PostgreSQL |
-| 测试 | 后端 Django TestCase（≥279 例）· 前端 Vitest（≥104 例） |
+| 测试 | 后端 Django TestCase（≥371 例）· 前端 Vitest（≥156 例） |
 
 统一响应契约 `{ code, message, data }`；时区 `Asia/Shanghai`；策略写路径经服务层统一校验（时间冲突 / 资源互斥）。
 
@@ -89,6 +90,7 @@ Hello-Build-Web/
 | 构建策略 Web 初版 | [设计](./docs/superpowers/specs/2026-08-08-build-strategy-web-design.md) |
 | Django 迁移与周视图 | [设计](./docs/superpowers/specs/2026-08-10-django-migration-and-weekly-view-design.md) |
 | 版本策略全景(New) | [设计](./docs/superpowers/specs/2026-10-11-weekly-new-design.md) |
+| 策略周报看板 | [设计](./docs/superpowers/specs/2026-10-12-weekly-report-page-design.md) |
 | 借用电子流 | [设计](./docs/superpowers/specs/2026-10-11-borrow-flow-design.md) |
 | 时段抢占 | [设计](./docs/superpowers/specs/2026-10-10-slot-booking-design.md) |
 | 验证报告 | [设计](./docs/superpowers/specs/2026-08-15-verification-report-design.md) |

@@ -274,11 +274,12 @@ PM 仅配置两个时间节点：
 | 方法 | 路径 | 说明 | 角色 |
 |---|---|---|---|
 | GET | /api/plan?date= | 甘特看板聚合：版本→分支→策略→各阶段时间区间+冲突标记；date 非法（非 YYYY-MM-DD）→ 42201；status 经关联子查询取当日轮次结论 | 全部 |
-| GET | /api/strategies?version_id=&branch_id= | 策略列表（含时间线计算结果）；无绑定版本的 PM → 空集（fail-closed，2026-10-12） | 全部 |
+| GET | /api/strategies?version_id=&branch_id= | 策略列表（含时间线计算结果）；可见性为设计决策（2026-10-13 定案）：全员可见、PM 过滤是「默认只看绑定版本」视图语义而非安全边界；无绑定版本的 PM → 空集（fail-closed，2026-10-12） | 全部 |
 | POST | /api/strategies/preview | 保存前预览：时间线排布+冲突检测（不落库） | PM |
 | POST | /api/strategies | 新建策略（name 必填缺失 → 42201、push_mode ∈ normal/sync、enabled 布尔，校验版本归属+冲突，冲突 40901） | PM |
 | PATCH | /api/strategies/{id} | 修改（开始时间/推送模式/名称），写变更日志，按生效规则应用 | PM |
-| POST/PATCH | /api/strategies/{id}/toggle | 启用/停用（无参翻转，仅 POST/PATCH，2026-10-12 加方法守卫）；启用撞互斥唯一约束 → 40902 | PM |
+| POST/PATCH | /api/strategies/{id}/toggle | 启用/停用（无参翻转，仅 POST/PATCH，2026-10-12 加方法守卫）；走服务层 `toggle_strategy`：启用方向重跑互斥/阶段校验（40901/40902/42201）+ 条件 UPDATE 防并发（并发已翻转 → 40902，2026-10-13）；PM 侧写 StrategyChangeLog 审计 | PM |
+| DELETE | /api/strategies/{id} | 删除策略；存在待审批借用流 → 40903 拦截（防级联抹掉电子流）；审计落 AdminOpLog（StrategyChangeLog 随策略级联删除，2026-10-13） | PM |
 
 **执行 execution**
 
@@ -291,6 +292,8 @@ PM 仅配置两个时间节点：
 **系统管理 admin（前缀 /api/admin，写操作均写管理操作日志）**
 
 > 2026-10-12 补：写端点加请求方法守卫（update_version 仅 PUT/PATCH、add_branch 仅 POST、update_user 仅 PATCH、模板 toggle 仅 POST/PATCH），错误方法 → 42201；模板 smoke/analysis_minutes 非负整数校验（非法 → 42201），模板重名 → 40902；用户创建密码必填、is_active 严格布尔、绑定 PM 必须为 pm 角色。
+
+> 2026-10-13 补（第三轮质量优化）：密码最小长度 6 位（创建与重置同口径）；update_user 空串密码 → 42201（显式 null 视为未提供）；改角色（离开 pm）或停用仍绑定版本 PM 的用户 → 40902（防"无主版本"，需先移交）；config PUT 改 `parse_int` + 非负校验（拒 bool/float/负数，非法 → 42201）；`security_log` detail 拼接后统一截断 255；admin logs 时间字段改走 `fmt_dt`（上海墙钟，此前 DjangoJSONEncoder 输出带 `+00:00` 的 UTC 串）。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -446,3 +449,18 @@ Hello-Build-Web/
 ## 附录：原型参考
 
 `prototype/index.html` 为前期静态原型（甘特看板），其视觉语言（深色主题、阶段配色：蓝构建/紫冒烟/橙分析/绿推送、红色斜纹冲突）在本系统中延续。
+
+---
+
+## 修订记录（2026-10-13 第三轮质量优化）
+
+> 本 spec 为初版设计（FastAPI 方案已由 Django 迁移取代，见 `2026-08-10-django-migration-and-weekly-view-design.md`）；以下修订针对现行 Django 实现中源自本 spec 的策略/认证/日志契约。详见 `2026-10-13-code-quality-optimization-round3-design.md`。
+
+- **toggle 启停统一走服务层（R3-B4）**：新增 `services/strategies.toggle_strategy`——启用方向重跑互斥/阶段校验，落库用条件 UPDATE `filter(id, enabled=旧值)`（rowcount=0 → 40902「已被其他操作修改」），IntegrityError → 40902 兜底保留；PM 与 admin 入口共用，消除视图层读改写竞态副本。此前 toggle 是唯一未套「条件 UPDATE 抢占」范式的写路径，且停用 A → 他分支建同刻 B → 重新启用 A 会静默绕过互斥。
+- **PM 侧审计与删除保护（R3-B5）**：PM toggle 写 StrategyChangeLog（与 admin 侧 AdminOpLog 双轨口径不变）；删除策略前拦截 pending 借用流（40903），删除审计落 AdminOpLog（StrategyChangeLog.strategy 为 CASCADE 会随策略被级联抹掉）。
+- **策略可见性定案（R3-B10，行为不变）**：策略计划对全员可见（与 /plan、/weekly 一致，不作安全边界）；PM 过滤为「默认只看绑定版本」视图语义；无绑定 PM fail-closed 空集维持。
+- **对外时间戳统一上海墙钟（R3-B3）**：唯一实现 `views/__init__.fmt_dt`（先 `timezone.localtime` 再 strftime `"%Y-%m-%dT%H:%M:%S"` 不带 offset），executions/borrow_flow/slot_booking/branch_config/admin logs 全部收敛——此前手工 strftime 输出 UTC 墙钟（前端早 8 小时展示）、DRF 序列化器输出上海墙钟、DjangoJSONEncoder 输出带 offset UTC 串三种口径并存。
+- **认证（R3-B1）**：停用/被删用户的存量 token → 40100（simplejwt `get_user` 抛 `AuthenticationFailed`，此前未捕获 → 500，前端不跳登录）；logout 清理 RevokedToken 含 `expires_at` 为 null 的行。
+- **请求体守卫（R3-B2）**：`parse_body` 对合法 JSON 非对象归一 `{}`；字符串字段提取统一 `body_str`（非 str 回退 `""` 走既有必填/非法分支），登录口/分支/工程创建等非字符串载荷 500 集群消除。
+- **读端点方法守卫（R3-B16）**：plan/weekly/executions/logs/me/slot_calendar/users_all 等非 GET → 42201，与写端点守卫口径一致。
+- **前端**：动作类 async 处理器补全 try/catch/finally 与保存按钮 `:loading`（防 Uncaught rejection 与双击重复提交）；推送模式文案唯一来源 `views/constants.pushModeMeta`；`catch (e: any)` 全部改 `isBizError` 类型守卫。

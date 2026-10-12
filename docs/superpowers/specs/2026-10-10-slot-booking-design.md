@@ -300,3 +300,12 @@ el-tabs 两 Tab：
 
 - **weekdays 统一为 isoweekday 1-7（1=周一…7=周日）**：序列化器校验原为 0-6（0=周一），与服务层 `isoweekday()` 匹配、模型 help_text、seed、前端选项冲突，曾致 UI 无法创建周日模板、填 0 静默失效；现已全链路统一 1-7。
 - **SlotBooking 状态枚举移除死值 `expired`**：过期采用惰性展示（前端按日期置灰），从未落库；admin 记录列表 `status` 筛选增加值域校验（仅 reserved/released，非法值 42201），前端 RecordsPanel 同步移除「已过期」筛选项。
+
+## 修订记录（2026-10-13 第三轮质量优化）
+
+- **release_booking 改条件 UPDATE（R3-B9）**：`filter(id, status="reserved").update(...)`，rowcount=0 → 按既有「非待占用状态」42201 报错——此前 check-then-act，并发双释放均成功且后者覆盖 released_at/reason；范式与结论提交/借用审批对齐。
+- **时间序列化统一上海墙钟（R3-B3）**：`created_at`/`released_at` 走服务层 `_fmt_dt`（此前对 aware UTC datetime 直接 strftime，输出早 8 小时）。
+- **读端点方法守卫（R3-B16）**：`/slot-calendar` 仅 GET，非 GET → 42201。
+- **分页实现收敛（R3-B11）**：视图层 `_paginate` 提升为 `views/__init__.paginate_qs` 共享助手（reports 同款复用），响应结构与非法参数回退语义不变。
+- **seed 幂等修复（R3-B8）**：轮转抢占记录 `get_or_create` 锚点改为 (date, template)，status 只进 defaults——此前 status 在 lookup 里，首跑末尾释放的历史记录第二跑被复活为 reserved（同键双记录）；幂等测试测量点同步修正（首跑后立即取样，第二/三跑立即比对，含 released 计数）。
+- **前端**：抢占状态文案唯一来源收敛 `views/constants.bookingStatusMeta`（RecordsPanel/MyBookingsDrawer 两份逐字复制与不可达「已过期」分支删除）；中文星期数组唯一来源 `utils/week`（`WEEKDAY_CN_MON`/`WEEKDAY_CN_SUN`，页面内禁止手写）；RecordsPanel 默认日期筛选（近一个月）赋值先于首次 load（此前首查不带条件，表格展示全量而筛选器却显示着范围）；MyBookingsDrawer「加载更多」加在途守卫防连点重复 append；horizon 默认 60 天与页大小 20 提为模块常量。
