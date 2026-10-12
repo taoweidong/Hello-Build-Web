@@ -36,7 +36,7 @@ from ..services.branch_config import (
     start_instance as svc_start,
     stop_instance as svc_stop,
 )
-from . import authed_user, fail_resp, first_error, json_resp, parse_body, parse_int
+from . import authed_user, body_str, fail_resp, first_error, json_resp, parse_body, parse_int
 from ..errors import CODE_ASSOCIATION, CODE_DUPLICATE, CODE_FORBIDDEN, CODE_NOT_FOUND, CODE_UNPROCESSABLE
 
 logger = logging.getLogger("build_protection_service")
@@ -104,11 +104,14 @@ class BranchViewSet(
         user, error = authed_user(request)
         if error:
             return error
-        body = request.data or {}
+        # 非 dict 载荷（数组/字符串等）归一为 {}（R3-B2），走既有缺参分支
+        body = request.data if isinstance(request.data, dict) else {}
         version = Version.objects.filter(id=parse_int(body.get("version_id"))).first()
         if version is None:
             return fail_resp(CODE_UNPROCESSABLE, "版本必选且存在")
-        name = (body.get("name") or "").strip()
+        # 类型守卫（R3-B2）：非字符串 name/repository_url/description 此前在
+        # .strip() 处冒 AttributeError 变 500（B-P1-2），归一为 "" 走必填校验
+        name = body_str(body, "name")
         if not name:
             return fail_resp(CODE_UNPROCESSABLE, "分支名必填")
         if Branch.objects.filter(version=version, name=name).exists():
@@ -117,8 +120,8 @@ class BranchViewSet(
             branch = Branch.objects.create(
                 version=version,
                 name=name,
-                repository_url=(body.get("repository_url") or "").strip(),
-                description=(body.get("description") or "").strip(),
+                repository_url=body_str(body, "repository_url"),
+                description=body_str(body, "description"),
             )
         except IntegrityError:
             return fail_resp(CODE_DUPLICATE, "该版本下分支已存在")
@@ -165,7 +168,8 @@ class BranchViewSet(
         perr = _require_role(user, branch, ROLE_ADMIN)
         if perr:
             return perr
-        body = request.data or {}
+        # 非 dict 载荷归一为 {}（R3-B2），project_id 缺失走既有 42201 分支
+        body = request.data if isinstance(request.data, dict) else {}
         project = Project.objects.filter(id=parse_int(body.get("project_id"))).first()
         if project is None:
             return fail_resp(CODE_UNPROCESSABLE, "工程不存在")
@@ -345,6 +349,9 @@ class BranchPermissionViewSet(mixins.DestroyModelMixin, viewsets.GenericViewSet)
 
 def users_all(request):
     """可用授权用户列表（启用用户）：登录可访问。"""
+    # 方法守卫（R3-B16）：读端点仅 GET
+    if request.method != "GET":
+        return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
     user, resp = authed_user(request)
     if resp:
         return resp
@@ -369,7 +376,8 @@ def projects_view(request):
         return json_resp(ok([serialize_project(p) for p in qs]))
     if request.method == "POST":
         body = parse_body(request)
-        name = (body.get("name") or "").strip()
+        # 类型守卫（R3-B2）：非字符串归一为 ""，走既有必填校验，杜绝 .strip() 500
+        name = body_str(body, "name")
         if not name:
             return fail_resp(CODE_UNPROCESSABLE, "工程名必填")
         if Project.objects.filter(name=name).exists():
@@ -377,8 +385,8 @@ def projects_view(request):
         try:
             project = Project.objects.create(
                 name=name,
-                repository_url=(body.get("repository_url") or "").strip(),
-                description=(body.get("description") or "").strip(),
+                repository_url=body_str(body, "repository_url"),
+                description=body_str(body, "description"),
             )
         except IntegrityError:
             return fail_resp(CODE_DUPLICATE, "工程名已存在")

@@ -29,6 +29,9 @@ def _round_payload(r):
 
 
 def executions_view(request):
+    # 方法守卫（R3-B16）：读端点仅 GET
+    if request.method != "GET":
+        return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
     user, resp = authed_user(request)
     if resp:
         return resp
@@ -74,6 +77,9 @@ def _round_or_denied(user, rid):
 
 
 def round_detail(request, rid):
+    # 方法守卫（R3-B16）：读端点仅 GET
+    if request.method != "GET":
+        return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
     user, resp = authed_user(request)
     if resp:
         return resp

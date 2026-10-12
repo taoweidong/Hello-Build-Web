@@ -193,6 +193,45 @@ def update_strategy(strategy: Strategy, body: dict, operator):
     return strategy
 
 
+@transaction.atomic
+def toggle_strategy(strategy: Strategy) -> Strategy:
+    """启停策略（R3-B4）：启用方向先跑统一校验，落库用条件 UPDATE 防并发。
+
+    审计留痕由调用方负责：PM 入口写 StrategyChangeLog、admin 入口写
+    AdminOpLog（双轨口径不变，见 views 层）。
+
+    此前 toggle 是唯一未套「条件 UPDATE 抢占」范式的写路径（读改写竞态 +
+    重新启用绕过互斥/阶段校验，2026-10-13 评估 B-P2-1）：
+    - 启用方向（False→True）：先跑 validate_strategy（资源互斥 40902 /
+      阶段冲突 40901 / 参数非法 42201），杜绝"停用 A → 他分支建同刻 B →
+      重新启用 A"静默生效；
+    - 条件 UPDATE filter(id, enabled=旧值)：rowcount=0 说明并发已被他人翻转
+      或字段被并发修改 → 抛 40902，消除丢翻转与旧快照覆盖；
+    - IntegrityError → 40902 兜底保留（校验读与 UPDATE 之间的真并发窗口撞
+      uniq_active_strategy_branch_time 约束）。
+    """
+    old_enabled = strategy.enabled
+    new_enabled = not old_enabled
+    if new_enabled:
+        validate_strategy(
+            strategy.branch, strategy.template,
+            strategy.build_start_time, strategy.push_start_time,
+            push_mode=strategy.push_mode, exclude_id=strategy.id,
+        )
+    try:
+        updated = Strategy.objects.filter(
+            id=strategy.id, enabled=old_enabled
+        ).update(enabled=new_enabled)
+    except IntegrityError as exc:
+        _raise_conflict_or_reraise(exc, strategy.branch, strategy.build_start_time)
+    if not updated:
+        raise StrategyValidationError(
+            CODE_DUPLICATE, "策略状态已被其他操作修改，请刷新后重试"
+        )
+    strategy.enabled = new_enabled
+    return strategy
+
+
 def _raise_conflict_or_reraise(exc: IntegrityError, branch, build_start_time):
     """按唯一约束语义转 40902；非本约束的 IntegrityError 原样抛出。
 

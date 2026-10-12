@@ -66,10 +66,11 @@ def contract_exception_handler(exc, context):
                             json_dumps_params={"ensure_ascii": False})
     elif isinstance(exc, Throttled):
         code = CODE_RATE_LIMITED
-    elif isinstance(exc, APIException):
-        code = CODE_INTERNAL
     else:
-        code = CODE_NOT_FOUND if isinstance(exc, Http404) else CODE_INTERNAL
+        # 走到这里 response 必非 None，即 exc 必为 APIException（Http404 已被
+        # DRF handler 归一为 NotFound 并在上方分支命中），其余子类统一按内部
+        # 错误处理（R3-B11：原 else 内不可达的 Http404 再判分支已删除）。
+        code = CODE_INTERNAL
     return JsonResponse(
         err(code, _message_of(response.data)),
         status=CODE_STATUS.get(code, response.status_code),

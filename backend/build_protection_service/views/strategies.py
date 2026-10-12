@@ -3,31 +3,33 @@
 校验与写路径统一在 services.strategies（PM 与 admin 两入口共用），
 本模块只负责认证、角色门槛、请求体解析与统一响应组装。
 """
+import logging
+
 from django.conf import settings
-from django.contrib.auth import get_user_model
-from django.db import IntegrityError, transaction
+from django.db import transaction
 from django.utils import timezone
 
 from ..api import ok
 from ..errors import (
-    CODE_DUPLICATE,
+    CODE_ASSOCIATION,
     CODE_FORBIDDEN,
     CODE_NOT_FOUND,
     CODE_UNPROCESSABLE,
 )
-from ..models import Branch, Strategy, StrategyTemplate
+from ..models import AdminOpLog, BorrowFlow, Branch, Strategy, StrategyChangeLog, StrategyTemplate
 from ..services.config import get_config
 from ..services.strategies import (
     StrategyValidationError,
     create_strategy as svc_create,
     strategy_payload,
+    toggle_strategy as svc_toggle,
     update_strategy as svc_update,
     validate_strategy,
 )
 from ..services.timeline import build_timeline
 from . import authed_user, fail_resp, json_resp, parse_body, parse_int, validation_error_resp
 
-User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 def _authed(request):
@@ -76,8 +78,14 @@ def list_strategies(request):
     qs, err_resp = filter_strategies_qs(qs, request)
     if err_resp:
         return err_resp
-    # PM 仅可见其绑定版本策略（管理员可见全部）；未绑定版本的 PM 取空集
-    # （fail-closed，避免过滤条件整体跳过导致越权可见全部策略）。
+    # 可见性设计决策（R3-B10，2026-10-13 第三轮评估 B-P2-6 定案，行为不变）：
+    # 1. 策略计划对全员可见——/plan 与 /weekly 本就对全部登录用户公开，
+    #    策略列表与其口径一致，不作为安全边界；builder/tester/integrator
+    #    可见全部版本的全部策略；
+    # 2. PM 的过滤是「默认视图」语义（默认只看自己绑定版本，降低误操作面），
+    #    而非越权拦截；
+    # 3. 未绑定版本的 PM 取空集（fail-closed）：宁可少看不可多看，防止
+    #    过滤条件整体跳过导致 PM 误操作他版策略。
     if request.user.role == "pm":
         bound_version_id = getattr(request.user, "bound_version_id", None)
         if bound_version_id is None:
@@ -185,25 +193,25 @@ def toggle_strategy(request, sid):
     perr = _check_pm_bound(request.user, s.branch)
     if perr:
         return perr
-    s.enabled = not s.enabled
+    # R3-B4：写路径统一走 services.strategies.toggle_strategy（启用方向重跑
+    # 互斥/阶段校验 + 条件 UPDATE 防并发 + IntegrityError 兜底），
+    # 与 update 路径同款"校验抛 StrategyValidationError → validation_error_resp"。
+    # R3-B5：翻转与审计留痕同一事务（PM 侧此前零留痕，admin 侧有 AdminOpLog 双轨不一致）。
+    old_enabled = s.enabled
     try:
-        # 启用时可能撞 uniq_active_strategy_branch_time 约束（两条同刻策略
-        # 先后停用再先后启用的场景），服务层校验不含 toggle 路径，此处兜底。
-        # SQLite 的 IntegrityError 不含约束名，按字段组合匹配（见 services 层同款注释）。
-        # 包子事务：撞约束后不污染外层事务（否则后续查询报 TransactionManagementError）。
         with transaction.atomic():
-            s.save()
-    except IntegrityError as exc:
-        msg = str(exc)
-        if "strategy.branch_id" in msg and "build_start_time" in msg:
-            return fail_resp(
-                CODE_DUPLICATE, "该分支已存在同一构建时刻的启用策略，无法启用"
+            svc_toggle(s)
+            StrategyChangeLog.objects.create(
+                strategy=s, operator=request.user,
+                change_desc=f"启停策略: {s.name}（启用: {old_enabled}→{not old_enabled}）"[:255],
             )
-        raise
+    except StrategyValidationError as exc:
+        return validation_error_resp(exc)
     return json_resp(ok(strategy_payload(s)))
 
 
 def delete_strategy(request, sid):
+    # 方法守卫由 strategy_detail_view 分发保证（仅 PATCH/DELETE 进入写路径）
     authed = _authed(request)
     if authed:
         return authed
@@ -213,7 +221,25 @@ def delete_strategy(request, sid):
     perr = _check_pm_bound(request.user, s.branch)
     if perr:
         return perr
-    s.delete()
+    # R3-B5：存在待审批借用流时拦截删除（40903）——BorrowFlow.strategy 为
+    # CASCADE，直接删除会静默抹掉进行中的电子流与执行历史（B-P2-2）。
+    # 检查与删除同一事务（SQLite IMMEDIATE 串行化写路径），防检查后插入。
+    with transaction.atomic():
+        if BorrowFlow.objects.filter(strategy=s, status="pending").exists():
+            return fail_resp(CODE_ASSOCIATION, "存在待审批的借用申请，请先处理后再删除")
+        name, strategy_id = s.name, s.id
+        s.delete()
+        # 审计留痕（R3-B5）：StrategyChangeLog.strategy 为 CASCADE，随策略删除
+        # 会被级联抹掉，故删除类审计落到独立存续的 AdminOpLog（action 沿用既有
+        # "delete_strategy" 枚举，operator=当前用户，管理端"操作日志"可溯源）。
+        try:
+            AdminOpLog.objects.create(
+                operator=request.user, action="delete_strategy",
+                target_type="strategy", target_id=str(strategy_id), detail=name[:255],
+            )
+        except Exception:
+            # 审计旁路不阻断业务，但保留堆栈便于排查（与 admin._admin_log 同口径）
+            logger.exception("PM 删除策略审计写入失败：strategy=%s", strategy_id)
     return json_resp(ok())
 
 

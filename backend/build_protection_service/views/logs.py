@@ -1,10 +1,14 @@
 """执行/变更日志 views。"""
 from ..api import ok
+from ..errors import CODE_UNPROCESSABLE
 from ..models import ExecutionLog, StrategyChangeLog
-from . import authed_user, fmt_dt, json_resp
+from . import authed_user, fail_resp, fmt_dt, json_resp
 
 
 def execution_logs(request):
+    # 方法守卫（R3-B16）：读端点仅 GET
+    if request.method != "GET":
+        return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
     _, resp = authed_user(request)
     if resp:
         return resp
@@ -18,6 +22,9 @@ def execution_logs(request):
 
 
 def change_logs(request):
+    # 方法守卫（R3-B16）：读端点仅 GET
+    if request.method != "GET":
+        return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
     _, resp = authed_user(request)
     if resp:
         return resp

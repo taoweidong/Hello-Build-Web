@@ -3,13 +3,19 @@ from datetime import datetime, timezone as dt_timezone
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.db.models import Q
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
-from ..api import err, ok
+from ..api import ok
 from ..models import RevokedToken
-from . import authed_user, fail_resp, json_resp, parse_body, security_log
-from ..errors import CODE_BAD_CREDENTIALS, CODE_FORBIDDEN, CODE_RATE_LIMITED, CODE_UNPROCESSABLE
+from . import authed_user, body_str, fail_resp, json_resp, parse_body, security_log
+from ..errors import (
+    CODE_BAD_CREDENTIALS,
+    CODE_FORBIDDEN,
+    CODE_RATE_LIMITED,
+    CODE_UNPROCESSABLE,
+)
 
 User = get_user_model()
 
@@ -37,8 +43,12 @@ def _user_payload(user):
 
 def login_view(request):
     body = parse_body(request)
-    username = (body.get("username") or "").strip()
-    password = body.get("password") or ""
+    # 类型守卫（R3-B2）：登录是未认证面，非字符串 username/password 此前会在
+    # .strip()/check_password().encode() 处冒 AttributeError 变 500（B-P1-2）；
+    # 统一经 body_str 归一为 ""，走下方"不能为空" 42201 分支。
+    # 密码不做 strip（首尾空白是密码语义的一部分），保持既有口径。
+    username = body_str(body, "username")
+    password = body_str(body, "password", strip=False)
     if not username or not password:
         return fail_resp(CODE_UNPROCESSABLE, "用户名与密码不能为空")
     fail_key = f"login:fail:{username}:{_client_ip(request)}"
@@ -75,14 +85,19 @@ def logout_view(request):
                 username = User.objects.filter(id=user_id).values_list("username", flat=True).first() or ""
         except (TokenError, KeyError):
             username = ""
+    # 清理已过期记录；expires_at 可空且 null 行无法按时间自然失效，
+    # 一并删除避免无限累积（R3-B11，2026-10-13 评估 B-P3-7）。
     RevokedToken.objects.filter(
-        expires_at__lt=datetime.now(tz=dt_timezone.utc)
+        Q(expires_at__lt=datetime.now(tz=dt_timezone.utc)) | Q(expires_at__isnull=True)
     ).delete()
     security_log("logout", username=username, request=request)
     return json_resp(ok())
 
 
 def me_view(request):
+    # 方法守卫（R3-B16）：读端点仅 GET，禁止其他方法执行
+    if request.method != "GET":
+        return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
     # 普通 Django 视图不会自动执行 DRF JWT 认证，复用共享认证助手。
     user, resp = authed_user(request)
     if resp:

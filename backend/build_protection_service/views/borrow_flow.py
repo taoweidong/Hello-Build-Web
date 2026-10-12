@@ -23,7 +23,7 @@ from ..services.strategies import (
     create_strategy as svc_create,
     valid_hhmm,
 )
-from . import authed_user, fail_resp, json_resp, parse_body, parse_int
+from . import authed_user, body_str, fail_resp, fmt_dt, json_resp, parse_body, parse_int
 
 
 def _payload(flow: BorrowFlow) -> dict:
@@ -53,10 +53,10 @@ def _payload(flow: BorrowFlow) -> dict:
         if flow.approver
         else None,
         "handle_comment": flow.handle_comment,
-        "handled_at": flow.handled_at.strftime("%Y-%m-%dT%H:%M:%S")
-        if flow.handled_at
-        else None,
-        "created_at": flow.created_at.strftime("%Y-%m-%dT%H:%M:%S"),
+        # 时间序列化统一走 fmt_dt（Asia/Shanghai 墙钟，R3-B3）：
+        # 此前手工 strftime 输出 UTC 墙钟，前端早 8 小时展示（B-P1-3）。
+        "handled_at": fmt_dt(flow.handled_at),
+        "created_at": fmt_dt(flow.created_at),
     }
 
 
@@ -67,9 +67,12 @@ def _can_approve(user, flow: BorrowFlow) -> bool:
 
 
 def borrow_flow_list_view(request):
-    """单视图双方法：GET 列表 / POST 发起借用申请。"""
+    """单视图双方法：GET 列表 / POST 发起借用申请；其余方法 42201（R3-B16）。"""
     if request.method == "POST":
         return borrow_flow_create_view(request)
+    if request.method != "GET":
+        # 此前 DELETE/PUT 等会被当作列表请求执行（读端点无方法守卫，B-P3-5）
+        return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
     user, resp = authed_user(request)
     if resp:
         return resp
@@ -112,7 +115,8 @@ def borrow_flow_create_view(request):
         return fail_resp(CODE_UNPROCESSABLE, "目标分支不存在")
     if target_branch.version_id == strategy.branch.version_id:
         return fail_resp(CODE_UNPROCESSABLE, "目标版本不能是被借用策略所属版本")
-    new_build_time = (body.get("new_build_time") or "").strip()
+    # 类型守卫（R3-B2）：非字符串归一为 ""，走既有格式校验 42201，杜绝 .strip() 500
+    new_build_time = body_str(body, "new_build_time")
     if not valid_hhmm(new_build_time):
         return fail_resp(CODE_UNPROCESSABLE, "新构建时间格式应为 HH:MM")
     if BorrowFlow.objects.filter(
@@ -127,7 +131,7 @@ def borrow_flow_create_view(request):
                 borrower=user,
                 target_branch=target_branch,
                 new_build_time=new_build_time,
-                reason=(body.get("reason") or "").strip()[:500],
+                reason=body_str(body, "reason", max_len=500),
             )
     except IntegrityError:
         return fail_resp(CODE_ASSOCIATION, "该策略已有待审批的借用申请，请勿重复发起")
@@ -135,6 +139,9 @@ def borrow_flow_create_view(request):
 
 
 def _handle_view(request, fid, approve: bool):
+    # 方法守卫（R3-B16）：审批是写操作，仅 POST（此前 GET 也会执行审批产生副作用）
+    if request.method != "POST":
+        return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
     user, resp = authed_user(request)
     if resp:
         return resp
@@ -145,7 +152,8 @@ def _handle_view(request, fid, approve: bool):
     if not _can_approve(user, flow):
         return fail_resp(CODE_FORBIDDEN, "仅被借用策略所属版本负责人或管理员可审批")
     body = parse_body(request)
-    comment = (body.get("comment") or "").strip()[:255]
+    # 类型守卫（R3-B2）：非字符串归一为 ""，驳回时走"必须填写审批意见" 42201
+    comment = body_str(body, "comment", max_len=255)
     if not approve and not comment:
         return fail_resp(CODE_UNPROCESSABLE, "驳回时必须填写审批意见")
 
@@ -170,13 +178,16 @@ def _handle_view(request, fid, approve: bool):
                 return fail_resp(CODE_NOT_FOUND, "策略模板不存在")
             name = f"{flow.strategy.name}({flow.target_branch.version.name}借用)"
             try:
+                # 推送配置从源策略复制（R3-B15）：此前固定 push_mode="normal" 且
+                # 丢弃 push_start_time，sync/固定推送策略被借用后推送配置丢失（B-P3-4）。
                 svc_create(
                     flow.target_branch,
                     template,
                     user,
                     name=name,
                     build_start_time=flow.new_build_time,
-                    push_mode="normal",
+                    push_start_time=flow.strategy.push_start_time,
+                    push_mode=flow.strategy.push_mode,
                 )
             except StrategyValidationError as exc:
                 # 校验不过（资源互斥/阶段冲突）→ 回滚抢占（保持待审批），回传统一错误码

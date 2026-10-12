@@ -124,7 +124,16 @@ def latest_instances_for_branch(branch: Branch) -> Dict[int, Instance]:
 # ---------- 序列化辅助 ----------
 
 def _dt(value) -> Optional[str]:
-    return value.strftime(_FMT) if value else None
+    """时间序列化：Asia/Shanghai 墙钟、不带 offset（R3-B3 统一口径）。
+
+    此前直接对 aware UTC datetime strftime，输出早 8 小时（B-P1-3）；
+    naive 值防御性按墙钟直出（USE_TZ=True 下 DB 读出恒为 aware）。
+    """
+    if not value:
+        return None
+    if timezone.is_naive(value):
+        return value.strftime(_FMT)
+    return timezone.localtime(value).strftime(_FMT)
 
 
 def serialize_instance(inst: Instance) -> Dict:

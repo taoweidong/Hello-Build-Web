@@ -26,6 +26,9 @@ def _conflicted_ids(items, build_minutes, push_minutes, sync_buffer_minutes, ds)
 
 
 def plan_view(request):
+    # 方法守卫（R3-B16）：读端点仅 GET，非 GET 不再执行聚合查询
+    if request.method != "GET":
+        return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
     user, resp = authed_user(request)
     if resp:
         return resp

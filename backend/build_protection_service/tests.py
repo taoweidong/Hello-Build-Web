@@ -596,16 +596,24 @@ class SeedTests(TestCase):
     def test_seed_idempotent_when_run_twice(self):
         User.objects.all().delete()
         call_command("seed")
-        call_command("seed")
         # 重复运行不报错、不重复
         self.assertEqual(Version.objects.count(), 3)
         self.assertEqual(Branch.objects.count(), 9)
         self.assertEqual(Strategy.objects.count(), 23)
         self.assertEqual(SlotTemplate.objects.count(), 4)
+        # 测量点修正（R3-B8）：首跑后立即取样，第二/第三跑均立即比对——
+        # 旧测量点在第二跑之后才取样，恰好测不到"released 行第二跑被复活为
+        # reserved"的 1→2 增量（2026-10-13 评估 B-P2-5）。
         booking_count = SlotBooking.objects.count()
+        released_count = SlotBooking.objects.filter(status="released").count()
         self.assertGreater(booking_count, 0)
         call_command("seed")
         self.assertEqual(SlotBooking.objects.count(), booking_count)
+        # released 历史样例不被复活为 reserved
+        self.assertEqual(SlotBooking.objects.filter(status="released").count(), released_count)
+        call_command("seed")
+        self.assertEqual(SlotBooking.objects.count(), booking_count)
+        self.assertEqual(SlotBooking.objects.filter(status="released").count(), released_count)
 
 
 class ReportApiTests(ConfigAwareTestCase):
@@ -1084,6 +1092,12 @@ class AdminVersionUserApiTests(ConfigAwareTestCase):
 
     def test_update_user_role_and_password(self):
         self._auth(self.token)
+        # R3-B6（2026-10-13）：绑定版本的 PM 不可直接降级/停用（防"无主版本"），
+        # 需先移交版本 PM——本用例先移交给 pm2，再验证原有的角色/密码/停用行为。
+        resp = self.client.put(f"/api/admin/versions/{self.version.id}", {
+            "pm_user_id": self.pm2.id,
+        }, format="json")
+        self.assertEqual(resp.status_code, 200)
         # is_active 为严格布尔契约：字符串 "false" 会被 422 拒绝（见 tests_quality_round2）
         resp = self.client.patch(f"/api/admin/users/{self.pm.id}", {
             "role": "tester", "password": "newpass123", "is_active": False,

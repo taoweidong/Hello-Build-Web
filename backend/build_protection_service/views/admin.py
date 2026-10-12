@@ -18,12 +18,14 @@ from ..services.strategies import (
     StrategyValidationError,
     create_strategy as svc_create_strategy,
     strategy_payload,
+    toggle_strategy as svc_toggle_strategy,
     update_strategy as svc_update_strategy,
 )
 from . import (
     authed_user,
     fail_resp,
     fetch_by_id,
+    fmt_dt,
     json_resp,
     parse_body,
     parse_int,
@@ -198,6 +200,9 @@ def users_view(request):
         # 密码必填：不再回退默认弱口令 "123456"（2026-10-12 评估 B-P1-14）
         if not isinstance(password, str) or not password.strip():
             return fail_resp(CODE_UNPROCESSABLE, "密码必填")
+        # 最小密码长度（R3-B13）：AUTH_PASSWORD_VALIDATORS 为空，此前 "1" 也可过
+        if len(password) < 6:
+            return fail_resp(CODE_UNPROCESSABLE, "密码长度至少 6 位")
         if role not in _VALID_ROLES:
             return fail_resp(CODE_UNPROCESSABLE, "非法角色")
         if not isinstance(display_name, str):
@@ -231,9 +236,14 @@ def update_user(request, uid):
     body = parse_body(request)
     # 记录变更前身份，用于"最后一个 admin"保护判定
     orig_role, orig_is_active = u.role, u.is_active
-    if body.get("password"):
+    # 密码口径（R3-B13/B18）：显式 null 视为未提供；空串不再静默忽略（与
+    # create"密码必填"一致，42201）；长度 <6 拒绝（最小密码策略，不动
+    # AUTH_PASSWORD_VALIDATORS 避免影响 Django 内部表单）。
+    if body.get("password") is not None:
         if not isinstance(body["password"], str):
             return fail_resp(CODE_UNPROCESSABLE, "密码应为字符串")
+        if len(body["password"]) < 6:
+            return fail_resp(CODE_UNPROCESSABLE, "密码长度至少 6 位")
         u.set_password(body["password"])
     if body.get("role") is not None:
         if body["role"] not in _VALID_ROLES:
@@ -259,6 +269,12 @@ def update_user(request, uid):
             others = User.objects.filter(role="admin", is_active=True).exclude(id=u.id).exists()
             if not others:
                 return fail_resp(CODE_DUPLICATE, "系统至少保留一名启用状态的管理员")
+        # 绑定版本 PM 守卫（R3-B6）：目标状态不再是"启用中的 pm"而该用户仍是某
+        # Version.pm_user 时会制造"无主版本"（版本 PM 必须为 pm 角色的不变量被
+        # 绕过、借用流无人可审批，2026-10-13 评估 B-P2-3），入口拒绝，需先移交。
+        if (u.role != "pm" or u.is_active is False) \
+                and Version.objects.filter(pm_user=u).exists():
+            return fail_resp(CODE_DUPLICATE, "该用户仍绑定版本 PM，请先移交版本后再变更")
         u.save()
     _admin_log(user, "update_user", target_type="user", target_id=uid)
     return json_resp(ok({"id": u.id, "username": u.username, "role": u.role, "is_active": u.is_active}))
@@ -422,11 +438,15 @@ def config_view(request):
         body = parse_body(request)
         for key in ("build_minutes", "push_minutes", "sync_buffer_minutes"):
             if body.get(key) is not None:
-                try:
-                    set_config(key, int(body[key]))
-                except (TypeError, ValueError):
-                    return fail_resp(CODE_UNPROCESSABLE, f"{key} 应为整数")
-        _admin_log(user, "update_config", target_type="config", detail=str(body))
+                # 值域校验（R3-B7）：int() 会把 true→1、45.7→45 截断、负数照单
+                # 入库（build_minutes=-100 令全部时间线推导失真，B-P2-4）；
+                # 改用 parse_int（拒 bool/float/非数字串）+ 非负（与模板
+                # minutes 非负校验口径一致，0 为合法"零时长"配置）。
+                val = parse_int(body[key])
+                if val is None or val < 0:
+                    return fail_resp(CODE_UNPROCESSABLE, f"{key} 应为非负整数")
+                set_config(key, val)
+        _admin_log(user, "update_config", target_type="config", detail=str(body)[:255])
         return json_resp(ok(_config_payload()))
     return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
 
@@ -453,7 +473,10 @@ def logs_view(request, kind):
                 "target_type": log.target_type,
                 "target_id": log.target_id,
                 "detail": log.detail,
-                "created_at": log.created_at,
+                # 统一走 fmt_dt 输出上海墙钟（R3-B3）：此前 datetime 直塞
+                # JsonResponse 经 DjangoJSONEncoder 输出带 +00:00 的 UTC 串，
+                # 与其他端点"%Y-%m-%dT%H:%M:%S 无 offset"契约不一致（B-P1-3）。
+                "created_at": fmt_dt(log.created_at),
             })
     else:
         qs = SecurityLog.objects.order_by("-id")[:200]
@@ -464,7 +487,7 @@ def logs_view(request, kind):
                 "action": log.action,
                 "target_type": "",
                 "detail": log.detail,
-                "created_at": log.created_at,
+                "created_at": fmt_dt(log.created_at),
             })
     return json_resp(ok(items))
 
@@ -537,20 +560,13 @@ def _toggle_admin_strategy(request, user, sid):
     s = Strategy.objects.select_related("branch", "branch__version", "template").filter(id=sid).first()
     if not s:
         return fail_resp(CODE_NOT_FOUND, "策略不存在")
-    s.enabled = not s.enabled
+    # R3-B4：与 PM 入口共用 services.strategies.toggle_strategy（启用方向重跑
+    # 互斥/阶段校验 + 条件 UPDATE 防并发 + IntegrityError → 40902 兜底），
+    # 消除视图层读改写竞态副本。
     try:
-        # 启用可能撞 uniq_active_strategy_branch_time（同分支同刻已有启用策略），
-        # 与 PM 路由 toggle 同款兜底，避免裸 IntegrityError → 500 破坏统一契约；
-        # 包子事务防止冲突污染外层事务（否则后续查询报 TransactionManagementError）。
-        with transaction.atomic():
-            s.save()
-    except IntegrityError as exc:
-        msg = str(exc)
-        if "strategy.branch_id" in msg and "build_start_time" in msg:
-            return fail_resp(
-                CODE_DUPLICATE, "该分支已存在同一构建时刻的启用策略，无法启用"
-            )
-        raise
+        svc_toggle_strategy(s)
+    except StrategyValidationError as exc:
+        return validation_error_resp(exc)
     _admin_log(user, "toggle_strategy", target_type="strategy", target_id=sid)
     return json_resp(ok(strategy_payload(s)))
 

@@ -27,24 +27,11 @@ from ..services.slot_booking import (
     serialize_booking_row,
     serialize_template,
 )
-from . import authed_user, fail_resp, first_error, json_resp, parse_int, require_admin
+from . import authed_user, fail_resp, first_error, json_resp, paginate_qs, parse_int, require_admin
 
 logger = logging.getLogger("build_protection_service")
 
-
-def _paginate(qs, request, serializer) -> dict:
-    """简单页码分页：page 从 1 起，page_size 默认 20 最大 100。"""
-    try:
-        page = max(1, int(request.query_params.get("page", 1)))
-    except (TypeError, ValueError):
-        page = 1
-    try:
-        page_size = min(100, max(1, int(request.query_params.get("page_size", 20))))
-    except (TypeError, ValueError):
-        page_size = 20
-    total = qs.count()
-    rows = qs[(page - 1) * page_size: page * page_size]
-    return {"items": [serializer(r) for r in rows], "total": total, "page": page, "page_size": page_size}
+# 分页实现已提升为 views 包共享助手 paginate_qs（R3-B11 收敛，reports 同款复用）
 
 
 class SlotTemplateViewSet(
@@ -165,7 +152,7 @@ class SlotBookingViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
         if resp:
             return resp
         qs = self.get_queryset().filter(user=user).order_by("-date", "-id")
-        return json_resp(ok(_paginate(qs, request, serialize_booking_row)))
+        return json_resp(ok(paginate_qs(qs, request, serialize_booking_row)))
 
     def list(self, request, *args, **kwargs):
         user, resp = authed_user(request)
@@ -197,11 +184,14 @@ class SlotBookingViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
             if status not in ("reserved", "released"):
                 return fail_resp(CODE_UNPROCESSABLE, "status 应为 reserved 或 released")
             qs = qs.filter(status=status)
-        return json_resp(ok(_paginate(qs.order_by("-date", "-id"), request, serialize_booking_row)))
+        return json_resp(ok(paginate_qs(qs.order_by("-date", "-id"), request, serialize_booking_row)))
 
 
 def slot_calendar(request):
     """月历聚合：GET /api/slot-calendar?month=YYYY-MM（缺省当月）。"""
+    # 方法守卫（R3-B16）：读端点仅 GET
+    if request.method != "GET":
+        return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
     user, resp = authed_user(request)
     if resp:
         return resp

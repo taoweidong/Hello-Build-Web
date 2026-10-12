@@ -28,6 +28,19 @@ def _err(code: int, message: str) -> dict:
     return {"code": code, "message": message}
 
 
+def _fmt_dt(value):
+    """时间序列化：Asia/Shanghai 墙钟、不带 offset（R3-B3 统一口径）。
+
+    与 views.fmt_dt 同语义；服务层不反向依赖视图层，故本地实现同款
+    （此前直接对 aware UTC datetime strftime，输出早 8 小时，B-P1-3）。
+    """
+    if not value:
+        return None
+    if timezone.is_naive(value):
+        return value.strftime(_FMT_DT)
+    return timezone.localtime(value).strftime(_FMT_DT)
+
+
 def _today() -> date_cls:
     return timezone.localdate()
 
@@ -89,7 +102,7 @@ def _booking_dict(b: SlotBooking, viewer_id) -> dict:
         "branch_id": b.branch_id,
         "branch_name": b.branch.name,
         "is_mine": b.user_id == viewer_id,
-        "created_at": b.created_at.strftime(_FMT_DT) if b.created_at else None,
+        "created_at": _fmt_dt(b.created_at),
     }
 
 
@@ -110,8 +123,8 @@ def serialize_booking_row(b: SlotBooking) -> dict:
         "branch_name": b.branch.name,
         "user_id": b.user_id,
         "user_name": display_name(b.user),
-        "created_at": b.created_at.strftime(_FMT_DT) if b.created_at else None,
-        "released_at": b.released_at.strftime(_FMT_DT) if b.released_at else None,
+        "created_at": _fmt_dt(b.created_at),
+        "released_at": _fmt_dt(b.released_at),
         "release_reason": b.release_reason,
     }
 
@@ -262,10 +275,18 @@ def release_booking(booking: SlotBooking, actor, release_reason: str) -> tuple[O
     reason = str(release_reason or "").strip()
     if not is_owner and not reason:
         return None, _err(CODE_UNPROCESSABLE, "管理员释放他人抢占需填写释放原因")
+    released_at = timezone.now()
+    # 条件 UPDATE 抢占（R3-B9，对齐借用审批/结论提交范式）：入口的 status 检查是
+    # check-then-act，并发双释放此前均成功且后者覆盖 released_at/reason（B-P2-8）；
+    # 现在仅 status 仍为 reserved 时更新，rowcount=0 按既有"非待占用状态"语义报错。
+    updated = SlotBooking.objects.filter(id=booking.id, status="reserved").update(
+        status="released", released_at=released_at, release_reason=reason,
+    )
+    if not updated:
+        return None, _err(CODE_UNPROCESSABLE, "该记录不是待占用状态，无法释放")
     booking.status = "released"
-    booking.released_at = timezone.now()
+    booking.released_at = released_at
     booking.release_reason = reason
-    booking.save(update_fields=["status", "released_at", "release_reason"])
     logger.info(
         "[slot-booking] release id=%s actor=%s owner=%s reason=%s",
         booking.id, actor.username, booking.user.username, reason,

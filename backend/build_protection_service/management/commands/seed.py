@@ -317,8 +317,11 @@ class Command(BaseCommand):
     def _seed_slot_bookings(self):
         """仿真实抢占记录：本月起约两周内多用户多窗口轮转抢占 + 历史释放样例。
 
-        幂等性：轮转记录按 (date, template, reserved) get_or_create；释放样例
-        仅在已释放记录少于 3 条时，将最早的历史 reserved 记录补标为 released。
+        幂等性（R3-B8）：轮转记录以 (date, template) 为锚 get_or_create，status
+        只放 defaults 不进 lookup——此前 status 在 lookup 里，首跑末尾释放的历史
+        记录第二跑 lookup miss 被重建为 reserved（released+reserved 双记录，
+        2026-10-13 评估 B-P2-5）；释放样例仅在已释放记录少于 3 条时，将最早的
+        历史 reserved 记录补标为 released。
         """
         templates = {t.name: t for t in SlotTemplate.objects.all()}
         if "上午窗口" not in templates:
@@ -371,10 +374,10 @@ class Command(BaseCommand):
                 SlotBooking.objects.get_or_create(
                     date=d,
                     template=tpl,
-                    status="reserved",
                     defaults={
                         "start_snapshot": tpl.start_time,
                         "end_snapshot": tpl.end_time,
+                        "status": "reserved",
                         "user": user,
                         "purpose": purpose_tpl.format(v=version.name),
                         "version": version,
@@ -391,10 +394,10 @@ class Command(BaseCommand):
                     SlotBooking.objects.get_or_create(
                         date=d,
                         template=tpl,
-                        status="reserved",
                         defaults={
                             "start_snapshot": tpl.start_time,
                             "end_snapshot": tpl.end_time,
+                            "status": "reserved",
                             "user": user,
                             "purpose": f"{version.name} 依赖库升级维护窗口",
                             "version": version,

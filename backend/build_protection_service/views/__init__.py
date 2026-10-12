@@ -3,6 +3,7 @@ import logging
 
 from django.contrib.auth import get_user_model
 from django.http import JsonResponse
+from django.utils import timezone
 
 from ..api import err
 from ..errors import CODE_FORBIDDEN, CODE_NOT_FOUND, CODE_STATUS, CODE_UNAUTHENTICATED, CODE_UNPROCESSABLE
@@ -12,6 +13,9 @@ from ..parsing import parse_int  # noqa: F401  re-export：视图层沿用 from 
 logger = logging.getLogger(__name__)
 
 User = get_user_model()
+
+# 对外时间戳统一格式（Asia/Shanghai 墙钟、不带 offset，见 fmt_dt 与 R3-B3 口径）
+_FMT_DT = "%Y-%m-%dT%H:%M:%S"
 
 
 def json_resp(payload, status=200):
@@ -41,8 +45,20 @@ def require_admin(user, message="仅管理员可操作"):
 
 
 def fmt_dt(dt):
-    """统一时间序列化：'%Y-%m-%dT%H:%M:%S'，空值返回 None。"""
-    return dt.strftime("%Y-%m-%dT%H:%M:%S") if dt else None
+    """统一时间序列化：Asia/Shanghai 墙钟 '%Y-%m-%dT%H:%M:%S'（不带 offset），空值返回 None。
+
+    必须先 timezone.localtime 再 strftime（R3-B3，2026-10-13 评估 B-P1-3）：
+    USE_TZ=True 下 ORM 读出的是 aware UTC datetime，直接 strftime 输出 UTC 墙钟
+    （比上海早 8 小时）且无时区标记，前端按本地时间解析必然错位。本函数与
+    DRF DateTimeField（经 enforce_timezone 输出上海墙钟）口径一致。
+    """
+    if not dt:
+        return None
+    if timezone.is_naive(dt):
+        # USE_TZ=True 下 DB 读出恒为 aware；naive 值防御性按墙钟直出，避免
+        # localtime() 对 naive 抛 ValueError 冒成 500。
+        return dt.strftime(_FMT_DT)
+    return timezone.localtime(dt).strftime(_FMT_DT)
 
 
 def validation_error_resp(exc):
@@ -87,22 +103,73 @@ def security_log(action, username="", detail="", request=None):
         meta = f"ip={ip} ua={ua}"
         detail = f"{detail}; {meta}" if detail else meta
     try:
-        SecurityLog.objects.create(username=username or "", action=action, detail=detail or "")
+        # 拼接后统一截断到字段上限（R3-B12）：业务 detail + ip + ua(200) 可超
+        # max_length=255，SQLite 放行但迁 Postgres 即报错（2026-10-13 评估 B-P3-3）。
+        SecurityLog.objects.create(
+            username=username or "", action=action, detail=(detail or "")[:255]
+        )
     except Exception:
         # exception 保留完整堆栈：审计旁路若静默失败，没有堆栈无法排查
         logger.exception("安全日志写入失败：action=%s username=%s", action, username)
 
 
 def parse_body(request):
-    """普通 Django 视图无 request.data，手动解析 JSON body；非法 JSON 视为空 body。"""
+    """普通 Django 视图无 request.data，手动解析 JSON body。
+
+    非法 JSON 与「合法 JSON 但非对象」（如 [1,2] / "str" / null / 42）统一归一为
+    {}（R3-B2，2026-10-13 评估 B-P1-2）：调用方 body.get(...) 按既有"缺参/必填"
+    分支返回 42201，杜绝非 dict 载荷上 .get 冒 AttributeError 变 500。
+    """
     import json
 
-    body = {}
     try:
         body = json.loads(request.body or "{}")
     except (ValueError, TypeError):
-        body = {}
-    return body
+        return {}
+    return body if isinstance(body, dict) else {}
+
+
+def body_str(body, key, *, default="", max_len=None, strip=True):
+    """从 body 安全提取字符串字段（R3-B2 共享助手）：非 str 一律回退 default。
+
+    - 口径：非字符串值取 "" 走调用点既有「必填/非法」校验分支（42201），
+      不引入新错误码，杜绝 (123 or "").strip() / {}.encode() 之类 500；
+    - strip=False 保留原值（密码/base64 截图等首尾空白有语义的场景）；
+    - max_len 按调用点既有语义超长截断（不拒绝）。
+    """
+    value = body.get(key) if isinstance(body, dict) else None
+    if not isinstance(value, str):
+        return default
+    if strip:
+        value = value.strip()
+    if max_len is not None:
+        value = value[:max_len]
+    return value
+
+
+# 分页页大小常量（集中定义，R3-B11）
+PAGE_SIZE_DEFAULT = 20
+PAGE_SIZE_MAX = 100
+
+
+def paginate_qs(qs, request, serializer) -> dict:
+    """简单页码分页共享助手（R3-B11 收敛：原 slot_booking._paginate 与 reports
+    内联分页两份实现合一，行为保持不变）。
+
+    page 从 1 起（非法/缺省回退 1）；page_size 默认 20、最大 100（非法/缺省/0
+    回退默认值）；serializer 为逐行序列化可调用对象。返回 {items,total,page,page_size}。
+    """
+    page = max(1, parse_int(request.query_params.get("page")) or 1)
+    page_size = min(PAGE_SIZE_MAX,
+                    max(1, parse_int(request.query_params.get("page_size")) or PAGE_SIZE_DEFAULT))
+    total = qs.count()
+    rows = qs[(page - 1) * page_size: page * page_size]
+    return {
+        "items": [serializer(r) for r in rows],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 def authed_user(request):

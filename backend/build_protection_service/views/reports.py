@@ -12,7 +12,7 @@ from ..filters.report import ReportFilter
 from ..models import VerificationReport
 from ..serializers.report import ReportRevisionLogSerializer, ReportSerializer
 from ..services.report_service import ReportConclusionLockedError, ReportService
-from . import authed_user, fail_resp, first_error, json_resp, parse_int
+from . import authed_user, body_str, fail_resp, first_error, json_resp, paginate_qs
 from ..errors import CODE_FORBIDDEN, CODE_NOT_FOUND, CODE_UNPROCESSABLE
 
 logger = logging.getLogger("build_protection_service")
@@ -60,14 +60,11 @@ class ReportViewSet(
         qs = self.filter_queryset(self.get_queryset())
         raw_page = request.query_params.get("page")
         if raw_page:
-            page = max(1, parse_int(raw_page) or 1)
-            page_size = min(100, max(1, parse_int(request.query_params.get("page_size")) or 20))
-            total = qs.count()
-            rows = qs[(page - 1) * page_size: page * page_size]
-            return json_resp(ok({
-                "items": ReportSerializer(rows, many=True).data,
-                "total": total, "page": page, "page_size": page_size,
-            }))
+            # 分页收敛到共享助手 paginate_qs（R3-B11，原内联实现与
+            # slot_booking._paginate 两份合一），响应结构与回退语义保持不变
+            return json_resp(ok(paginate_qs(
+                qs, request, lambda r: ReportSerializer(r).data
+            )))
         return json_resp(ok(ReportSerializer(qs, many=True).data))
 
     def retrieve(self, request, *args, **kwargs):
@@ -123,7 +120,11 @@ class ReportViewSet(
             return fail_resp(CODE_NOT_FOUND, "报告不存在")
         if user.role not in WRITE_ROLES or report.created_by_username != user.username:
             return fail_resp(CODE_FORBIDDEN, "仅报告作者可发布")
-        screenshot = (request.data or {}).get("screenshot") or ""
+        # 类型守卫（R3-B2）：screenshot 传对象/数组/数字此前在 .encode() 处冒
+        # AttributeError 变 500（B-P1-2）；非 str 归一为 ""，走"缺少页面截图" 42201。
+        # base64 数据串首尾空白无语义且不 strip，保持与旧 `or ""` 完全同口径。
+        body = request.data if isinstance(request.data, dict) else {}
+        screenshot = body_str(body, "screenshot", strip=False)
         if not screenshot:
             return fail_resp(CODE_UNPROCESSABLE, "缺少页面截图")
         if len(screenshot.encode("utf-8")) > MAX_SCREENSHOT_BYTES:
