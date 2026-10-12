@@ -382,6 +382,11 @@ if (-not $pythonCmd) {
     Write-Err "未找到 python：请先安装 Python 3.11+ 并确认已在 PATH 中"
     exit 1
 }
+# 本机 PATH 中的 python 可能不是装了项目依赖的解释器（如托管 3.13 无 Django），提前告警避免后端静默失败
+& python -c "import django" > $null 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Warn "当前 PATH 中的 python 未安装 Django：请先激活项目虚拟环境，或改用已安装依赖的 Python（否则后端无法启动）"
+}
 $firstTime = -not (Test-Path -LiteralPath (Join-Path $BackendDir ".env"))
 if ($firstTime) {
     Write-Warn "未检测到 backend/.env，从 .env.example 自动生成（首次运行）"
