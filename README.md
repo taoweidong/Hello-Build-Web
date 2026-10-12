@@ -32,6 +32,16 @@
 
 ## 🚀 快速开始
 
+**一键启动（Windows，仓库根目录，推荐）**
+```bat
+start.bat                :: 双击或命令行执行：同时启动前后端并自动打开浏览器
+start.bat -Stop          :: 停止前后端服务
+start.bat -Status        :: 查看服务运行状态
+```
+> 首次运行会自动从 `backend/.env.example` 生成 `.env` 并执行首次初始化（建库 + 种子数据）；服务以后台进程运行，日志与 PID 文件落在根目录 `logs/`。个别环境的 PowerShell 5.1 对输出重定向参数有已知缺陷，脚本会自动降级为「最小化窗口」运行，实时输出点击任务栏对应窗口查看。PowerShell 用户可等价使用 `.\start.ps1`（另支持 `-Restart` / `-NoBrowser` / `-BackendPort` / `-FrontendPort`）。
+
+**手动分步启动**
+
 **后端**（`backend/`）
 ```bash
 cd backend

@@ -18,8 +18,19 @@
 - `docs/superpowers/specs/` 与 `docs/superpowers/plans/` — 每个功能一份设计文档 + 一份 checkbox 实施计划。**改某功能前先读对应 spec**；新功能应同样补文档。
 - `docs/code-quality-assessment-2026-10-11.md` — 第一轮代码质量评估报告；`docs/code-quality-assessment-2026-10-12.md` — 第二轮复评与分阶段优化方案（对应 spec：`specs/2026-10-12-code-quality-optimization-round2-design.md`）。
 - `prototype/` — 静态 HTML 原型；`README.md`、`业务原始背景.md` — 领域背景。
+- `start.ps1` / `start.bat` / `stop.bat` — Windows 一键启动 / 停止前后端开发服务（仓库根目录执行，日志与 PID 落 `logs/`，首次运行自动初始化 `.env` 与数据库）。
 
 ## 常用命令
+
+一键启动（Windows，仓库根目录）：
+```powershell
+.\start.ps1              # 同时启动前后端（后台进程，日志/PID 落 logs/），就绪后打开浏览器
+.\start.ps1 -Stop        # 停止：按 PID 进程树结束，端口占用兜底
+.\start.ps1 -Status      # 查看运行状态
+.\start.ps1 -Restart     # 先停后启（另支持 -NoBrowser / -BackendPort / -FrontendPort）
+start.bat                # 双击等价入口；stop.bat 等价于 -Stop
+```
+> 首次运行自动生成 `backend/.env` 并执行 `scripts/prestart.ps1`；非首次启动会静默 `migrate` 应用已提交迁移，并用 `makemigrations --check` 检查未生成的模型迁移（有则告警，按约定需先生成并提交）。个别环境 PowerShell 5.1 的 `Start-Process -RedirectStandard*` 有已知缺陷（进程创建前抛字典关键字冲突），脚本自动降级为最小化窗口运行，不影响启动结果。
 
 后端（在 `backend/` 下）：
 ```bash
