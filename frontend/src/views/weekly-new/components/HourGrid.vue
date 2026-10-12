@@ -63,29 +63,10 @@
 </template>
 
 <script setup lang="ts">
+// 任务芯片/单元格类型已随数据逻辑抽取至 composables/useWeeklyPanorama（两页网格共用同一契约）
+import type { HourTaskItem, WeekCell } from "@/composables/useWeeklyPanorama";
+
 defineOptions({ name: "WeeklyNewHourGrid" });
-
-export interface HourTaskItem {
-  key: string;
-  /** 所属策略 id（维护人员点击卡片进入编辑） */
-  strategyId: number;
-  kind: "build" | "push";
-  stageLabel: string;
-  name: string;
-  time: string;
-  title: string;
-  color: string;
-  /** 卡片补充信息：所属分支、冒烟模板 */
-  branchName: string;
-  templateName: string;
-}
-
-export interface WeekCell {
-  date: string;
-  /** 该日该时刻是否已早于当前时间（过期历史任务：置灰删除线，仅可查看详情） */
-  past: boolean;
-  tasks: HourTaskItem[];
-}
 
 defineProps<{
   days: { date: string; weekday: string }[];

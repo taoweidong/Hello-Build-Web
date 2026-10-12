@@ -8,6 +8,11 @@ const router = useRouter();
 
 const entries = [
   {
+    title: "策略周报",
+    desc: "深色科技风周报看板：KPI / 分支负载 / 时段趋势 / 标签云",
+    path: "/weekly-report/index"
+  },
+  {
     title: "版本策略全景(New)",
     desc: "时间点 × 周一~周日 调度全景，对外查看 / 对内维护 / 过期置灰",
     path: "/weekly-new/index"
@@ -54,25 +59,30 @@ const entries = [
 .welcome {
   /* 布局 .main-content 已提供 12px 外边距，此处不再叠加 */
 }
+
 .title {
-  color: var(--el-text-color-primary);
   margin-bottom: 4px;
+  color: var(--el-text-color-primary);
 }
+
 .sub {
-  color: var(--el-text-color-secondary);
   margin-bottom: 20px;
+  color: var(--el-text-color-secondary);
 }
+
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 16px;
 }
+
 .card {
   padding: 18px;
 }
+
 .card-title {
-  color: var(--el-text-color-primary);
-  font-weight: 600;
   margin-bottom: 6px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
 }
 </style>

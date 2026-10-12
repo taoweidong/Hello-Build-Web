@@ -15,6 +15,28 @@ export const ADMIN_ROLE = ["admin"];
 /** 业务路由（作为静态路由合并进路由表，仍走基座 meta.roles 角色过滤） */
 export const asyncRoutes = [
   {
+    path: "/weekly-report",
+    name: "WeeklyReport",
+    component: Layout,
+    redirect: "/weekly-report/index",
+    meta: {
+      icon: "ep/data-analysis",
+      title: "策略周报",
+      rank: 6
+    },
+    children: [
+      {
+        path: "/weekly-report/index",
+        name: "WeeklyReportIndex",
+        component: () => import("@/views/weekly-report/index.vue"),
+        meta: {
+          title: "策略周报",
+          roles: ALL_ROLES
+        }
+      }
+    ]
+  },
+  {
     path: "/weekly-new",
     name: "WeeklyNew",
     component: Layout,
@@ -22,7 +44,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/timer",
       title: "版本策略全景(New)",
-      rank: 6
+      rank: 7
     },
     children: [
       {
@@ -44,7 +66,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/tickets",
       title: "借用审批",
-      rank: 7
+      rank: 8
     },
     children: [
       {
@@ -66,7 +88,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/set-up",
       title: "策略配置",
-      rank: 8
+      rank: 9
     },
     children: [
       {
@@ -88,7 +110,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/notebook",
       title: "验证报告",
-      rank: 9
+      rank: 10
     },
     children: [
       {
@@ -110,7 +132,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/setting",
       title: "系统管理",
-      rank: 10
+      rank: 11
     },
     children: [
       {
@@ -132,7 +154,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/document",
       title: "日志中心",
-      rank: 11
+      rank: 12
     },
     children: [
       {
@@ -154,7 +176,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/connection",
       title: "分支配置",
-      rank: 12
+      rank: 13
     },
     children: [
       {
@@ -176,7 +198,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/alarm-clock",
       title: "时段抢占",
-      rank: 13
+      rank: 14
     },
     children: [
       {
@@ -198,7 +220,7 @@ export const asyncRoutes = [
     meta: {
       icon: "ep/list",
       title: "时段配置",
-      rank: 14
+      rank: 15
     },
     children: [
       {
