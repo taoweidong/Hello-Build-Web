@@ -241,6 +241,8 @@ async function loadBranches() {
   }
   if (!selectedId.value && branches.value.length) {
     selectedId.value = branches.value[0].id;
+    // 默认选中绕过了 selectBranch，需在此补加载详情配置
+    await loadConfig();
   }
   if (!branches.value.length) {
     config.value = undefined;
@@ -339,6 +341,9 @@ watch(selectedId, id => {
 });
 
 onMounted(() => {
+  // 首屏必须拉分支列表：loadBranches 自页面诞生起就无任何调用点
+  // （2026-10-13 全量巡检发现——接口 200 有数据，页面恒显「暂无分支」）
+  void loadBranches();
   document.addEventListener("visibilitychange", onVisibilityChange);
 });
 

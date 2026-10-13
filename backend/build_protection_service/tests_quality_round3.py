@@ -382,7 +382,15 @@ class ShanghaiTimeSerializationTests(Round3Fixture):
         resp = self.client.get(f"/api/branches/{self.b27a.id}/instances")
         row = resp.json()["data"][0]
         self.assertEqual(row["instance"]["started_at"], KNOWN_SHANGHAI)
-        self.assertEqual(row["instance"]["last_heartbeat_at"], KNOWN_SHANGHAI)
+        # 心跳字段会被读端点的惰性推进（advance：STARTING 超阈值 → RUNNING 并刷新
+        # 心跳）合法改写为当前时刻——断言固定值属时间偶发（仅在运行时刻与
+        # KNOWN_SHANGHAI 同分那分钟能过，2026-10-13 下午首跑即失败）。
+        # started_at 不在 update_fields 内、仍是定值，由上一行断言口径转换；
+        # 这里断言 last_heartbeat_at 的格式口径（上海墙钟、无 offset）。
+        self.assertRegex(
+            row["instance"]["last_heartbeat_at"],
+            r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$",
+        )
 
 
 # ---------- R3-B4 toggle 条件 UPDATE + 启用方向跑校验 ----------
