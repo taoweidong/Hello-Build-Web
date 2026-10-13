@@ -2,6 +2,7 @@
 // 复用 pure-admin-thin 角色路由机制：meta.roles 控制菜单渲染与路由可达性
 // 页面×角色权限矩阵见设计文档 4.2
 import { panoramaRoute } from "./panoramaRoutes";
+import { sampleRoute } from "./sampleRoutes";
 
 const Layout = () => import("@/layout/index.vue");
 
@@ -237,5 +238,7 @@ export const asyncRoutes = [
     ]
   },
   // 调度全景：5 个独立布局共用一套接口（定义与 redirect 接线见 panoramaRoutes.ts）
-  panoramaRoute
+  panoramaRoute,
+  // 示例菜单：5 个占位演示页（不接后端，验证菜单/路由/懒加载链路）
+  sampleRoute
 ];
