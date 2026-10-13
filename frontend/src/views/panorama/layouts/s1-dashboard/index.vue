@@ -92,25 +92,27 @@
             <span class="biz-sub">占用率 {{ kpi.occupancyRate }}%</span>
           </div>
         </template>
-        <div class="heat-grid">
-          <div class="heat-corner">时刻</div>
-          <div v-for="d in days" :key="d.date" class="heat-head">
-            {{ d.weekday }}
-          </div>
-          <template v-for="row in heatRows" :key="row.time">
-            <div class="heat-time">{{ row.time }}</div>
-            <div
-              v-for="(count, idx) in row.counts"
-              :key="idx"
-              class="heat-cell"
-              :class="{ 'heat-empty': count === 0 }"
-              :style="{ opacity: count === 0 ? 0.35 : 1 }"
-              :title="heatTitle(days[idx], row.time, count)"
-              @click="goTimeline(days[idx]?.date)"
-            >
-              {{ count || "" }}
+        <div class="biz-scroll-x">
+          <div class="heat-grid">
+            <div class="heat-corner">时刻</div>
+            <div v-for="d in days" :key="d.date" class="heat-head">
+              {{ d.weekday }}
             </div>
-          </template>
+            <template v-for="row in heatRows" :key="row.time">
+              <div class="heat-time">{{ row.time }}</div>
+              <div
+                v-for="(count, idx) in row.counts"
+                :key="idx"
+                class="heat-cell"
+                :class="{ 'heat-empty': count === 0 }"
+                :style="{ opacity: count === 0 ? 0.35 : 1 }"
+                :title="heatTitle(days[idx], row.time, count)"
+                @click="goTimeline(days[idx]?.date)"
+              >
+                {{ count || "" }}
+              </div>
+            </template>
+          </div>
         </div>
       </el-card>
 
@@ -384,6 +386,11 @@ function heatTitle(
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   gap: 12px;
   align-items: start;
+
+  /* 窄屏单列堆叠：侧栏（告警/待办）不再被压成窄条 */
+  @media (width <= 1100px) {
+    grid-template-columns: 1fr;
+  }
 }
 
 .side-stack {

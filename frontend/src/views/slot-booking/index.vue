@@ -1,5 +1,5 @@
 <template>
-  <div class="slot-booking">
+  <div class="slot-booking biz-page">
     <!-- 工具栏 -->
     <el-card shadow="never" class="toolbar-card">
       <div class="toolbar">
@@ -292,12 +292,7 @@ load();
 </script>
 
 <style scoped lang="scss">
-.slot-booking {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
+/* 页面纵向容器复用全局 .biz-page */
 .toolbar {
   display: flex;
   align-items: center;

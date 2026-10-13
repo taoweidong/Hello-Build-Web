@@ -69,37 +69,39 @@
     <el-card shadow="never">
       <el-skeleton v-if="loading" :rows="7" animated />
       <el-empty v-else-if="!monthCells.length" description="本月暂无调度数据" />
-      <div v-else class="month-grid">
-        <div v-for="w in WEEKDAY_CN_MON" :key="w" class="grid-head">
-          {{ w }}
-        </div>
-        <div
-          v-for="cell in monthCells"
-          :key="cell.date"
-          class="grid-cell"
-          :class="{ 'cell-out': !cell.inMonth, 'cell-today': cell.isToday }"
-        >
-          <div class="cell-date">
-            {{ cell.dayOfMonth }}
-            <span v-if="cell.isToday" class="today-tag">今天</span>
+      <div v-else class="biz-scroll-x">
+        <div class="month-grid">
+          <div v-for="w in WEEKDAY_CN_MON" :key="w" class="grid-head">
+            {{ w }}
           </div>
-          <div class="cell-body">
-            <ScheduleEventCard
-              v-for="e in cell.events.slice(0, 3)"
-              :key="e.id"
-              :event="e"
-              :show-meta="false"
-              @click="onEventClick"
-            />
-            <el-button
-              v-if="cell.events.length > 3"
-              text
-              size="small"
-              type="primary"
-              @click="openDayDetail(cell.date)"
-            >
-              +{{ cell.events.length - 3 }} 更多
-            </el-button>
+          <div
+            v-for="cell in monthCells"
+            :key="cell.date"
+            class="grid-cell"
+            :class="{ 'cell-out': !cell.inMonth, 'cell-today': cell.isToday }"
+          >
+            <div class="cell-date">
+              {{ cell.dayOfMonth }}
+              <span v-if="cell.isToday" class="today-tag">今天</span>
+            </div>
+            <div class="cell-body">
+              <ScheduleEventCard
+                v-for="e in cell.events.slice(0, 3)"
+                :key="e.id"
+                :event="e"
+                :show-meta="false"
+                @click="onEventClick"
+              />
+              <el-button
+                v-if="cell.events.length > 3"
+                text
+                size="small"
+                type="primary"
+                @click="openDayDetail(cell.date)"
+              >
+                +{{ cell.events.length - 3 }} 更多
+              </el-button>
+            </div>
           </div>
         </div>
       </div>
