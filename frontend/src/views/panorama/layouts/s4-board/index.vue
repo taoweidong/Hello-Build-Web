@@ -55,19 +55,19 @@
     </el-card>
 
     <div v-if="batchMode" class="batch-bar">
-      <span class="biz-sub">已选 {{ selected.length }} 项</span>
+      <span class="biz-sub">已选 {{ selectedEvents.length }} 项</span>
       <el-button
         size="small"
         type="danger"
-        :disabled="!selected.length"
-        @click="actions.batchRelease(selected)"
+        :disabled="!selectedEvents.length"
+        @click="actions.batchRelease(selectedEvents)"
       >
         批量释放
       </el-button>
       <el-button
         size="small"
-        :disabled="!selected.length"
-        @click="selected = []"
+        :disabled="!selectedEvents.length"
+        @click="selectedIds = new Set()"
       >
         清空选择
       </el-button>
@@ -218,7 +218,12 @@ const {
 
 const groupBy = ref<"version" | "branch" | "status">("version");
 const batchMode = ref(false);
-const selected = ref<ScheduleEvent[]>([]);
+// 勾选只存事件 id：刷新/批量释放后 events 换新对象，按 id 派生选择集，
+// 已消失的条目（如已释放的抢占）自动剔除，不会留在「已选 N 项」里被二次释放
+const selectedIds = ref<Set<string>>(new Set());
+const selectedEvents = computed(() =>
+  events.value.filter(e => selectedIds.value.has(e.id))
+);
 
 const rangeText = computed(
   () =>
@@ -258,19 +263,20 @@ function tagType(
 }
 
 function isSelected(e: ScheduleEvent) {
-  return selected.value.some(x => x.id === e.id);
+  return selectedIds.value.has(e.id);
 }
 
 function toggleSelect(e: ScheduleEvent, value: string | number | boolean) {
   const checked = value === true || value === "";
-  selected.value = checked
-    ? [...selected.value, e]
-    : selected.value.filter(x => x.id !== e.id);
+  const next = new Set(selectedIds.value);
+  if (checked) next.add(e.id);
+  else next.delete(e.id);
+  selectedIds.value = next;
 }
 
 function toggleBatch() {
   batchMode.value = !batchMode.value;
-  if (!batchMode.value) selected.value = [];
+  if (!batchMode.value) selectedIds.value = new Set();
 }
 
 function shiftRange(delta: number) {

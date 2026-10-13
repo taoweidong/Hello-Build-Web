@@ -1,6 +1,7 @@
 // 时段抢占 API 模块
 // 契约：统一响应 { code, message, data }；错误码 40904 = 时段已被抢占（拦截器 ElMessage 提示）
 import http from "@/api/http";
+import type { AxiosRequestConfig } from "axios";
 
 /** 时段模板 */
 export interface SlotTemplateItem {
@@ -123,8 +124,15 @@ export function deleteSlotTemplate(id: number): Promise<void> {
 }
 
 // ---- 日历 ----
-export function getSlotCalendar(month: string): Promise<SlotCalendarResponse> {
-  return http.get("/slot-calendar", { params: { month } });
+/**
+ * 获取整月时段矩阵
+ * @param config 请求级配置；轮询场景传 `{ silent: true }`
+ */
+export function getSlotCalendar(
+  month: string,
+  config?: AxiosRequestConfig
+): Promise<SlotCalendarResponse> {
+  return http.get("/slot-calendar", { params: { month }, ...config });
 }
 
 // ---- 抢占 ----

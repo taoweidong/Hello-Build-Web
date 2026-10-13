@@ -2,6 +2,7 @@
 // 契约基准：设计文档 7.2 GET /api/plan?date=
 // 甘特看板聚合：版本 → 分支 → 策略 → 各阶段时间区间 + 冲突标记
 import http from "@/api/http";
+import type { AxiosRequestConfig } from "axios";
 import type { PushMode, Timeline } from "@/api/types";
 
 /** 甘特看板策略行 */
@@ -32,11 +33,17 @@ export interface PlanVersion {
   branches: PlanBranch[];
 }
 
-/** 获取甘特看板聚合数据 */
-export function getPlan(params: {
-  date: string;
-  version_id?: number;
-  branch_id?: number;
-}): Promise<PlanVersion[]> {
-  return http.get("/plan", { params });
+/**
+ * 获取甘特看板聚合数据
+ * @param config 请求级配置；轮询场景传 `{ silent: true }`
+ */
+export function getPlan(
+  params: {
+    date: string;
+    version_id?: number;
+    branch_id?: number;
+  },
+  config?: AxiosRequestConfig
+): Promise<PlanVersion[]> {
+  return http.get("/plan", { params, ...config });
 }

@@ -20,16 +20,25 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { storageLocal } from "@pureadmin/utils";
 import { panoramaLayoutKey } from "@/store/constants";
-import { layoutOfPath, PANORAMA_LAYOUTS } from "./panoramaLayouts";
+import { isLayoutKey, layoutOfPath, PANORAMA_LAYOUTS } from "./panoramaLayouts";
 
 const route = useRoute();
 const router = useRouter();
 
 const currentLayout = computed(() => layoutOfPath(route.path));
+
+onMounted(() => {
+  // ?layout= 深链：一次性入口。命中即替换为规范路由并同步偏好；
+  // 用 replace 而非 push——深链是入口不是历史节点，避免返回时反复横跳。
+  const requested = route.query.layout;
+  if (!isLayoutKey(requested) || requested === currentLayout.value) return;
+  storageLocal().setItem(panoramaLayoutKey, requested);
+  router.replace(`/panorama/${requested}`);
+});
 
 function onChange(layout: string) {
   const target = PANORAMA_LAYOUTS.find(l => l.layout === layout);

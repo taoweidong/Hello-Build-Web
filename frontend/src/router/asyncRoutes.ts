@@ -1,6 +1,8 @@
 // 业务路由配置（asyncRoutes 风格）
 // 复用 pure-admin-thin 角色路由机制：meta.roles 控制菜单渲染与路由可达性
 // 页面×角色权限矩阵见设计文档 4.2
+import { panoramaRoute } from "./panoramaRoutes";
+
 const Layout = () => import("@/layout/index.vue");
 
 /** 全部角色 */
@@ -234,50 +236,6 @@ export const asyncRoutes = [
       }
     ]
   },
-  {
-    path: "/panorama",
-    name: "Panorama",
-    component: Layout,
-    // 默认落点：月历矩阵（S3，复用最多、成本最低，设计文档 §4.6 推荐默认首选）
-    redirect: "/panorama/month",
-    meta: {
-      icon: "ep/grid",
-      title: "调度全景",
-      rank: 16
-    },
-    children: [
-      {
-        path: "/panorama/dashboard",
-        name: "PanoramaDashboard",
-        component: () =>
-          import("@/views/panorama/layouts/s1-dashboard/index.vue"),
-        meta: { title: "调度全景 · 态势大屏", roles: ALL_ROLES }
-      },
-      {
-        path: "/panorama/gantt",
-        name: "PanoramaGantt",
-        component: () => import("@/views/panorama/layouts/s2-gantt/index.vue"),
-        meta: { title: "调度全景 · 时空甘特", roles: ALL_ROLES }
-      },
-      {
-        path: "/panorama/month",
-        name: "PanoramaMonth",
-        component: () => import("@/views/panorama/layouts/s3-month/index.vue"),
-        meta: { title: "调度全景 · 月历矩阵", roles: ALL_ROLES }
-      },
-      {
-        path: "/panorama/board",
-        name: "PanoramaBoard",
-        component: () => import("@/views/panorama/layouts/s4-board/index.vue"),
-        meta: { title: "调度全景 · 分组看板", roles: ALL_ROLES }
-      },
-      {
-        path: "/panorama/timeline",
-        name: "PanoramaTimeline",
-        component: () =>
-          import("@/views/panorama/layouts/s5-timeline/index.vue"),
-        meta: { title: "调度全景 · 时间轴流水", roles: ALL_ROLES }
-      }
-    ]
-  }
+  // 调度全景：5 个独立布局共用一套接口（定义与 redirect 接线见 panoramaRoutes.ts）
+  panoramaRoute
 ];

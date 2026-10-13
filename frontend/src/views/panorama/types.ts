@@ -147,5 +147,9 @@ export interface ScheduleData {
   branchOptions: ComputedRef<Array<{ branch_id: number; branch_name: string }>>;
   templates: ComputedRef<SlotTemplateItem[]>;
   horizonDays: Ref<number>;
-  refresh(): Promise<void>;
+  /**
+   * 手动/查询变更刷新。`silent` 供中枢轮询透传（后台请求不弹全局 toast）；
+   * 返回是否成功——轮询据此决定退避计次。
+   */
+  refresh(silent?: boolean): Promise<boolean>;
 }

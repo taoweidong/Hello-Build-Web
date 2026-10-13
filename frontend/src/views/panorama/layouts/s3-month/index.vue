@@ -125,6 +125,10 @@ import type { ScheduleEvent } from "../../types";
 
 defineOptions({ name: "PanoramaMonthLayout" });
 
+// 首屏即加载当前月全量：月历是「抢占主战场」，若沿用默认本周范围，
+// 当月大部分单元格会空摆，用户会误判整月无数据（翻月时 syncMonth 才补齐）
+const month = ref(dayjs().format("YYYY-MM"));
+
 const {
   query,
   actions,
@@ -139,9 +143,10 @@ const {
   templates,
   horizonDays,
   refresh
-} = usePanoramaPage();
-
-const month = ref(dayjs().format("YYYY-MM"));
+} = usePanoramaPage({
+  dateFrom: dayjs(`${month.value}-01`).format("YYYY-MM-DD"),
+  dateTo: dayjs(`${month.value}-01`).endOf("month").format("YYYY-MM-DD")
+});
 const monthLabel = computed(() =>
   dayjs(`${month.value}-01`).format("YYYY年M月")
 );

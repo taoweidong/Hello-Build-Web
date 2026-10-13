@@ -1,16 +1,116 @@
 // 调度全景单测共用夹具：与真实 API 响应同构，禁止在用例里散落魔法字面量
 import type { BorrowFlowItem } from "@/api/borrowFlow";
+import type { PlanVersion } from "@/api/plan";
 import type {
   BookingItem,
   CalendarDayCell,
   SlotCalendarResponse,
   SlotTemplateItem
 } from "@/api/slotBooking";
-import type { PushMode, Timeline, WeeklyStrategy } from "@/api/types";
+import type {
+  PushMode,
+  Timeline,
+  WeeklyData,
+  WeeklyStrategy
+} from "@/api/types";
 import type { ScheduleEvent, SchedulePermissions } from "../types";
 
 /** 固定「现在」，让 isPastSlot 判定可复现 */
 export const NOW = new Date("2026-10-13T10:00:00");
+
+/** 中枢测试固定的查询范围（2026-10-12 周一 ~ 10-18 周日，单自然月） */
+export const WEEK_FROM = "2026-10-12";
+export const WEEK_TO = "2026-10-18";
+
+/** 周视图骨架响应（GET /api/weekly） */
+export function makeWeeklyData(over: Partial<WeeklyData> = {}): WeeklyData {
+  return {
+    week_start: WEEK_FROM,
+    days: [
+      { date: "2026-10-12", weekday: "周一" },
+      { date: "2026-10-13", weekday: "周二" },
+      { date: "2026-10-14", weekday: "周三" },
+      { date: "2026-10-15", weekday: "周四" },
+      { date: "2026-10-16", weekday: "周五" },
+      { date: "2026-10-17", weekday: "周六" },
+      { date: "2026-10-18", weekday: "周日" }
+    ],
+    version: { version_id: 1, version_name: "27A" },
+    versions: [
+      { version_id: 1, version_name: "27A" },
+      { version_id: 2, version_name: "27B" }
+    ],
+    branches: [
+      { branch_id: 10, branch_name: "main" },
+      { branch_id: 11, branch_name: "release" }
+    ],
+    strategies: [makeStrategy()],
+    ...over
+  };
+}
+
+/**
+ * 一周的时段矩阵：默认 10-13 有一条本人 reserved（分支 11），其余日期空闲。
+ * `reservedDate: null` → 全空闲（用于模拟批量释放后的下一轮拉取）。
+ */
+export function makeWeekCalendar(
+  opts: { reservedDate?: string | null } = {}
+): SlotCalendarResponse {
+  const reservedDate =
+    opts.reservedDate === undefined ? "2026-10-13" : opts.reservedDate;
+  const days: Record<string, CalendarDayCell[]> = {};
+  for (const date of [
+    "2026-10-12",
+    "2026-10-13",
+    "2026-10-14",
+    "2026-10-15",
+    "2026-10-16",
+    "2026-10-17",
+    "2026-10-18"
+  ]) {
+    days[date] =
+      date === reservedDate
+        ? [
+            makeCell({
+              status: "reserved",
+              booking: makeBooking({
+                is_mine: true,
+                branch_id: 11,
+                branch_name: "release"
+              })
+            })
+          ]
+        : [makeCell()];
+  }
+  return makeCalendar(days);
+}
+
+/** 甘特看板聚合（GET /api/plan）：锚点日 10-12 的四阶段区间 */
+export function makePlanVersions(): PlanVersion[] {
+  return [
+    {
+      version_id: 1,
+      version_name: "27A",
+      branches: [
+        {
+          branch_id: 10,
+          branch_name: "main",
+          strategies: [
+            {
+              id: 1,
+              name: "主链路策略",
+              push_mode: "normal",
+              build_start_time: "08:00",
+              push_start_time: "18:00",
+              enabled: true,
+              timeline: makeTimeline(WEEK_FROM)
+            }
+          ]
+        }
+      ]
+    }
+  ];
+}
 
 export function makeStrategy(
   over: Partial<WeeklyStrategy> = {}

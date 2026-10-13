@@ -1,6 +1,7 @@
 // 借用电子流 API 模块
 // 契约：GET/POST /borrow-flows，POST /borrow-flows/:id/approve | reject
 import http from "@/api/http";
+import type { AxiosRequestConfig } from "axios";
 import { appHashUrl } from "@/utils/appUrl";
 
 /** 借用电子流条目 */
@@ -38,10 +39,18 @@ export interface BorrowFlowForm {
 }
 
 /** 借用电子流列表（可按状态过滤） */
+/**
+ * 借用电子流列表
+ * @param config 请求级配置；轮询场景传 `{ silent: true }`
+ */
 export function listBorrowFlows(
-  status?: BorrowFlowItem["status"]
+  status?: BorrowFlowItem["status"],
+  config?: AxiosRequestConfig
 ): Promise<BorrowFlowItem[]> {
-  return http.get("/borrow-flows", { params: status ? { status } : {} });
+  return http.get("/borrow-flows", {
+    params: status ? { status } : {},
+    ...config
+  });
 }
 
 /** 发起借用申请（任意登录用户） */
