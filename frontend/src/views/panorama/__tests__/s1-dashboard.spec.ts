@@ -9,17 +9,20 @@ vi.mock("@/api/weekly", () => ({ getWeekly: vi.fn() }));
 vi.mock("@/api/slotBooking", () => ({ getSlotCalendar: vi.fn() }));
 vi.mock("@/api/plan", () => ({ getPlan: vi.fn() }));
 vi.mock("@/api/borrowFlow", () => ({ listBorrowFlows: vi.fn() }));
+vi.mock("@/api/panorama", () => ({ getPanoramaTodos: vi.fn() }));
 
 import { getWeekly } from "@/api/weekly";
 import { getSlotCalendar } from "@/api/slotBooking";
 import { getPlan } from "@/api/plan";
 import { listBorrowFlows } from "@/api/borrowFlow";
+import { getPanoramaTodos } from "@/api/panorama";
 import PanoramaDashboard from "../layouts/s1-dashboard/index.vue";
 import LayoutSwitcher from "../shared/LayoutSwitcher.vue";
 import { mountLayout, setTestUser } from "./helpers";
 import {
   makeBorrowFlow,
   makePlanVersions,
+  makeTodos,
   makeWeekCalendar,
   makeWeeklyData
 } from "./fixtures";
@@ -28,6 +31,7 @@ const weeklyMock = vi.mocked(getWeekly);
 const calendarMock = vi.mocked(getSlotCalendar);
 const planMock = vi.mocked(getPlan);
 const borrowMock = vi.mocked(listBorrowFlows);
+const todosMock = vi.mocked(getPanoramaTodos);
 
 /** 与夹具 NOW 一致的冻结时刻（保留真实 setImmediate 供 flushPromises 冲刷） */
 const FIXED_NOW = new Date("2026-10-13T10:00:00");
@@ -47,6 +51,7 @@ beforeEach(() => {
   calendarMock.mockResolvedValue(makeWeekCalendar());
   planMock.mockResolvedValue(makePlanVersions());
   borrowMock.mockResolvedValue([makeBorrowFlow()]);
+  todosMock.mockResolvedValue(makeTodos());
 });
 
 afterEach(() => {
@@ -107,6 +112,38 @@ describe("S1 态势大屏", () => {
     // 首屏 2 次（版本回填）+ 手动刷新 1 次
     expect(weeklyMock).toHaveBeenCalledTimes(3);
     expect(weeklyMock.mock.calls.at(-1)![1]).toBeUndefined();
+  });
+
+  it("投屏模式：隐藏筛选栏并给根容器加样式钩子（仅信息密度差异）", async () => {
+    ({ wrapper } = await mountLayout(PanoramaDashboard, "/panorama/dashboard"));
+    expect(wrapper.find(".biz-filter-bar").exists()).toBe(true);
+
+    await wrapper.find(".el-switch input").setValue(true);
+    await flushPromises();
+    expect(wrapper.find(".biz-filter-bar").exists()).toBe(false);
+    expect(wrapper.find(".biz-page").classes()).toContain("present-mode");
+    // 投屏只降密度，不隐藏信息
+    expect(statValue("今日构建")).toBe("1");
+  });
+
+  it("待办计数取服务端聚合（跨筛选口径）", async () => {
+    todosMock.mockResolvedValue(
+      makeTodos({ pending_approval: 5, my_reserved_slots: 3 })
+    );
+    ({ wrapper } = await mountLayout(PanoramaDashboard, "/panorama/dashboard"));
+    await flushPromises();
+    expect(todosMock).toHaveBeenCalled();
+    expect(statValue("待我审批")).toBe("5");
+    expect(statValue("我的有效抢占")).toBe("3");
+  });
+
+  it("待办计数降级：接口不可用时回落前端聚合", async () => {
+    todosMock.mockRejectedValue(new Error("todos unavailable"));
+    ({ wrapper } = await mountLayout(PanoramaDashboard, "/panorama/dashboard"));
+    await flushPromises();
+    // 前端聚合同口径：1 条 pending 借用 / 1 条本人抢占
+    expect(statValue("待我审批")).toBe("1");
+    expect(statValue("我的有效抢占")).toBe("1");
   });
 
   it("热力格下钻跳转 S5 时间轴并带上日期", async () => {

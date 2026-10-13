@@ -10,16 +10,19 @@ vi.mock("@/api/weekly", () => ({ getWeekly: vi.fn() }));
 vi.mock("@/api/slotBooking", () => ({ getSlotCalendar: vi.fn() }));
 vi.mock("@/api/plan", () => ({ getPlan: vi.fn() }));
 vi.mock("@/api/borrowFlow", () => ({ listBorrowFlows: vi.fn() }));
+vi.mock("@/api/panorama", () => ({ getPanoramaTodos: vi.fn() }));
 
 import { getWeekly } from "@/api/weekly";
 import { getSlotCalendar } from "@/api/slotBooking";
 import { getPlan } from "@/api/plan";
 import { listBorrowFlows } from "@/api/borrowFlow";
+import { getPanoramaTodos } from "@/api/panorama";
 import PanoramaTimeline from "../layouts/s5-timeline/index.vue";
 import { mountLayout, setTestUser } from "./helpers";
 import {
   makeBorrowFlow,
   makePlanVersions,
+  makeTodos,
   makeWeekCalendar,
   makeWeeklyData
 } from "./fixtures";
@@ -28,6 +31,7 @@ const weeklyMock = vi.mocked(getWeekly);
 const calendarMock = vi.mocked(getSlotCalendar);
 const planMock = vi.mocked(getPlan);
 const borrowMock = vi.mocked(listBorrowFlows);
+const todosMock = vi.mocked(getPanoramaTodos);
 
 /** 与夹具 NOW 一致的冻结时刻（保留真实 setImmediate 供 flushPromises 冲刷） */
 const FIXED_NOW = new Date("2026-10-13T10:00:00");
@@ -46,6 +50,7 @@ beforeEach(() => {
   calendarMock.mockResolvedValue(makeWeekCalendar());
   planMock.mockResolvedValue(makePlanVersions());
   borrowMock.mockResolvedValue([makeBorrowFlow()]);
+  todosMock.mockResolvedValue(makeTodos());
 });
 
 afterEach(() => {
@@ -131,24 +136,45 @@ describe("S5 时间轴流水", () => {
       "早间窗口",
       "李四 借用 主链路策略"
     ]);
-    // 本人抢占有释放入口（reserved && mine），借用行无时段操作
+    // 本人抢占有释放 + 改期入口（reserved && mine，P2-R2），借用行无时段操作
     expect(
       rowOf("早间窗口")
         .findAll("button")
         .map(b => b.text())
-    ).toEqual(["释放", "详情"]);
+    ).toEqual(["释放", "改期", "详情"]);
 
     await selectFilter("只看借用");
     expect(rows()).toHaveLength(1);
     const borrow = rows()[0];
     expect(borrow.find(".body-title").text()).toBe("李四 借用 主链路策略");
-    // 借用事件：待审批徽标 + 通过/驳回（canApprove）+ 复制（source === borrow）
+    // 借用事件：通过/驳回（canApprove）+ 撤销申请（本人 + 待审批，P2-R1）+ 复制
     expect(borrow.text()).toContain("待审批");
     expect(borrow.findAll("button").map(b => b.text())).toEqual([
       "通过",
       "驳回",
+      "撤销申请",
       "复制"
     ]);
+  });
+
+  it("「折叠空闲时段」只隐藏未占用的时段行，占用行不受影响", async () => {
+    ({ wrapper } = await mountLayout(
+      PanoramaTimeline,
+      "/panorama/timeline?date=2026-10-14"
+    ));
+    // 10-14：四阶段 + 1 条空闲时段 = 5 条
+    expect(rows()).toHaveLength(5);
+    expect(wrapper.text()).toContain("空闲可抢占");
+
+    await wrapper.find(".el-checkbox input").setValue(true);
+    await flushPromises();
+    expect(rows()).toHaveLength(4);
+    expect(wrapper.text()).not.toContain("空闲可抢占");
+
+    // 取消勾选后复原
+    await wrapper.find(".el-checkbox input").setValue(false);
+    await flushPromises();
+    expect(rows()).toHaveLength(5);
   });
 
   it("翻日后重锚单日并重拉：锚点日四阶段 + 空闲时段抢占入口", async () => {

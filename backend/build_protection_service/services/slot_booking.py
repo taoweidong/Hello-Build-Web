@@ -294,6 +294,110 @@ def release_booking(booking: SlotBooking, actor, release_reason: str) -> tuple[O
     return _booking_dict(booking, actor.id), None
 
 
+# ---------- 改期（P2-R2） ----------
+
+def _resolve_target(booking, payload) -> tuple[Optional[object], Optional[object], Optional[object], Optional[dict]]:
+    """解析改期目标（日期 / 模板 / 用途），缺省字段沿用原值。
+
+    返回 `(date, template, purpose, error)`；任一失败时其余为 None。
+    """
+    raw_date = payload.get("date")
+    if raw_date is None or str(raw_date).strip() == "":
+        target_date = booking.date
+    else:
+        try:
+            target_date = date_cls.fromisoformat(str(raw_date).strip())
+        except (ValueError, TypeError):
+            return None, None, None, _err(CODE_UNPROCESSABLE, "日期格式非法，应为 YYYY-MM-DD")
+
+    raw_template = payload.get("template_id")
+    if raw_template is None or str(raw_template).strip() == "":
+        template = booking.template
+    else:
+        template_id = _safe_int(raw_template)
+        if template_id is None:
+            return None, None, None, _err(CODE_UNPROCESSABLE, "template_id 应为整数")
+        template = SlotTemplate.objects.filter(id=template_id).first()
+        if template is None:
+            return None, None, None, _err(CODE_NOT_FOUND, "时段模板不存在")
+
+    raw_purpose = payload.get("purpose")
+    purpose = booking.purpose if raw_purpose is None else str(raw_purpose).strip()
+    if not 2 <= len(purpose) <= 200:
+        return None, None, None, _err(CODE_UNPROCESSABLE, "用途说明需 2~200 字")
+
+    return target_date, template, purpose, None
+
+
+def reschedule_booking(booking: SlotBooking, actor, payload: dict) -> tuple[Optional[dict], Optional[dict]]:
+    """抢占改期：本人或 admin；仅 reserved 可改；目标必须通过与抢占同一套校验链。
+
+    校验口径与 `create_booking` 保持一致（过去日期 / 可抢窗口 / 模板启用 / 适用星期与生效期 /
+    用途长度），区别仅在于改期是 UPDATE 而非 INSERT：(date, template) 的 reserved 部分唯一
+    约束仍然生效，撞车由 IntegrityError 转 40904（message 带占有人）。
+    并发下用条件 UPDATE（status=reserved）保证「改期 vs 释放 vs 他人再抢」只有一方成功。
+    """
+    if booking.status != "reserved":
+        return None, _err(CODE_UNPROCESSABLE, "该记录不是待占用状态，无法改期")
+    is_owner = booking.user_id == actor.id
+    is_admin = getattr(actor, "role", "") == "admin"
+    if not (is_owner or is_admin):
+        return None, _err(CODE_FORBIDDEN, "无权限执行该操作")
+
+    target_date, template, purpose, error = _resolve_target(booking, payload)
+    if error:
+        return None, error
+
+    today = _today()
+    if target_date < today:
+        return None, _err(CODE_UNPROCESSABLE, "不能改到过去日期")
+    if target_date > today + timedelta(days=_horizon_days()):
+        return None, _err(
+            CODE_UNPROCESSABLE, f"超出可抢占窗口（最多提前 {_horizon_days()} 天）"
+        )
+    if not template.enabled:
+        return None, _err(CODE_UNPROCESSABLE, "该时段模板已停用")
+    if not template_applies_on(template, target_date):
+        return None, _err(
+            CODE_UNPROCESSABLE, "该日期不在此时段的适用范围（星期/生效期）内"
+        )
+
+    # 捕获必须在 atomic 外层：块内捕获会让连接进入「事务已损坏」状态，
+    # 后续查询冒 TransactionManagementError（与 create_booking 同款结构）。
+    try:
+        with transaction.atomic():
+            updated = SlotBooking.objects.filter(
+                id=booking.id, status="reserved"
+            ).update(
+                date=target_date,
+                template=template,
+                start_snapshot=template.start_time,
+                end_snapshot=template.end_time,
+                purpose=purpose,
+            )
+    except IntegrityError:
+        holder = SlotBooking.objects.filter(
+            date=target_date, template=template, status="reserved"
+        ).select_related("user").first()
+        holder_name = display_name(holder.user) if holder else "他人"
+        return None, _err(
+            CODE_SLOT_CONFLICT, f"该时段已被 {holder_name} 抢占，请刷新后选择其他时段"
+        )
+    if not updated:
+        return None, _err(CODE_UNPROCESSABLE, "该记录不是待占用状态，无法改期")
+
+    booking.date = target_date
+    booking.template = template
+    booking.start_snapshot = template.start_time
+    booking.end_snapshot = template.end_time
+    booking.purpose = purpose
+    logger.info(
+        "[slot-booking] reschedule id=%s actor=%s date=%s template=%s",
+        booking.id, actor.username, target_date, template.id,
+    )
+    return _booking_dict(booking, actor.id), None
+
+
 # ---------- 模板重叠检测 ----------
 
 def detect_template_overlap(template: SlotTemplate) -> list[str]:

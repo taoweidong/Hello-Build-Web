@@ -3,6 +3,7 @@
 // 三条互不关联的调度体系（策略时间线 / 时段抢占 / 借用电子流）在此归约为同一结构，
 // 布局层只消费 ScheduleEvent[]，不再直接触碰业务 API。
 import type { BorrowFlowItem } from "@/api/borrowFlow";
+import type { PanoramaTodos } from "@/api/panorama";
 import type { CalendarDayCell, SlotTemplateItem } from "@/api/slotBooking";
 import type { WeeklyStrategy } from "@/api/types";
 import type { ComputedRef, Ref } from "vue";
@@ -31,6 +32,10 @@ export interface SchedulePermissions {
   canReleaseOthers: boolean;
   /** D 借用审批（通过/驳回） */
   canApprove: boolean;
+  /** E 撤销借用申请（P2-R1：仅借用人本人 + 仅待审批） */
+  canCancel: boolean;
+  /** F 抢占改期（P2-R2：仅 reserved，本人或 admin） */
+  canReschedule: boolean;
 }
 
 /** 原始载荷：定位弹窗预填与详情展示，页面不得反向依赖来源字段 */
@@ -147,6 +152,11 @@ export interface ScheduleData {
   branchOptions: ComputedRef<Array<{ branch_id: number; branch_name: string }>>;
   templates: ComputedRef<SlotTemplateItem[]>;
   horizonDays: Ref<number>;
+  /**
+   * 服务端待办聚合（跨筛选准确）。为 null 表示接口不可用或尚未返回，
+   * 页面据此回退前端聚合（`selectors.buildKpi`）——降级不阻断渲染。
+   */
+  todos: Ref<PanoramaTodos | null>;
   /**
    * 手动/查询变更刷新。`silent` 供中枢轮询透传（后台请求不弹全局 toast）；
    * 返回是否成功——轮询据此决定退避计次。

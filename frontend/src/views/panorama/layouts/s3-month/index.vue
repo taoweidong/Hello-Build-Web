@@ -211,7 +211,9 @@ async function onEventClick(event: ScheduleEvent) {
     return;
   }
   if (event.source === "borrow") {
-    if (event.permissions.canApprove) actions.openApproval();
+    // 审批人进抽屉批；申请人进抽屉撤回（P2-R1）
+    if (event.permissions.canApprove || event.permissions.canCancel)
+      actions.openApproval();
     else ElMessage.info("该借用申请待审批中");
     return;
   }

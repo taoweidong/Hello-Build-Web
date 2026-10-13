@@ -32,6 +32,9 @@
             <el-radio-button value="conflict">只看冲突</el-radio-button>
             <el-radio-button value="borrow">只看借用</el-radio-button>
           </el-radio-group>
+          <el-checkbox v-model="hideAvailable" size="small">
+            折叠空闲时段
+          </el-checkbox>
         </div>
         <div class="tooltip-text">共 {{ rows.length }} 条</div>
       </div>
@@ -113,6 +116,14 @@
                 >释放</el-button
               >
               <el-button
+                v-if="row.permissions.canReschedule"
+                size="small"
+                text
+                type="primary"
+                @click="actions.openReschedule(row)"
+                >改期</el-button
+              >
+              <el-button
                 v-if="row.permissions.canApprove"
                 size="small"
                 text
@@ -127,6 +138,14 @@
                 type="danger"
                 @click="actions.reject(row)"
                 >驳回</el-button
+              >
+              <el-button
+                v-if="row.permissions.canCancel"
+                size="small"
+                text
+                type="warning"
+                @click="actions.cancelBorrow(row)"
+                >撤销申请</el-button
               >
               <el-button
                 v-if="row.source === 'slot'"
@@ -185,6 +204,8 @@ const {
 } = usePanoramaPage();
 
 const filter = ref<"all" | "mine" | "conflict" | "borrow">("all");
+/** 折叠空闲时段：隐藏「空闲可抢占」的时段行，把注意力收敷到已占用/待办上 */
+const hideAvailable = ref(false);
 const anchor = computed(() => query.value.dateFrom);
 const dayTitle = computed(() => dayjs(anchor.value).format("YYYY年M月D日 ddd"));
 
@@ -195,6 +216,8 @@ const conflictIds = computed(
 
 const rows = computed(() => {
   let list = dayEvents.value;
+  if (hideAvailable.value)
+    list = list.filter(e => !(e.source === "slot" && e.status === "available"));
   if (filter.value === "mine") list = list.filter(e => e.mine);
   if (filter.value === "borrow") list = list.filter(e => e.source === "borrow");
   if (filter.value === "conflict")

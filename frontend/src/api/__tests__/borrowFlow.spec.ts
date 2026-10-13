@@ -32,6 +32,7 @@ function makeFlow(overrides: Partial<BorrowFlowItem> = {}): BorrowFlowItem {
     approver_name: null,
     handle_comment: "",
     handled_at: null,
+    cancelled_at: null,
     created_at: "2026-10-11T16:30:00",
     ...overrides
   };

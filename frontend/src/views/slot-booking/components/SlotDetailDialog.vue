@@ -45,6 +45,14 @@
     <template #footer>
       <el-button @click="emit('update:modelValue', false)">关闭</el-button>
       <el-button
+        v-if="reschedulable && entry?.booking"
+        type="primary"
+        plain
+        @click="emit('reschedule')"
+      >
+        改期
+      </el-button>
+      <el-button
         v-if="isMine"
         type="danger"
         plain
@@ -76,11 +84,14 @@ const props = defineProps<{
   date: string;
   entry: CalendarDayCell | null;
   template: SlotTemplateItem | null;
+  /** 是否展示「改期」入口（由父组件按权限位传入，默认不展示 → 既有调用方零变化） */
+  reschedulable?: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: "update:modelValue", value: boolean): void;
   (e: "released"): void;
+  (e: "reschedule"): void;
 }>();
 
 const releasing = ref(false);

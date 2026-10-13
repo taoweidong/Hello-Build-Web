@@ -151,6 +151,14 @@
               >释放</el-button
             >
             <el-button
+              v-if="e.permissions.canReschedule"
+              size="small"
+              text
+              type="primary"
+              @click="actions.openReschedule(e)"
+              >改期</el-button
+            >
+            <el-button
               v-if="e.permissions.canApprove"
               size="small"
               text
@@ -165,6 +173,14 @@
               type="danger"
               @click="actions.reject(e)"
               >驳回</el-button
+            >
+            <el-button
+              v-if="e.permissions.canCancel"
+              size="small"
+              text
+              type="warning"
+              @click="actions.cancelBorrow(e)"
+              >撤销申请</el-button
             >
             <el-button
               v-if="e.source === 'slot'"

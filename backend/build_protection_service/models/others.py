@@ -172,11 +172,15 @@ class BorrowFlow(models.Model):
 
     审批通过 = 在目标分支按新时间实际创建借用策略（复用策略写路径统一校验）；
     审批人为被借用策略所属版本的 PM（或 admin）。
+
+    cancelled（已撤销）= 借用人本人在待审批阶段自行撤回（P2-R1）。撤销不删除记录，
+    保留审计痕迹；因部分唯一约束只覆盖 status="pending"，撤销后立即可重新发起。
     """
     STATUS_CHOICES = (
         ("pending", "待审批"),
         ("approved", "已通过"),
         ("rejected", "已驳回"),
+        ("cancelled", "已撤销"),
     )
     strategy = models.ForeignKey(
         Strategy, on_delete=models.CASCADE,
@@ -195,6 +199,7 @@ class BorrowFlow(models.Model):
         related_name="approved_borrow_flows", verbose_name="审批人")
     handle_comment = models.CharField("审批意见", max_length=255, blank=True, default="")
     handled_at = models.DateTimeField("审批时间", null=True, blank=True)
+    cancelled_at = models.DateTimeField("撤销时间", null=True, blank=True)
     created_at = models.DateTimeField("申请时间", auto_now_add=True)
 
     class Meta:

@@ -23,10 +23,12 @@ export interface BorrowFlowItem {
   target_branch_name: string;
   new_build_time: string;
   reason: string;
-  status: "pending" | "approved" | "rejected";
+  status: "pending" | "approved" | "rejected" | "cancelled";
   approver_name: string | null;
   handle_comment: string;
   handled_at: string | null;
+  /** 借用人自行撤销的时刻（P2-R1；仅 status=cancelled 时有值） */
+  cancelled_at: string | null;
   created_at: string;
 }
 
@@ -71,6 +73,11 @@ export function rejectBorrowFlow(
   comment: string
 ): Promise<BorrowFlowItem> {
   return http.post(`/borrow-flows/${id}/reject`, { comment });
+}
+
+/** 撤销申请（P2-R1）：仅借用人本人 + 仅待审批可撤；撤销保留记录，同策略可立即重发 */
+export function cancelBorrowFlow(id: number): Promise<BorrowFlowItem> {
+  return http.post(`/borrow-flows/${id}/cancel`);
 }
 
 /** 借用电子流审批页的直达链接（hash 路由，携带 focus 参数定位并打开该条）

@@ -42,6 +42,15 @@
               >驳回</el-button
             >
           </template>
+          <!-- 自己发起的申请：可在此撤回（P2-R1），无需回原页面 -->
+          <el-button
+            v-else-if="f.permissions.canCancel"
+            size="small"
+            type="warning"
+            plain
+            @click="actions.cancelBorrow(f)"
+            >撤销申请</el-button
+          >
           <span v-else class="biz-tip">等待审批中</span>
         </div>
       </div>

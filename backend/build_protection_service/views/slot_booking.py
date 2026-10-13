@@ -24,6 +24,7 @@ from ..services.slot_booking import (
     create_booking,
     detect_template_overlap,
     release_booking,
+    reschedule_booking,
     serialize_booking_row,
     serialize_template,
 )
@@ -114,7 +115,7 @@ class SlotBookingViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
 
     queryset = SlotBooking.objects.select_related("user", "version", "branch", "template")
     permission_classes = [AllowAny]
-    http_method_names = ["get", "post", "head", "options"]
+    http_method_names = ["get", "post", "patch", "head", "options"]
 
     def create(self, request, *args, **kwargs):
         user, resp = authed_user(request)
@@ -142,6 +143,19 @@ class SlotBookingViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
         if not serializer.is_valid():
             return fail_resp(CODE_UNPROCESSABLE, first_error(serializer.errors))
         data, error = release_booking(booking, user, serializer.validated_data.get("release_reason", ""))
+        if error:
+            return fail_resp(error["code"], error["message"])
+        return json_resp(ok(data))
+
+    def partial_update(self, request, *args, **kwargs):
+        """改期（P2-R2）：PATCH /slot-bookings/<pk>，本人或 admin；仅 reserved 可改。"""
+        user, resp = authed_user(request)
+        if resp:
+            return resp
+        booking = self.get_queryset().filter(pk=kwargs.get("pk")).first()
+        if booking is None:
+            return fail_resp(CODE_NOT_FOUND, "抢占记录不存在")
+        data, error = reschedule_booking(booking, user, request.data or {})
         if error:
             return fail_resp(error["code"], error["message"])
         return json_resp(ok(data))

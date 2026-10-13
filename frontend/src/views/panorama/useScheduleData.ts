@@ -25,6 +25,7 @@ import { getWeekly } from "@/api/weekly";
 import { getSlotCalendar, type SlotCalendarResponse } from "@/api/slotBooking";
 import { getPlan, type PlanVersion } from "@/api/plan";
 import { listBorrowFlows } from "@/api/borrowFlow";
+import { getPanoramaTodos, type PanoramaTodos } from "@/api/panorama";
 import type { Timeline, WeeklyData } from "@/api/types";
 import { getCurrentUser } from "@/utils/business";
 import { buildDateRange } from "@/utils/week";
@@ -107,6 +108,8 @@ export function useScheduleData(
   const weekly = ref<WeeklyData | null>(null);
   const calendars = ref<Record<string, SlotCalendarResponse>>({});
   const horizonDays = ref(DEFAULT_HORIZON_DAYS);
+  /** 服务端待办聚合；接口不可用时保持 null，页面回退前端聚合 */
+  const todos = ref<PanoramaTodos | null>(null);
   const user = getCurrentUser();
 
   const branches = computed(() => weekly.value?.branches ?? []);
@@ -182,7 +185,15 @@ export function useScheduleData(
       const flows = await listBorrowFlows("pending", cfg);
       if (current !== seq) return true;
 
-      // 4) 锚点日阶段区间（仅供策略事件补精确时长；失败静默降级为点事件）
+      // 4) 待办聚合（跨筛选口径；失败静默降级——保留上次值，页面自行回退前端聚合）
+      try {
+        const todoData = await getPanoramaTodos(cfg);
+        if (current === seq) todos.value = todoData;
+      } catch {
+        /* 降级：todos 维持旧值 */
+      }
+
+      // 5) 锚点日阶段区间（仅供策略事件补精确时长；失败静默降级为点事件）
       let planMap = new Map<number, Timeline>();
       try {
         const planList: PlanVersion[] = await getPlan(
@@ -343,6 +354,7 @@ export function useScheduleData(
     branchOptions,
     templates,
     horizonDays,
+    todos,
     refresh
   };
 }

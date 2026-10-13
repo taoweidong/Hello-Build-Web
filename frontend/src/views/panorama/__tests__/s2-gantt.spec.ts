@@ -8,16 +8,19 @@ vi.mock("@/api/weekly", () => ({ getWeekly: vi.fn() }));
 vi.mock("@/api/slotBooking", () => ({ getSlotCalendar: vi.fn() }));
 vi.mock("@/api/plan", () => ({ getPlan: vi.fn() }));
 vi.mock("@/api/borrowFlow", () => ({ listBorrowFlows: vi.fn() }));
+vi.mock("@/api/panorama", () => ({ getPanoramaTodos: vi.fn() }));
 
 import { getWeekly } from "@/api/weekly";
 import { getSlotCalendar } from "@/api/slotBooking";
 import { getPlan } from "@/api/plan";
 import { listBorrowFlows } from "@/api/borrowFlow";
+import { getPanoramaTodos } from "@/api/panorama";
 import PanoramaGantt from "../layouts/s2-gantt/index.vue";
 import { mountLayout, setTestUser } from "./helpers";
 import {
   makeBorrowFlow,
   makePlanVersions,
+  makeTodos,
   makeWeekCalendar,
   makeWeeklyData
 } from "./fixtures";
@@ -26,6 +29,7 @@ const weeklyMock = vi.mocked(getWeekly);
 const calendarMock = vi.mocked(getSlotCalendar);
 const planMock = vi.mocked(getPlan);
 const borrowMock = vi.mocked(listBorrowFlows);
+const todosMock = vi.mocked(getPanoramaTodos);
 
 const FIXED_NOW = new Date("2026-10-13T10:00:00");
 
@@ -43,6 +47,7 @@ beforeEach(() => {
   calendarMock.mockResolvedValue(makeWeekCalendar());
   planMock.mockResolvedValue(makePlanVersions());
   borrowMock.mockResolvedValue([makeBorrowFlow()]);
+  todosMock.mockResolvedValue(makeTodos());
 });
 
 afterEach(() => {

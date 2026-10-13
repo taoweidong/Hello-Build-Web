@@ -2,15 +2,15 @@
 
 | 项 | 内容 |
 |---|---|
-| 日期 / 撰写 / 状态 | 2026-10-12 / 高见远（架构师） / **阶段 1+2 已实现并通过门禁（2026-10-13 勾选）** |
+| 日期 / 撰写 / 状态 | 2026-10-12 / 高见远（架构师） / **阶段 1+2+3 全部实现并通过门禁（阶段 3 后端 P2-R1/R2/R3 + 前端增强 2026-10-13 收尾）** |
 | 设计文档（唯一口径出处） | `docs/superpowers/specs/2026-10-12-scheduling-panorama-design.md` |
 | PRD（业务需求出处） | `docs/superpowers/specs/2026-10-12-scheduling-panorama-prd.md` |
 | 责任人 | 齐活林（主理人·编排验收） / 许清楚（产品经理·口径） / 高见远（架构师·文档裁定） / 寇豆码（工程师·前后端实现） / 严过关（QA·测试） |
 | 铁律 | **任何阶段只要改动了代码，必须先跑测试全绿才允许提交**（AGENTS.md 强制）。模型改动必须 `makemigrations build_protection_service` 并提交迁移。 |
 
 **测试门禁基线（每次提交前必跑）**
-- [x] 后端：`cd backend && python manage.py test build_protection_service` —— **≥ 279 全绿**（本次**后端零改动**，`git status backend/` 为空，基线不可能回归；本机未装 Django 虚拟环境故未重跑，属已知环境限制）
-- [x] 前端：`cd frontend && npm run test` —— **211 通过**（原基线 146；本次新增 65：`panorama/__tests__/{sources,selectors}.spec.ts` 49 + `week.spec.ts` 日期轴 5 + `constants.spec.ts` available/slotStatusText 2 + 其余历史存量）
+- [x] 后端：`cd backend && python manage.py test build_protection_service` —— 阶段 1/2 后端零改动未重跑；**阶段 3（2026-10-13）实跑全量 391 例全绿**（基线 371 + 新增 20：撤销 6 / 改期 11 / 待办 3）；环境用 `uv venv backend/.venv + uv sync` 重建（UV_CACHE_DIR 须指向非杀软拦截盘）
+- [x] 前端：`cd frontend && npm run test` —— **277 通过**（阶段 1+2 峰值 253；阶段 3 补撤销/改期/折叠/投屏/服务端计数断言 + 示例菜单 16 例 = 277：panorama 106 + 示例路由/页面 16 + 其余存量）
 - [x] 涉及类型/模板改动：`npm run typecheck` 通过（tsc + vue-tsc 全绿）
 - [x] 涉及构建产物：`npm run build` 通过（用 `vite build --outDir dist-verify --emptyOutDir false` 验证，5 布局各自独立 chunk 6~8 kB，`usePanoramaPage` 15.98 kB 共享 chunk，产物已清理）
 - [x] 模型若改动：**本次无模型改动、无 migration**（阶段 1/2 后端 0 改动）
@@ -25,9 +25,9 @@
 | 1.4 新增 `shared/StrategyMarker.vue` | 未单独建；并入 `shared/ScheduleEventCard.vue`（按 source/kind/past 分流样式） | 一个组件即可覆盖三种来源的芯片形态，拆两个文件反而要处理优先级仲裁 |
 | 2.1 拆 `KpiCards/LoadHeatmap/AlertList/TodoQueue` 四个子组件 | 全部内联在 `layouts/s1-dashboard/index.vue` | 四块只被 S1 一处消费，无跨布局复用，拆文件徒增跳转成本 |
 | 2.2 / 2.4 拆 `LaneRow/TimeAxisRuler/PhaseBar/GanttLegend` 与 `DayTrack/HourTick/AgendaRow/ConflictBadge` | 同样内联在各自 `index.vue` | 同上：单布局私有结构，无复用点 |
-| 1.5 新增 `types.spec.ts` / `permissions.spec.ts` / `s3-month.spec.ts` 等 5 个 spec | 合并为 `__tests__/{sources,selectors}.spec.ts` 两个文件（49 用例） | 权限包矩阵已并入 `sources.spec.ts` 按 source 分组覆盖；`id` 稳定性回归用例在 `sources.spec.ts`。**组件级 spec（s1~s5）未写**，见下方遗留项 |
-| 1.2 中枢含 `document.hidden` 暂停 + 30s→300s 退避轮询 | 中枢只做「手动 refresh + 查询变更重拉」，**未接自动轮询** | 全景页数据变更由写动作后 `refresh()` 触发已足够；挂全局轮询会与 `/weekly-new` 既有轮询叠加，属 P2 再评估项 |
-| 2.5 深链优先级 `query.layout > localStorage > month` | 只实现 `localStorage > month`（`?layout=` 未接） | `?layout=` 无真实使用场景；`?date=` 深链（S1→S5）已实现 |
+| 1.5 新增 `types.spec.ts` / `permissions.spec.ts` / `s3-month.spec.ts` 等 5 个 spec | 合并为 `__tests__/{sources,selectors}.spec.ts` 两个文件（49 用例） | 权限包矩阵已并入 `sources.spec.ts` 按 source 分组覆盖；`id` 稳定性回归用例在 `sources.spec.ts`。组件级 spec（s1~s5）已于 `3972ab9` 补齐 |
+| 1.2 中枢含 `document.hidden` 暂停 + 30s→300s 退避轮询 | 已接（`3972ab9`）：退避轮询 + hidden 暂停 + silent + 卸载守卫全部收敛中枢，布局页可经 `autoRefreshMs` opt-out | 五个展示层各接一份必漏卸载守卫（branch-config R3-F1 前车之鉴），收敛一处是唯一可靠解 |
+| 2.5 深链优先级 `query.layout > localStorage > month` | 已实现三级优先级（`panoramaLayouts.spec.ts` 锁定） | 深链解析收敛 `resolveEntryLayout` 一处，redirect 与 LayoutSwitcher 共用 |
 | 2.6 门禁 `grep "#[0-9a-fA-F]{6}"` 为空 | **通过**（彩底白字统一改 `var(--el-color-white)`，测试夹具除外） | 原两处 `#ffffff` 与系统既有 `SlotChip.vue`/`DayCell.vue` 的 `#fff` 同效，但语义变量更稳且深浅色不破面 |
 
 ---
@@ -68,7 +68,7 @@
 - [x] **新增** `views/panorama/sources/strategySource.ts`：`WeeklyStrategy` × 日期 → 最多 4 个事件；阶段区间走 `GET /api/plan?date=` 的 `timeline` **懒加载**；**禁止前端硬算 `build_minutes`**
 - [x] **新增** `views/panorama/sources/slotSource.ts`：`SlotCalendarResponse` 的「有模板的 date × template」→ 1 事件；`is_mine` 取服务端；过期用 `isPastSlot(date, end_time)`
 - [x] **新增** `views/panorama/sources/borrowSource.ts`：`BorrowFlowItem` → 借用事件，锚发起日；**不臆造执行日字段**
-- [x] **新增** `views/panorama/useScheduleData.ts`：三源并发编排 + **自增序号守卫丢弃过期响应** + 版本兜底回填；**未接自动轮询**（见偏差记录）
+- [x] **新增** `views/panorama/useScheduleData.ts`：三源并发编排 + **自增序号守卫丢弃过期响应** + 版本兜底回填；自动轮询已接（`3972ab9`，见偏差记录更新；阶段 3 另接 todos 第四路并发）
 - [x] **新增** `views/panorama/selectors.ts`（纯函数）：`sortEvents` / `groupByDay` / `buildAgenda` / `detectCrossSourceConflicts` / `buildKpi` / `lanePack` / `groupByBranch` / `buildHeatmap` / `collectTimePoints`
 - [ ] ~~新增 `views/panorama/usePanoramaFilter.ts`~~ **合并进 `ScheduleQuery` + `PanoramaFilterBar.vue`**（见偏差记录）
 - [x] **新增** `views/panorama/context.ts`：provide/inject CTX，5 路由共享同一 hub 实例
@@ -95,7 +95,7 @@
 - [x] **新增** `views/panorama/__tests__/selectors.spec.ts`：`sortEvents/groupByDay/buildAgenda/detectCrossSourceConflicts/buildKpi/lanePack/groupByBranch/buildHeatmap/collectTimePoints/durationOf`
 - [x] `id` 全局唯一性回归用例（`strategy:{id}#{date}#{kind}`，修复 S4 跨天撞 key 缺陷）
 - [x] 补 `composables/__tests__/useWeeklyPanorama.spec.ts` 基线（防止本次重构误伤既有页，既有 12 用例通过）
-- [ ] **组件级 spec 未写**（`s1~s5` 各布局的挂载/交互用例）—— 见「遗留项」
+- [x] **组件级 spec 已落地**（`3972ab9`：s1~s5 + panoramaLayouts + useScheduleData 挂载级用例）
 - [ ] 跑通 P0-R1~R6 全项人工验收清单（`docs/superpowers/plans/` 旁附验收记录）—— **待人工执行**
 
 ---
@@ -108,9 +108,9 @@
 ### 2.1 S1 调度大屏态势视图（2~3 人日）
 - [x] **新增** `views/panorama/layouts/s1-dashboard/index.vue`（KPI 卡 + 负载热力 + 异常告警 + 待办队列，热力格下钻 S5）
 - [ ] ~~拆 `KpiCards/LoadHeatmap/AlertList/TodoQueue`~~ **内联**（见偏差记录）
-- [ ] ~~工具栏投屏模式 + 自动刷新轮询~~ **未做**（与 1.2 轮询偏差同源，P2 再评估）
+- [x] 工具栏投屏模式（隐藏筛选栏 + 放大数值，仅信息密度差异不改配色）—— 阶段 3（2026-10-13）落地；自动刷新轮询已收敛进中枢（`3972ab9`）
 - [x] 冲突 KPI 取**全周事件**的 `detectCrossSourceConflicts`（纯函数，不做 7 次 `/api/plan` 调用）
-- [ ] **新增** `views/panorama/__tests__/s1-dashboard.spec.ts` —— 见「遗留项」
+- [x] **新增** `views/panorama/__tests__/s1-dashboard.spec.ts`（`3972ab9`；阶段 3 补投屏/服务端计数/降级回退 3 例）
 
 ### 2.2 S2 时空甘特视图（3~4 人日）
 - [x] **新增** `views/panorama/layouts/s2-gantt/index.vue`（分支泳道 + 百分比定位 + `lanePack` 子泳道 + `STAGE_COLORS` 图例）
@@ -168,16 +168,17 @@
 
 > 依赖齐活林对用户 Q4/Q5/Q6 的最终决策；以下三项均为**新增接口**，动后端前先定 spec 与错误码归属。
 
-- [ ] **P2-R1** 借用撤销 `POST /api/borrow-flows/<id>/cancel`：仅借入方本人且状态 = 待审批可撤；撤后释放 `uniq_pending_borrow_flow`
-- [ ] **P2-R1** 后端新增 tests（撤销成功 / 非本人 / 非待审批 → 40903 / 42201）
-- [ ] **P2-R2** 抢占改期 `PATCH /api/slot-bookings/<id>`：仅本人或 admin；改期后 `(date, template)` 唯一 reserved 仍生效
-- [ ] **P2-R2** 后端新增 tests（改期成功 / 越权 40301 / 目标冲突 40904）
-- [ ] **P2-R3** 待办聚合 `GET /api/panorama/todos`：**新增** `views/panorama.py`，一次返回待审批数 / 我的抢占数 / 冲突数
-- [ ] **P2-R3** 前端 S1/S4 切换到服务端计数，保留前端聚合作降级兜底
+- [x] **P2-R1** 借用撤销 `POST /api/borrow-flows/<id>/cancel`：仅借入方本人且状态 = 待审批可撤；条件 UPDATE 防并发；撤销不删记录（新增 `cancelled` 状态 + `cancelled_at` 字段，migration `0013`）；因部分唯一约束只覆盖 pending，撤后同策略可立即重发
+- [x] **P2-R1** 后端新增 tests（撤销成功+可重发 / 非本人 40301 / 已审批 40903 / 40401 / 方法守卫 / 列表 cancelled 过滤，共 6 例）
+- [x] **P2-R2** 抢占改期 `PATCH /api/slot-bookings/<id>`：仅本人或 admin；校验链与抢占同构（过去/窗口/星期生效期/模板启用）；条件 UPDATE + IntegrityError → 40904；缺省字段沿用原值
+- [x] **P2-R2** 后端新增 tests（改期成功 / 空载荷原样保留 / 越权 40301 / admin 代改 / 目标冲突 40904 / 非 reserved / 过去 / 超窗口 / 星期不匹配 / 40401 / 方法守卫，共 11 例）
+- [x] **P2-R3** 待办聚合 `GET /api/panorama/todos`：**新增** `views/panorama.py`，返回待我审批数（admin 全量 / pm 属己版本 / 其余 0，与 `_can_approve` 同源）/ 我的有效抢占数（reserved 且未过期）/ 我发起的待审批数；**冲突数不在此返回**——它依赖「当前视图已加载事件范围」，服务端全量口径必与页面显示不一致，仍走前端 `detectCrossSourceConflicts`（§6-Q6 据此修订）
+- [x] **P2-R3** 后端新增 tests（三角色 pending_approval 口径 / 计数排除过期与释放与他人 / 40100+方法守卫，共 3 例）
+- [x] **P2-R3** 前端接入：中枢 `refresh()` 并发拉 todos（失败静默保留旧值），`api/panorama.ts`；S1 统计卡优先服务端计数、不可用时回退前端聚合
 - [ ] **P2-R4** 若决策放开同版本互借：改 `borrow_flow_create_view` 校验并重定义冲突语义（**需重跑全量后端测试**）
 - [ ] **P2-R5** 若决策做双向互斥：需新建关联模型 → **必须 `makemigrations build_protection_service` 并提交迁移文件**
-- [ ] 前端所有 P2 按钮按能力探测 / env 开关隐藏，接口不存在时 UI 优雅降级
-- [ ] **（本次新增）P2 前端增强**：中枢接入 `polling.ts` 退避轮询 + `document.hidden` 暂停；S4 刷新按 id 保留勾选；S5「折叠空闲时段」；`?layout=` 深链；5 个布局的组件级 spec
+- [x] 前端所有 P2 按钮按能力探测隐藏：`SchedulePermissions` 新增 `canCancel`（本人+pending）与 `canReschedule`（reserved+本人或 admin），归源时算好；todos 接口不可用时 UI 优雅降级（回退前端聚合）
+- [x] **（本次新增）P2 前端增强**：中枢接入 `polling.ts` 退避轮询 + `document.hidden` 暂停（`3972ab9`）；S4 刷新按 id 保留勾选（`selectedIds` 派生实现，早已落地）；S5「折叠空闲时段」+ S1「投屏模式」（2026-10-13 本轮）；`?layout=` 深链（`panoramaLayouts.spec.ts` 已锁优先级）；5 个布局的组件级 spec（`3972ab9` + 本轮补撤销/改期/折叠/投屏断言）
 
 ---
 
@@ -192,11 +193,12 @@
 - [x] 每阶段结束后更新设计文档「变更记录」与本计划勾选状态
 - [ ] 阶段 1 验收后由齐活林做 Gate Review，通过才开工阶段 2 —— **待人工**
 
-**遗留项（本次未完成，均不阻塞「5 菜单 5 页面」交付）**
-1. 5 个布局的组件级 spec（`__tests__/s1~s5*.spec.ts`）——需 `@vue/test-utils` 挂载 + Element Plus stub，工作量约 1~2 人日
-2. P0-R1~R6 与「五布局功能等价交叉验收」的人工验收清单执行
-3. 深浅色主题下 5 布局的人工目测复核（代码已全走语义变量）
-4. 后端测试门禁：本机无 Django 虚拟环境，本次后端零改动故未重跑
+**遗留项（2026-10-13 阶段 3 收尾时盘点）**
+1. ~~5 个布局的组件级 spec~~ —— 已落地（`3972ab9` 首版 + 本轮 P2 补撤销/改期/折叠/投屏断言）
+2. P0-R1~R6 与「五布局功能等价交叉验收」的人工验收清单执行 —— **仍待人工**
+3. 深浅色主题下 5 布局的人工目测复核（代码已全走语义变量） —— **仍待人工**
+4. ~~后端测试门禁：本机无 Django 虚拟环境~~ —— **已解决**：`backend/.venv` 经 `uv venv + uv sync` 重建（UV_CACHE_DIR 须指向非杀软拦截盘，如 `E:/uv-cache`），本轮后端全量 **391 例实跑全绿**（基线 371 + 新增 20）
+5. P2-R4（同版本互借）/ P2-R5（双向互斥联动） —— 待产品决策，本轮未动
 
 **回滚方式**：新增布局全部落在 `views/panorama/` 与 5 行路由注册里 —— 阶段 1/2 任意时点删目录 + 摘路由即可完全回滚，既有 4 个页面与后端全程未动；阶段 3 按 commit revert 端点，前端隐藏按钮降级。
 

@@ -608,3 +608,131 @@ class SlotBookingApiTests(SlotBookingFixture):
         resp = self.client.post("/api/slot-bookings/99999/release", {}, format="json")
         self.assertEqual(resp.status_code, 404)
 
+
+class SlotBookingRescheduleTests(SlotBookingFixture):
+    """抢占改期（P2-R2）：PATCH /api/slot-bookings/<pk>。"""
+
+    def _make(self, date=None, template=None, user=None, status="reserved"):
+        tpl = template or self.morning
+        return SlotBooking.objects.create(
+            date=date or _next_date_with(1), template=tpl,
+            start_snapshot=tpl.start_time, end_snapshot=tpl.end_time,
+            status=status, user=user or self.builder, purpose="原始用途",
+            version=self.version, branch=self.branch,
+        )
+
+    def _patch(self, booking_id, payload):
+        return self.client.patch(
+            f"/api/slot-bookings/{booking_id}", payload, format="json"
+        )
+
+    def test_owner_reschedules_date_and_template(self):
+        """本人改期：日期 + 时段 + 用途一并更新，快照随模板刷新。"""
+        b = self._make()
+        _auth(self.client, self.builder)
+        target = _next_date_with(2)
+        resp = self._patch(
+            b.id,
+            {
+                "date": target.isoformat(),
+                "template_id": self.evening.id,
+                "purpose": "改期用途",
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["data"]["status"], "reserved")
+        b.refresh_from_db()
+        self.assertEqual(b.date, target)
+        self.assertEqual(b.template_id, self.evening.id)
+        self.assertEqual(b.purpose, "改期用途")
+        self.assertEqual(b.start_snapshot, self.evening.start_time)
+        self.assertEqual(b.end_snapshot, self.evening.end_time)
+
+    def test_partial_payload_keeps_original_values(self):
+        """空载荷 = 原样保留（缺省字段沿用原值，不误清）。"""
+        original_date = _next_date_with(1)
+        b = self._make(date=original_date)
+        _auth(self.client, self.builder)
+        resp = self._patch(b.id, {})
+        self.assertEqual(resp.status_code, 200)
+        b.refresh_from_db()
+        self.assertEqual(b.date, original_date)
+        self.assertEqual(b.template_id, self.morning.id)
+        self.assertEqual(b.purpose, "原始用途")
+
+    def test_forbidden_for_other_user(self):
+        b = self._make(user=self.builder)
+        _auth(self.client, self.pm)
+        resp = self._patch(b.id, {"date": _next_date_with(3).isoformat()})
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.json()["code"], 40301)
+
+    def test_admin_can_reschedule_others(self):
+        b = self._make(user=self.builder)
+        _auth(self.client, self.admin)
+        target = _next_date_with(3)
+        resp = self._patch(b.id, {"date": target.isoformat()})
+        self.assertEqual(resp.status_code, 200)
+        b.refresh_from_db()
+        self.assertEqual(b.date, target)
+
+    def test_target_conflict_returns_40904(self):
+        """目标 (date, template) 已被他人 reserved → 40904 且原记录不动。"""
+        d1 = _next_date_with(1)
+        d2 = _next_date_with(2)
+        mine = self._make(date=d1)
+        SlotBooking.objects.create(
+            date=d2, template=self.morning,
+            start_snapshot=self.morning.start_time, end_snapshot=self.morning.end_time,
+            user=self.pm, purpose="他人占用", version=self.version_b, branch=self.branch_b,
+        )
+        _auth(self.client, self.builder)
+        resp = self._patch(mine.id, {"date": d2.isoformat()})
+        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.json()["code"], 40904)
+        mine.refresh_from_db()
+        self.assertEqual(mine.date, d1)
+
+    def test_released_record_cannot_reschedule(self):
+        b = self._make(status="released")
+        _auth(self.client, self.builder)
+        resp = self._patch(b.id, {"date": _next_date_with(3).isoformat()})
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["code"], 42201)
+
+    def test_past_date_rejected(self):
+        b = self._make()
+        _auth(self.client, self.builder)
+        resp = self._patch(b.id, {"date": (self.today - timedelta(days=1)).isoformat()})
+        self.assertEqual(resp.json()["code"], 42201)
+        self.assertIn("过去", resp.json()["message"])
+
+    def test_beyond_horizon_rejected(self):
+        b = self._make()
+        _auth(self.client, self.builder)
+        resp = self._patch(b.id, {"date": (self.today + timedelta(days=90)).isoformat()})
+        self.assertEqual(resp.json()["code"], 42201)
+        self.assertIn("窗口", resp.json()["message"])
+
+    def test_weekday_mismatch_rejected(self):
+        """morning 仅工作日，改到周日 → 42201（与抢占同一套适用性校验）。"""
+        b = self._make()
+        _auth(self.client, self.builder)
+        resp = self._patch(b.id, {"date": _next_date_with(7).isoformat()})
+        self.assertEqual(resp.json()["code"], 42201)
+        self.assertIn("适用范围", resp.json()["message"])
+
+    def test_not_found(self):
+        _auth(self.client, self.builder)
+        resp = self._patch(999999, {"date": _next_date_with(2).isoformat()})
+        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(resp.json()["code"], 40401)
+
+    def test_get_method_not_allowed(self):
+        """该路径只映射 PATCH；未支持的方法经契约异常处理器归一为 42201（R3-B16）。"""
+        b = self._make()
+        _auth(self.client, self.builder)
+        resp = self.client.get(f"/api/slot-bookings/{b.id}")
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["code"], 42201)
+

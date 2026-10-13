@@ -30,7 +30,8 @@ export function reportStatusMeta(code: string): TagMeta {
 export const borrowStatusMap: Record<string, TagMeta> = {
   pending: { text: "待审批", type: "warning" },
   approved: { text: "已通过", type: "success" },
-  rejected: { text: "已驳回", type: "danger" }
+  rejected: { text: "已驳回", type: "danger" },
+  cancelled: { text: "已撤销", type: "info" }
 };
 
 export function borrowStatusMeta(code: string): TagMeta {

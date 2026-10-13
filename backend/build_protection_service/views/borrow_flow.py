@@ -3,8 +3,10 @@
 - 发起：任意登录用户；目标版本不能是被借用策略所属版本，不允许重复的待审批申请。
 - 审批：仅被借用策略所属版本的 PM（或 admin）。
 - 通过 = 在目标分支按新时间实际创建借用策略（复用 services.strategies.create_strategy
-  统一校验：资源互斥/阶段冲突，冲突时电子流保持待审批并回传 40901/40902）。
+  统一校验：资源互斥/阶段冲突，  冲突时电子流保持待审批并回传 40901/40902）。
 """
+import logging
+
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -23,7 +25,18 @@ from ..services.strategies import (
     create_strategy as svc_create,
     valid_hhmm,
 )
-from . import authed_user, body_str, fail_resp, fmt_dt, json_resp, parse_body, parse_int
+from . import (
+    authed_user,
+    body_str,
+    fail_resp,
+    fetch_by_id,
+    fmt_dt,
+    json_resp,
+    parse_body,
+    parse_int,
+)
+
+logger = logging.getLogger("build_protection_service")
 
 
 def _payload(flow: BorrowFlow) -> dict:
@@ -56,6 +69,7 @@ def _payload(flow: BorrowFlow) -> dict:
         # 时间序列化统一走 fmt_dt（Asia/Shanghai 墙钟，R3-B3）：
         # 此前手工 strftime 输出 UTC 墙钟，前端早 8 小时展示（B-P1-3）。
         "handled_at": fmt_dt(flow.handled_at),
+        "cancelled_at": fmt_dt(flow.cancelled_at),
         "created_at": fmt_dt(flow.created_at),
     }
 
@@ -77,8 +91,10 @@ def borrow_flow_list_view(request):
     if resp:
         return resp
     status = request.GET.get("status")
-    if status and status not in ("pending", "approved", "rejected"):
-        return fail_resp(CODE_UNPROCESSABLE, "status 应为 pending/approved/rejected")
+    if status and status not in ("pending", "approved", "rejected", "cancelled"):
+        return fail_resp(
+            CODE_UNPROCESSABLE, "status 应为 pending/approved/rejected/cancelled"
+        )
     qs = BorrowFlow.objects.select_related(
         "strategy__branch__version",
         "strategy__template",
@@ -206,3 +222,44 @@ def borrow_flow_approve_view(request, fid):
 
 def borrow_flow_reject_view(request, fid):
     return _handle_view(request, fid, approve=False)
+
+
+def borrow_flow_cancel_view(request, fid):
+    """借用人撤销待审批申请（P2-R1）。
+
+    权限：仅借用人本人（admin 亦不例外——撤销是「撤回自己的申请」，不是管理动作），
+    他人调用 40301。状态：仅 pending 可撤，已审批/已撤销返回 40903。
+    撤销不删记录（保留审计）；因 uniq_pending_borrow_flow 只约束 pending，
+    撤销后同策略可立即重新发起。
+    """
+    # 方法守卫（R3-B16）：写端点仅 POST
+    if request.method != "POST":
+        return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
+    user, resp = authed_user(request)
+    if resp:
+        return resp
+    flow, resp = fetch_by_id(
+        BorrowFlow,
+        fid,
+        not_found="借用电子流不存在",
+        extra_queryset=BorrowFlow.objects.select_related(
+            "strategy__branch__version",
+            "strategy__template",
+            "borrower",
+            "approver",
+            "target_branch__version",
+        ),
+    )
+    if resp:
+        return resp
+    if flow.borrower_id != user.id:
+        return fail_resp(CODE_FORBIDDEN, "仅借用人本人可撤销该申请")
+    # 条件 UPDATE 抢占（对齐审批/释放范式）：并发下「审批 vs 撤销」只有一方能改状态
+    cancelled = BorrowFlow.objects.filter(
+        id=flow.id, borrower=user, status="pending"
+    ).update(status="cancelled", cancelled_at=timezone.now())
+    if not cancelled:
+        return fail_resp(CODE_ASSOCIATION, "该电子流已处理，无法撤销")
+    flow.refresh_from_db()
+    logger.info("[borrow-flow] cancel id=%s actor=%s", flow.id, user.username)
+    return json_resp(ok(_payload(flow)))

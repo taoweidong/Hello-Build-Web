@@ -61,7 +61,10 @@ export function mapBorrowEvents(opts: MapBorrowOptions): ScheduleEvent[] {
         canOccupy: false,
         canRelease: false,
         canReleaseOthers: false,
-        canApprove
+        canApprove,
+        // 撤销：仅借用人本人且仍待审批（与后端 borrow_flow_cancel_view 同口径）
+        canCancel: mine && flow.status === "pending",
+        canReschedule: false
       },
       raw: { type: "borrow" as const, data: flow }
     } satisfies ScheduleEvent;

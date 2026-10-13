@@ -1,5 +1,6 @@
 // 调度全景单测共用夹具：与真实 API 响应同构，禁止在用例里散落魔法字面量
 import type { BorrowFlowItem } from "@/api/borrowFlow";
+import type { PanoramaTodos } from "@/api/panorama";
 import type { PlanVersion } from "@/api/plan";
 import type {
   BookingItem,
@@ -218,20 +219,33 @@ export function makeBorrowFlow(
     approver_name: null,
     handle_comment: "",
     handled_at: null,
+    cancelled_at: null,
     created_at: "2026-10-13T09:15:00",
     ...over
   };
 }
 
-/** 全放开权限包（用例按需覆盖单个位） */
-export const FULL_PERMISSIONS: SchedulePermissions = {
-  canEdit: true,
-  canBorrow: true,
-  canOccupy: true,
-  canRelease: true,
-  canReleaseOthers: true,
-  canApprove: true
-};
+/** 待办聚合响应（GET /api/panorama/todos）：默认与 borrowMock 的 1 条 pending 对齐 */
+export function makeTodos(over: Partial<PanoramaTodos> = {}): PanoramaTodos {
+  return {
+    pending_approval: 1,
+    my_reserved_slots: 1,
+    my_pending_borrows: 1,
+    ...over
+  };
+}
+
+/** 全放开权限包（用例按需覆盖单个位） */ export const FULL_PERMISSIONS: SchedulePermissions =
+  {
+    canEdit: true,
+    canBorrow: true,
+    canOccupy: true,
+    canRelease: true,
+    canReleaseOthers: true,
+    canApprove: true,
+    canCancel: true,
+    canReschedule: true
+  };
 
 export function makeEvent(over: Partial<ScheduleEvent> = {}): ScheduleEvent {
   return {

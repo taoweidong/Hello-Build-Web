@@ -4,7 +4,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from . import executions, login, logs, plan, reports, strategies, weekly
 from . import admin
-from . import borrow_flow, branch_config, slot_booking
+from . import borrow_flow, branch_config, panorama, slot_booking
 
 app_name = "build_protection_service"
 
@@ -24,6 +24,9 @@ urlpatterns = [
     path("strategies/<int:sid>/toggle", _api(strategies.toggle_strategy), name="strategies_toggle"),
 
     path("plan", _api(plan.plan_view), name="plan"),
+
+    # 调度全景聚合（P2-R3）：一次返回待我审批 / 我的有效抢占 / 我发起的待审批借用
+    path("panorama/todos", _api(panorama.todos_view), name="panorama_todos"),
 
     path("weekly", _api(weekly.weekly_view), name="weekly"),
 
@@ -74,10 +77,12 @@ urlpatterns = [
     path("slot-calendar", _api(slot_booking.slot_calendar), name="slot_calendar"),
     path("slot-bookings", slot_booking.SlotBookingViewSet.as_view({"get": "list", "post": "create"}), name="slot_bookings"),
     path("slot-bookings/mine", slot_booking.SlotBookingViewSet.as_view({"get": "mine"}), name="slot_bookings_mine"),
+    path("slot-bookings/<int:pk>", slot_booking.SlotBookingViewSet.as_view({"patch": "partial_update"}), name="slot_booking_reschedule"),
     path("slot-bookings/<int:pk>/release", slot_booking.SlotBookingViewSet.as_view({"post": "release"}), name="slot_booking_release"),
 
     # 借用电子流：发起/列表/审批（通过=在目标分支实际创建借用策略）
     path("borrow-flows", _api(borrow_flow.borrow_flow_list_view), name="borrow_flows"),
     path("borrow-flows/<int:fid>/approve", _api(borrow_flow.borrow_flow_approve_view), name="borrow_flow_approve"),
     path("borrow-flows/<int:fid>/reject", _api(borrow_flow.borrow_flow_reject_view), name="borrow_flow_reject"),
+    path("borrow-flows/<int:fid>/cancel", _api(borrow_flow.borrow_flow_cancel_view), name="borrow_flow_cancel"),
 ]

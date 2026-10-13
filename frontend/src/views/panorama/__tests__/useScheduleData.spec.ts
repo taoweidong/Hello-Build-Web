@@ -11,16 +11,19 @@ vi.mock("@/api/weekly", () => ({ getWeekly: vi.fn() }));
 vi.mock("@/api/slotBooking", () => ({ getSlotCalendar: vi.fn() }));
 vi.mock("@/api/plan", () => ({ getPlan: vi.fn() }));
 vi.mock("@/api/borrowFlow", () => ({ listBorrowFlows: vi.fn() }));
+vi.mock("@/api/panorama", () => ({ getPanoramaTodos: vi.fn() }));
 
 import { getWeekly } from "@/api/weekly";
 import { getSlotCalendar } from "@/api/slotBooking";
 import { getPlan } from "@/api/plan";
 import { listBorrowFlows } from "@/api/borrowFlow";
+import { getPanoramaTodos } from "@/api/panorama";
 import { useScheduleData, type ScheduleDataOptions } from "../useScheduleData";
 import {
   WEEK_FROM,
   makeBorrowFlow,
   makePlanVersions,
+  makeTodos,
   makeWeekCalendar,
   makeWeeklyData
 } from "./fixtures";
@@ -31,6 +34,7 @@ const weeklyMock = vi.mocked(getWeekly);
 const calendarMock = vi.mocked(getSlotCalendar);
 const planMock = vi.mocked(getPlan);
 const borrowMock = vi.mocked(listBorrowFlows);
+const todosMock = vi.mocked(getPanoramaTodos);
 
 /** 固定查询范围（单自然月， monthsOf 只发一次 slot-calendar） */
 function makeQuery(over: Partial<ScheduleQuery> = {}): ScheduleQuery {
@@ -78,6 +82,7 @@ beforeEach(() => {
   calendarMock.mockResolvedValue(makeWeekCalendar());
   planMock.mockResolvedValue(makePlanVersions());
   borrowMock.mockResolvedValue([makeBorrowFlow()]);
+  todosMock.mockResolvedValue(makeTodos());
   // 只假造定时器：VTU 的 flushPromises 依赖真实 setImmediate 冲刷微任务
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 });
@@ -287,6 +292,37 @@ describe("useScheduleData 自动轮询", () => {
     vi.advanceTimersByTime(600_000);
     await flushPromises();
     expect(weeklyMock).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+  });
+});
+
+describe("useScheduleData 待办聚合（P2-R3）", () => {
+  it("随刷新并发拉取 todos，供页面展示跨筛选口径的待办量", async () => {
+    todosMock.mockResolvedValue(
+      makeTodos({
+        pending_approval: 4,
+        my_reserved_slots: 2,
+        my_pending_borrows: 3
+      })
+    );
+    const { wrapper, api } = mountData();
+    await flushPromises();
+    expect(todosMock).toHaveBeenCalledWith(undefined);
+    expect(api.todos.value).toEqual({
+      pending_approval: 4,
+      my_reserved_slots: 2,
+      my_pending_borrows: 3
+    });
+    wrapper.unmount();
+  });
+
+  it("todos 失败不阻断主流程：events 照常就绪，todos 保持 null（页面回退前端聚合）", async () => {
+    todosMock.mockRejectedValue(new Error("todos unavailable"));
+    const { wrapper, api } = mountData();
+    await flushPromises();
+    expect(api.todos.value).toBeNull();
+    // 三源数据不受影响（与三源编排用例同一夹具口径）
+    expect(api.events.value).toHaveLength(24);
     wrapper.unmount();
   });
 });

@@ -155,6 +155,24 @@ export function releaseBooking(
   });
 }
 
+/** 改期载荷：字段全部可选，缺省即沿用原值（P2-R2） */
+export interface RescheduleBookingForm {
+  date?: string;
+  template_id?: number;
+  purpose?: string;
+}
+
+/**
+ * 改期（P2-R2）：仅本人或 admin，仅 reserved 可改。
+ * 目标日期须在可抢窗口内且模板适用；目标时段已被他人抢占 → 40904。
+ */
+export function rescheduleBooking(
+  id: number,
+  data: RescheduleBookingForm
+): Promise<BookingItem> {
+  return http.patch(`/slot-bookings/${id}`, data);
+}
+
 export function getMyBookings(
   page = 1,
   pageSize = 20

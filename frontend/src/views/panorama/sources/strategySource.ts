@@ -58,7 +58,9 @@ function permissionsOf(
     canOccupy: false,
     canRelease: false,
     canReleaseOthers: false,
-    canApprove: false
+    canApprove: false,
+    canCancel: false,
+    canReschedule: false
   };
 }
 

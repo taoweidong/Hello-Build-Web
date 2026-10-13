@@ -40,7 +40,11 @@ function permissionsOf(
       !past && available && date >= opts.today && date <= opts.horizonEnd,
     canRelease: reserved && mine,
     canReleaseOthers: reserved && !mine && isAdmin,
-    canApprove: false
+    canApprove: false,
+    canCancel: false,
+    // 改期口径与后端 reschedule_booking 一致：只要求 reserved + （本人或 admin），
+    // 不额外排除已过期行（历史记录改到未来是补救操作，后端同样放行）。
+    canReschedule: reserved && (mine || isAdmin)
   };
 }
 

@@ -5,8 +5,8 @@
 ## AI 交互纪律（强制）
 
 - **每一次 AI 交互中，只要改动或新增了代码，必须先执行单元测试且全部通过，才允许提交代码**：
-  - 后端：`cd backend && python manage.py test build_protection_service`（全部通过，当前基线 ≥ 371 例）。
-  - 前端：`cd frontend && npm run test`（vitest，全部通过，当前基线 ≥ 156 例）；涉及类型/模板改动还需 `npm run typecheck`，涉及构建产物改动还需 `npm run build`。
+  - 后端：`cd backend && python manage.py test build_protection_service`（全部通过，当前基线 ≥ 391 例）。
+  - 前端：`cd frontend && npm run test`（vitest，全部通过，当前基线 ≥ 277 例）；涉及类型/模板改动还需 `npm run typecheck`，涉及构建产物改动还需 `npm run build`。
   - 任一失败必须修复后重跑，禁止跳过、禁止带失败提交。
 - 改某功能前先读 `docs/superpowers/specs/` 对应设计文档；行为有变化时同步更新对应文档与测试。
 - 模型改动后必须 `python manage.py makemigrations build_protection_service` 并提交迁移文件（仓库惯例）。

@@ -11,8 +11,12 @@ import { reactive } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import type { CalendarDayCell, SlotTemplateItem } from "@/api/slotBooking";
 import { getStrategies } from "@/api/strategy";
-import { approveBorrowFlow, rejectBorrowFlow } from "@/api/borrowFlow";
-import { releaseBooking } from "@/api/slotBooking";
+import {
+  approveBorrowFlow,
+  cancelBorrowFlow,
+  rejectBorrowFlow
+} from "@/api/borrowFlow";
+import { releaseBooking, rescheduleBooking } from "@/api/slotBooking";
 import type { StrategyItem, WeeklyStrategy } from "@/api/types";
 import type { ScheduleData } from "./types";
 import type { ScheduleEvent } from "./types";
@@ -34,18 +38,33 @@ export interface ScheduleActions {
     detailDate: string;
     detailEntry: CalendarDayCell | null;
     detailTemplate: SlotTemplateItem | null;
+    /** 详情弹窗上下文：保留事件本体，供「详情 → 改期」跳转取用权限/预填 */
+    detailEvent: ScheduleEvent | null;
+    detailReschedulable: boolean;
     approvalVisible: boolean;
     myBookingsVisible: boolean;
+    /** 抢占改期（P2-R2）：弹窗显隐与预填 */
+    rescheduleVisible: boolean;
+    rescheduleEvent: ScheduleEvent | null;
+    rescheduleDate: string;
+    rescheduleTemplateId: number | null;
+    rescheduleTemplates: SlotTemplateItem[];
+    rescheduleHorizonEnd: string;
   };
   openEdit(event: ScheduleEvent): Promise<void>;
   openBorrow(event: ScheduleEvent): Promise<void>;
   openOccupy(event: ScheduleEvent): void;
   openDetail(event: ScheduleEvent): void;
+  /** 从抢占详情弹窗转发到改期弹窗（先关详情，避免双层遮罩叠压） */
+  rescheduleFromDetail(): void;
   openApproval(): void;
   openMyBookings(): void;
+  openReschedule(event: ScheduleEvent): void;
+  confirmReschedule(): Promise<void>;
   release(event: ScheduleEvent): Promise<void>;
   approve(event: ScheduleEvent): Promise<void>;
   reject(event: ScheduleEvent): Promise<void>;
+  cancelBorrow(event: ScheduleEvent): Promise<void>;
   batchRelease(events: ScheduleEvent[]): Promise<void>;
   copyText(event: ScheduleEvent): Promise<void>;
 }
@@ -78,8 +97,16 @@ export function useScheduleActions(data: ScheduleData): ScheduleActions {
     detailDate: "",
     detailEntry: null as CalendarDayCell | null,
     detailTemplate: null as SlotTemplateItem | null,
+    detailEvent: null as ScheduleEvent | null,
+    detailReschedulable: false,
     approvalVisible: false,
-    myBookingsVisible: false
+    myBookingsVisible: false,
+    rescheduleVisible: false,
+    rescheduleEvent: null as ScheduleEvent | null,
+    rescheduleDate: "",
+    rescheduleTemplateId: null as number | null,
+    rescheduleTemplates: [] as SlotTemplateItem[],
+    rescheduleHorizonEnd: ""
   });
 
   async function openEdit(event: ScheduleEvent) {
@@ -123,7 +150,16 @@ export function useScheduleActions(data: ScheduleData): ScheduleActions {
     ui.detailDate = event.date;
     ui.detailEntry = raw.data;
     ui.detailTemplate = raw.template;
+    ui.detailEvent = event;
+    ui.detailReschedulable = event.permissions.canReschedule;
     ui.detailVisible = true;
+  }
+
+  /** 详情 → 改期：详情弹窗只负责转发，预填逻辑仍只实现一处（openReschedule） */
+  function rescheduleFromDetail() {
+    const event = ui.detailEvent;
+    ui.detailVisible = false;
+    if (event) openReschedule(event);
   }
 
   function openApproval() {
@@ -132,6 +168,41 @@ export function useScheduleActions(data: ScheduleData): ScheduleActions {
 
   function openMyBookings() {
     ui.myBookingsVisible = true;
+  }
+
+  /** 打开抢占改期弹窗：预填当前日期/时段，候选时段仅启用中的 */
+  function openReschedule(event: ScheduleEvent) {
+    const raw = event.raw;
+    if (!event.permissions.canReschedule || raw.type !== "slot") return;
+    ui.rescheduleEvent = event;
+    ui.rescheduleDate = event.date;
+    ui.rescheduleTemplateId = raw.template.id;
+    ui.rescheduleTemplates = data.templates.value.filter(t => t.enabled);
+    ui.rescheduleHorizonEnd = horizonEndOf();
+    ui.rescheduleVisible = true;
+  }
+
+  /** 提交改期：仅送 date/template_id，purpose 由后端沿用原值 */
+  async function confirmReschedule() {
+    const event = ui.rescheduleEvent;
+    if (!event || event.raw.type !== "slot") return;
+    const booking = event.raw.data.booking;
+    if (!booking) return;
+    if (!ui.rescheduleDate) {
+      ElMessage.warning("请选择新的日期");
+      return;
+    }
+    try {
+      await rescheduleBooking(booking.id, {
+        date: ui.rescheduleDate,
+        template_id: ui.rescheduleTemplateId ?? undefined
+      });
+      ElMessage.success("已改期");
+      ui.rescheduleVisible = false;
+      await data.refresh();
+    } catch {
+      // 40904 目标时段被占 / 42201 越窗口或模板不适用：拦截器已提示，弹窗保留供重选
+    }
   }
 
   /** 可抢窗口截止日（口径与 slot-booking 页一致：today + horizon_days） */
@@ -236,6 +307,32 @@ export function useScheduleActions(data: ScheduleData): ScheduleActions {
     }
   }
 
+  /** 撤销借用申请（P2-R1）：仅本人 + 待审批；已处理时后端 40903 */
+  async function cancelBorrow(event: ScheduleEvent) {
+    if (!event.permissions.canCancel || event.raw.type !== "borrow") return;
+    const flow = event.raw.data;
+    try {
+      await ElMessageBox.confirm(
+        `确定撤销「借用 ${flow.strategy_name} → ${flow.target_version_name}/${flow.target_branch_name}」的申请吗？撤销后该申请不再出现在待审批列表。`,
+        "撤销借用申请",
+        {
+          type: "warning",
+          confirmButtonText: "确定撤销",
+          cancelButtonText: "取消"
+        }
+      );
+    } catch {
+      return; // 用户取消
+    }
+    try {
+      await cancelBorrowFlow(flow.id);
+      ElMessage.success("已撤销");
+      await data.refresh();
+    } catch {
+      // 拦截器已提示
+    }
+  }
+
   /** 批量释放：串行循环单条接口 + 逐条汇总（禁止批量端点，PRD P1-R4） */
   async function batchRelease(events: ScheduleEvent[]) {
     const releasable = events.filter(
@@ -301,11 +398,15 @@ export function useScheduleActions(data: ScheduleData): ScheduleActions {
     openBorrow,
     openOccupy,
     openDetail,
+    rescheduleFromDetail,
     openApproval,
     openMyBookings,
+    openReschedule,
+    confirmReschedule,
     release,
     approve,
     reject,
+    cancelBorrow,
     batchRelease,
     copyText
   };

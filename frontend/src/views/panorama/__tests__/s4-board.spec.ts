@@ -24,17 +24,20 @@ vi.mock("@/api/slotBooking", () => ({
 }));
 vi.mock("@/api/plan", () => ({ getPlan: vi.fn() }));
 vi.mock("@/api/borrowFlow", () => ({ listBorrowFlows: vi.fn() }));
+vi.mock("@/api/panorama", () => ({ getPanoramaTodos: vi.fn() }));
 
 import { getWeekly } from "@/api/weekly";
 import { getSlotCalendar, releaseBooking } from "@/api/slotBooking";
 import type { CalendarDayCell } from "@/api/slotBooking";
 import { getPlan } from "@/api/plan";
 import { listBorrowFlows } from "@/api/borrowFlow";
+import { getPanoramaTodos } from "@/api/panorama";
 import PanoramaBoard from "../layouts/s4-board/index.vue";
 import { mountLayout, setTestUser } from "./helpers";
 import {
   makeBorrowFlow,
   makePlanVersions,
+  makeTodos,
   makeWeekCalendar,
   makeWeeklyData
 } from "./fixtures";
@@ -43,6 +46,7 @@ const weeklyMock = vi.mocked(getWeekly);
 const calendarMock = vi.mocked(getSlotCalendar);
 const planMock = vi.mocked(getPlan);
 const borrowMock = vi.mocked(listBorrowFlows);
+const todosMock = vi.mocked(getPanoramaTodos);
 const releaseMock = vi.mocked(releaseBooking);
 
 const FIXED_NOW = new Date("2026-10-13T10:00:00");
@@ -64,6 +68,7 @@ beforeEach(() => {
     .mockResolvedValue(makeWeekCalendar({ reservedDate: null }));
   planMock.mockResolvedValue(makePlanVersions());
   borrowMock.mockResolvedValue([makeBorrowFlow()]);
+  todosMock.mockResolvedValue(makeTodos());
   releaseMock.mockResolvedValue(undefined);
 });
 
@@ -127,11 +132,14 @@ describe("S4 分组看板", () => {
     expect(titles.some(t => t.startsWith("未关联版本"))).toBe(true);
     expect(titles.some(t => t.startsWith("v3.2"))).toBe(true);
     expect(titles.some(t => t.startsWith("v4.0"))).toBe(true);
-    // 操作按钮按 permissions 渲染：借用有「通过/驳回」，抢占有「释放」
+    // 操作按钮按 permissions 渲染：借用有「通过/驳回」，抢占有「释放」；
+    // 本人借用带「撤销申请」(canCancel)，本人 reserved 带「改期」(canReschedule)
     const boardText = wrapper.text();
     expect(boardText).toContain("通过");
     expect(boardText).toContain("驳回");
     expect(boardText).toContain("释放");
+    expect(boardText).toContain("改期");
+    expect(boardText).toContain("撤销申请");
   });
 
   it("批量模式：勾选后计数正确，退出批量清空勾选", async () => {

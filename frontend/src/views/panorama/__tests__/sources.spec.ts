@@ -242,6 +242,50 @@ describe("mapSlotEvents", () => {
     expect(available.permissions.canRelease).toBe(false);
   });
 
+  it("改期能力位：reserved 且本人或 admin 才为 true（P2-R2）", () => {
+    const booked = (isMine: boolean) => ({
+      ...baseOpts,
+      calendar: makeCalendar({
+        "2026-10-13": [
+          makeCell({
+            status: "reserved" as const,
+            booking: {
+              id: 1,
+              status: "reserved" as const,
+              user_name: isMine ? "我" : "他人",
+              purpose: "自测",
+              version_id: 3,
+              version_name: "v3.2",
+              branch_id: 20,
+              branch_name: "release",
+              is_mine: isMine,
+              created_at: "2026-10-10T09:00:00"
+            }
+          })
+        ]
+      })
+    });
+
+    // 本人占用（当前用户 admin）：可释放 + 可改期
+    const mine = mapSlotEvents(booked(true))[0];
+    expect(mine.permissions.canRelease).toBe(true);
+    expect(mine.permissions.canReschedule).toBe(true);
+
+    // 他人占用：admin 可代改期
+    expect(
+      mapSlotEvents({ ...booked(false), user: { role: "admin" } })[0]
+        .permissions.canReschedule
+    ).toBe(true);
+    // 他人占用 + 非 admin：不可改期
+    expect(
+      mapSlotEvents({ ...booked(false), user: { role: "builder" } })[0]
+        .permissions.canReschedule
+    ).toBe(false);
+
+    // 空闲格无记录可改
+    expect(mapSlotEvents(baseOpts)[0].permissions.canReschedule).toBe(false);
+  });
+
   it("模板已被删除时跳过该格（不渲染历史记录）", () => {
     const events = mapSlotEvents({
       ...baseOpts,
@@ -437,6 +481,34 @@ describe("mapBorrowEvents", () => {
       })[0].mine
     ).toBe(false);
     expect(mapBorrowEvents({ flows: [flow], user: null })[0].mine).toBe(false);
+  });
+
+  it("撤销能力位：本人 + 待审批才为 true（P2-R1）", () => {
+    // 本人发起的待审批申请
+    expect(
+      mapBorrowEvents({
+        flows: [makeBorrowFlow({ borrower_id: 7, status: "pending" })],
+        user: { role: "builder", id: 7 }
+      })[0].permissions.canCancel
+    ).toBe(true);
+
+    // 非本人：即使有审批权也不能替他人撤销
+    const others = mapBorrowEvents({
+      flows: [makeBorrowFlow({ borrower_id: 99, status: "pending" })],
+      user: { role: "admin", id: 7 }
+    })[0];
+    expect(others.permissions.canApprove).toBe(true);
+    expect(others.permissions.canCancel).toBe(false);
+
+    // 本人但已处理（approved/rejected/cancelled）：不可撤
+    for (const status of ["approved", "rejected", "cancelled"] as const) {
+      expect(
+        mapBorrowEvents({
+          flows: [makeBorrowFlow({ borrower_id: 7, status })],
+          user: { role: "builder", id: 7 }
+        })[0].permissions.canCancel
+      ).toBe(false);
+    }
   });
 
   it("状态徽标走 el-tag 语义映射，色板用 warning 语义变量", () => {

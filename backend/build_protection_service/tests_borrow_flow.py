@@ -13,8 +13,8 @@ from .models import (
 from .tests import ConfigAwareTestCase
 
 
-class BorrowFlowTests(ConfigAwareTestCase):
-    """借用电子流 API（继承 ConfigAwareTestCase 复用运行期配置初始化）。"""
+class BorrowFlowFixture(ConfigAwareTestCase):
+    """共享夹具：两版本两分支 + 被借用策略 + 各角色 token（发起/审批/撤销用例同源复用）。"""
 
     def setUp(self):
         super().setUp()
@@ -58,6 +58,10 @@ class BorrowFlowTests(ConfigAwareTestCase):
         }
         payload.update(overrides)
         return self.client.post("/api/borrow-flows", payload, format="json")
+
+
+class BorrowFlowTests(BorrowFlowFixture):
+    """借用电子流 API：发起校验 / 审批权限 / 通过即建策略 / 冲突保持待审批 / 驳回。"""
 
     # ---- 发起 ----
 
@@ -206,3 +210,65 @@ class BorrowFlowTests(ConfigAwareTestCase):
         resp = self.client.get("/api/borrow-flows")
         self.assertEqual(len(resp.json()["data"]), 1)
         self.assertEqual(resp.json()["data"][0]["borrower_name"], "builder")
+
+
+class BorrowFlowCancelTests(BorrowFlowFixture):
+    """借用撤销（P2-R1）：仅借用人本人 + 仅待审批可撤。"""
+
+    def test_cancel_ok_releases_pending_constraint(self):
+        flow_id = self._create_flow().json()["data"]["id"]
+        resp = self.client.post(f"/api/borrow-flows/{flow_id}/cancel")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()["data"]
+        self.assertEqual(body["status"], "cancelled")
+        self.assertIsNotNone(body["cancelled_at"])
+        # 撤销不删记录（审计留痕）
+        self.assertTrue(
+            BorrowFlow.objects.filter(id=flow_id, status="cancelled").exists()
+        )
+        # 部分唯一约束只覆盖 pending → 撤销后同策略可立即重新发起
+        again = self._create_flow()
+        self.assertEqual(again.status_code, 200)
+        self.assertEqual(again.json()["data"]["status"], "pending")
+
+    def test_cancel_forbidden_for_others(self):
+        """来源版本 PM 也不能替借用人撤销（撤销是「撤回自己的申请」）。"""
+        flow_id = self._create_flow().json()["data"]["id"]
+        self._auth("pm27a")
+        resp = self.client.post(f"/api/borrow-flows/{flow_id}/cancel")
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.json()["code"], 40301)
+        self.assertEqual(BorrowFlow.objects.get(id=flow_id).status, "pending")
+
+    def test_cancel_after_approved_conflicts(self):
+        flow_id = self._create_flow().json()["data"]["id"]
+        self._auth("pm27a")
+        self.client.post(f"/api/borrow-flows/{flow_id}/approve")
+        self._auth("builder")
+        resp = self.client.post(f"/api/borrow-flows/{flow_id}/cancel")
+        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.json()["code"], 40903)
+        self.assertEqual(BorrowFlow.objects.get(id=flow_id).status, "approved")
+
+    def test_cancel_not_found(self):
+        self._auth("builder")
+        resp = self.client.post("/api/borrow-flows/9999/cancel")
+        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(resp.json()["code"], 40401)
+
+    def test_cancel_method_guard(self):
+        """写端点仅 POST：GET 不产生副作用。"""
+        flow_id = self._create_flow().json()["data"]["id"]
+        self._auth("builder")
+        resp = self.client.get(f"/api/borrow-flows/{flow_id}/cancel")
+        self.assertEqual(resp.status_code, 422)
+        self.assertEqual(resp.json()["code"], 42201)
+        self.assertEqual(BorrowFlow.objects.get(id=flow_id).status, "pending")
+
+    def test_list_status_filter_accepts_cancelled(self):
+        flow_id = self._create_flow().json()["data"]["id"]
+        self.client.post(f"/api/borrow-flows/{flow_id}/cancel")
+        resp = self.client.get("/api/borrow-flows?status=cancelled")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(resp.json()["data"]), 1)
+        self.assertEqual(resp.json()["data"][0]["status"], "cancelled")
