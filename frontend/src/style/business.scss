@@ -6,6 +6,7 @@
 :root {
   /* 业务卡片描边色：跟随 EP 边框语义变量 */
   --biz-card-border: var(--el-border-color-lighter);
+
   /* 业务卡片圆角 */
   --biz-card-radius: 8px;
 }
@@ -19,31 +20,44 @@
 
 /* 通用卡片容器（表格区 / 表单区 / 详情区） */
 .biz-card {
+  padding: 16px;
   background: var(--el-bg-color);
   border: 1px solid var(--biz-card-border);
   border-radius: var(--biz-card-radius);
-  padding: 16px;
 }
 
 /* 筛选栏：控件组与次要操作左右分布，窄屏自动换行 */
 .biz-filter-bar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
   gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
   background: var(--el-bg-color);
   border: 1px solid var(--biz-card-border);
   border-radius: var(--biz-card-radius);
-  padding: 12px 16px;
 }
 
 /* 筛选栏内控件组 */
 .biz-filter-left {
   display: flex;
-  align-items: center;
-  gap: 10px;
   flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+/* 筛选栏右侧操作组（与 .biz-filter-left 同款，语义上区分左右） */
+.biz-filter-right {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+/* 紧凑卡片：信息密度高的列表/统计场景（默认卡片 padding 16px 偏松时用这个） */
+.biz-card-compact {
+  padding: 12px 14px;
 }
 
 /* 卡片头：标题居左、操作居右 */
@@ -56,20 +70,20 @@
 
 /* 区块标题（一级） */
 .biz-card-title {
-  color: var(--el-text-color-primary);
   font-weight: 600;
+  color: var(--el-text-color-primary);
 }
 
 /* 次要说明文字（13px） */
 .biz-sub {
-  color: var(--el-text-color-secondary);
   font-size: 13px;
+  color: var(--el-text-color-secondary);
 }
 
 /* 辅助提示文字（12px，弱化） */
 .biz-tip {
-  color: var(--el-text-color-secondary);
   font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 /* 统计卡片网格：列数随可用宽度自适应（170px 下限），

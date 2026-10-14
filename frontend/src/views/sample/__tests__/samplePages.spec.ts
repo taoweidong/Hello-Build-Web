@@ -24,7 +24,10 @@ describe("示例页挂载冒烟", () => {
 
   it("表格页挂载即渲染全量首页，筛选生效、重置复原", async () => {
     const wrapper = mount(SampleTable);
-    expect(wrapper.findAll(".el-table__body-wrapper tbody tr")).toHaveLength(5);
+    // 默认页大小 10（12 条数据 → 首屏 10 行），与页面 pageSize 初值保持一致
+    expect(wrapper.findAll(".el-table__body-wrapper tbody tr")).toHaveLength(
+      10
+    );
     expect(wrapper.text()).toContain(`共 ${DEMO_USERS.length} 条`);
 
     await wrapper.find(".el-input__inner").setValue("张");
@@ -52,17 +55,22 @@ describe("示例页挂载冒烟", () => {
     expect((nameInput.element as HTMLInputElement).value).toBe("");
   });
 
-  it("时间轴页条目数与夹具一致", () => {
+  it("时间轴页条目数与夹具一致，且时间为行内弱化展示", () => {
     const wrapper = mount(SampleTimeline);
     expect(wrapper.findAll(".el-timeline-item")).toHaveLength(
       DEMO_TIMELINE.length
     );
+    // 紧凑口径：隐藏内置 timestamp，改由行内 .tl-time 承载
+    expect(wrapper.findAll(".tl-time")).toHaveLength(DEMO_TIMELINE.length);
   });
 
-  it("空态页渲染 el-empty", () => {
+  it("空态页渲染 el-empty 与主操作按钮", () => {
     const wrapper = mount(SampleEmpty);
     expect(wrapper.find(".el-empty__description").text()).toContain(
       "暂无示例数据"
+    );
+    expect(wrapper.findAll("button").map(b => b.text())).toContain(
+      "新建示例条目"
     );
   });
 });

@@ -21,7 +21,7 @@ export interface DemoTimelineItem {
   note: string;
 }
 
-/** 概览统计卡 */
+/** 概览统计卡（hint 为一行补充信息：趋势/占比，不写说明性长句） */
 export interface DemoStatCard {
   label: string;
   value: string;
@@ -35,22 +35,19 @@ export interface DemoFeatureCard {
 }
 
 export const DEMO_STATS: DemoStatCard[] = [
-  { label: "示例总量", value: "128", hint: "占位数据，不接后端" },
-  { label: "进行中", value: "42", hint: "演示语义：primary" },
-  { label: "已完成", value: "80", hint: "演示语义：success" },
-  { label: "异常", value: "6", hint: "演示语义：danger" }
+  { label: "示例总量", value: "128", hint: "较昨日 +6" },
+  { label: "进行中", value: "42", hint: "占比 33%" },
+  { label: "已完成", value: "80", hint: "本周 +12" },
+  { label: "异常", value: "6", hint: "待跟进" }
 ];
 
 export const DEMO_FEATURES: DemoFeatureCard[] = [
-  {
-    title: "卡片网格",
-    desc: "复用 .biz-card + .biz-clickable，悬停/焦点态与系统一致"
-  },
-  { title: "数据表格", desc: "筛选栏 + 表格 + 分页的常见列表页骨架" },
-  { title: "表单录入", desc: "带校验规则的标准表单区块" },
-  { title: "时间轴", desc: "el-timeline 纵向流水展示" },
-  { title: "空态引导", desc: "el-empty + 辅助说明的占位页" },
-  { title: "深浅色适配", desc: "全部取语义变量，暗色模式自动适配" }
+  { title: "卡片网格", desc: "biz-card 网格 + 悬停态" },
+  { title: "数据表格", desc: "筛选 + 表格 + 分页" },
+  { title: "表单录入", desc: "校验规则与重置" },
+  { title: "时间轴", desc: "纵向事件流水" },
+  { title: "空态引导", desc: "el-empty + 主操作" },
+  { title: "深浅色适配", desc: "语义变量自动适配" }
 ];
 
 /** 表格演示数据（12 条，覆盖两状态与多个角色） */
@@ -143,34 +140,34 @@ export const DEMO_USERS: DemoUserRow[] = [
 
 export const DEMO_TIMELINE: DemoTimelineItem[] = [
   {
-    time: "2026-10-13 09:00",
-    title: "示例事件 · 构建完成",
+    time: "09:00",
+    title: "构建完成",
     type: "success",
-    note: "占位条目：演示 success 语义色"
+    note: "release/1.8 · 耗时 8m"
   },
   {
-    time: "2026-10-13 10:30",
-    title: "示例事件 · 冒烟进行中",
+    time: "10:30",
+    title: "冒烟进行中",
     type: "primary",
-    note: "占位条目：演示 primary 语义色"
+    note: "用例 120/200"
   },
   {
-    time: "2026-10-13 11:45",
-    title: "示例事件 · 人工分析待办",
+    time: "11:45",
+    title: "人工分析待办",
     type: "warning",
-    note: "占位条目：演示 warning 语义色"
+    note: "待张伟确认"
   },
   {
-    time: "2026-10-13 13:20",
-    title: "示例事件 · 推送失败告警",
+    time: "13:20",
+    title: "推送失败告警",
     type: "danger",
-    note: "占位条目：演示 danger 语义色"
+    note: "目标分支被锁定"
   },
   {
-    time: "2026-10-13 15:00",
-    title: "示例事件 · 记录已归档",
+    time: "15:00",
+    title: "记录已归档",
     type: "info",
-    note: "占位条目：演示 info 语义色"
+    note: "保留 30 天"
   }
 ];
 

@@ -1,13 +1,20 @@
 <!-- 示例菜单 · 表单录入 /sample/form -->
-<!-- 定位：占位演示页。展示带校验规则的标准表单区块（提交仅本地提示，不发请求） -->
+<!-- 定位：占位演示页。双列紧凑表单（短字段并排，备注整行），提交仅本地提示，不发请求 -->
+<!-- 紧凑口径：说明性文案收进卡片头一行副标题，页面底部不再堆提示段落 -->
 <template>
   <div class="biz-page">
-    <div class="biz-card form-card">
+    <div class="biz-card biz-card-compact form-card">
       <div class="biz-card-head">
         <span class="biz-card-title">示例录入表单</span>
-        <span class="biz-sub">演示 el-form 校验骨架</span>
+        <span class="biz-sub">校验演示，不发送请求</span>
       </div>
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="88px">
+      <el-form
+        ref="formRef"
+        :model="form"
+        :rules="rules"
+        label-width="72px"
+        class="form-grid"
+      >
         <el-form-item label="名称" prop="name">
           <el-input v-model="form.name" placeholder="2~20 个字符" />
         </el-form-item>
@@ -27,24 +34,21 @@
         <el-form-item label="接收通知">
           <el-switch v-model="form.notify" />
         </el-form-item>
-        <el-form-item label="备注">
+        <el-form-item label="备注" class="span-full">
           <el-input
             v-model="form.remark"
             type="textarea"
-            :rows="3"
+            :rows="2"
             maxlength="200"
             show-word-limit
             placeholder="选填"
           />
         </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="submit">提交</el-button>
-          <el-button @click="reset">重置</el-button>
-        </el-form-item>
       </el-form>
-      <p class="biz-tip">
-        示例页不发送任何请求；「提交」仅演示校验通过与重置流程。
-      </p>
+      <div class="form-actions">
+        <el-button type="primary" size="small" @click="submit">提交</el-button>
+        <el-button size="small" @click="reset">重置</el-button>
+      </div>
     </div>
   </div>
 </template>
@@ -86,7 +90,28 @@ function reset() {
 </script>
 
 <style scoped lang="scss">
+/* 双列栅格：短字段并排，长字段整行，收紧表单项下间距 */
 .form-card {
-  max-width: 560px;
+  max-width: 640px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 16px;
+
+  :deep(.el-form-item) {
+    margin-bottom: 14px;
+  }
+
+  .span-full {
+    grid-column: 1 / -1;
+  }
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
 }
 </style>

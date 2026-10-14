@@ -1,14 +1,19 @@
 <!-- 示例菜单 · 空态引导 /sample/empty -->
-<!-- 定位：占位演示页。展示 el-empty + 辅助说明的空白页骨架 -->
+<!-- 定位：占位演示页。空态区只留「一句说明 + 主操作按钮」，辅助文案收进卡片头 -->
 <template>
   <div class="biz-page">
-    <div class="biz-card empty-card">
-      <el-empty description="暂无示例数据">
-        <p class="biz-tip placeholder-tip">
-          这是空态引导示例：实际业务页可在此放主操作按钮与帮助链接。
-        </p>
-        <el-button type="primary" @click="noop">新建示例条目</el-button>
-      </el-empty>
+    <div class="biz-card biz-card-compact">
+      <div class="biz-card-head">
+        <span class="biz-card-title">空态引导</span>
+        <span class="biz-sub">业务页可在此放主操作与帮助链接</span>
+      </div>
+      <div class="empty-body">
+        <el-empty description="暂无示例数据" :image-size="60">
+          <el-button type="primary" size="small" @click="noop">
+            新建示例条目
+          </el-button>
+        </el-empty>
+      </div>
     </div>
   </div>
 </template>
@@ -24,14 +29,11 @@ function noop() {
 </script>
 
 <style scoped lang="scss">
-.empty-card {
+/* 空态区高度收敛到 200px：留白足够聚焦，又不至于撑出大片空白 */
+.empty-body {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 320px;
-}
-
-.placeholder-tip {
-  margin: 0 0 12px;
+  min-height: 200px;
 }
 </style>
