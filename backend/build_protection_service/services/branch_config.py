@@ -93,16 +93,30 @@ def start_instance(branch_project: BranchProject, actor: str) -> Optional[Instan
 
 
 def stop_instance(branch_project: BranchProject, actor: str) -> Optional[Instance]:
-    """停止模拟：仅 STARTING/RUNNING 生效；无实例或已停止幂等返回当前实例。"""
+    """停止模拟：仅 STARTING/RUNNING 生效；无实例或已停止幂等返回当前实例。
+
+    条件 UPDATE（R4-B16/B4-16，对齐 R3-B9 release_booking 范式）：此前读改写
+    无条件 save，并发双 stop 均成功且后者覆盖 stopped_at/log_tail；现在仅
+    status 仍为 STARTING/RUNNING 时更新，rowcount=0 说明并发窗口内已被他人
+    停止，重读当前状态幂等返回（不覆盖首次停止的 stopped_at/log_tail）。
+    """
     inst = Instance.objects.filter(branch_project=branch_project).order_by("-id").first()
     if inst is None or inst.status not in ("STARTING", "RUNNING"):
         return inst
     now = timezone.now()
+    log_tail = (inst.log_tail + f"\n[{actor}] 发起停止").strip()
+    # updated_at 为 auto_now 字段，queryset.update 不触发 pre_save，需显式写入
+    updated = Instance.objects.filter(
+        id=inst.id, status__in=("STARTING", "RUNNING")
+    ).update(status="STOPPED", stopped_at=now, exit_code=0, log_tail=log_tail, updated_at=now)
+    if not updated:
+        # 并发窗口内已被他人停止：重读返回当前实例（幂等语义不变）
+        inst.refresh_from_db()
+        return inst
     inst.status = "STOPPED"
     inst.stopped_at = now
     inst.exit_code = 0
-    inst.log_tail = (inst.log_tail + f"\n[{actor}] 发起停止").strip()
-    inst.save(update_fields=["status", "stopped_at", "exit_code", "log_tail", "updated_at"])
+    inst.log_tail = log_tail
     logger.info(
         "[branch-instance][simulate] stop bp=%s pid=%s actor=%s",
         branch_project.id, inst.pid, actor,

@@ -105,8 +105,10 @@ def security_log(action, username="", detail="", request=None):
     try:
         # 拼接后统一截断到字段上限（R3-B12）：业务 detail + ip + ua(200) 可超
         # max_length=255，SQLite 放行但迁 Postgres 即报错（2026-10-13 评估 B-P3-3）。
+        # username 同款截断（R4-B7/B4-07）：登录 username 取自请求体无长度上限，
+        # 200 字符用户名反复登录失败时 SQLite 放行、迁 Postgres 整行丢失（审计致盲）。
         SecurityLog.objects.create(
-            username=username or "", action=action, detail=(detail or "")[:255]
+            username=(username or "")[:100], action=action, detail=(detail or "")[:255]
         )
     except Exception:
         # exception 保留完整堆栈：审计旁路若静默失败，没有堆栈无法排查
@@ -147,6 +149,19 @@ def body_str(body, key, *, default="", max_len=None, strip=True):
     return value
 
 
+def check_str_len(value, label, max_len):
+    """字符串字段长度守卫（R4-B10/B4-10）：超长返回 42201 响应，否则 None。
+
+    口径：**拒绝优于静默截断**（body_str 的 max_len 截断语义仅用于审计类日志
+    字段，如 security_log/借用审批意见）。SQLite 对超长串宽容放行，迁 Postgres
+    即 DataError → 500 破坏统一响应契约；max_len 一律取模型字段真实 max_length。
+    非字符串值不在此拦截（由各调用点既有 isinstance/必填分支处理）。
+    """
+    if isinstance(value, str) and len(value) > max_len:
+        return fail_resp(CODE_UNPROCESSABLE, f"{label}长度不能超过 {max_len} 字符")
+    return None
+
+
 # 分页页大小常量（集中定义，R3-B11）
 PAGE_SIZE_DEFAULT = 20
 PAGE_SIZE_MAX = 100
@@ -158,10 +173,16 @@ def paginate_qs(qs, request, serializer) -> dict:
 
     page 从 1 起（非法/缺省回退 1）；page_size 默认 20、最大 100（非法/缺省/0
     回退默认值）；serializer 为逐行序列化可调用对象。返回 {items,total,page,page_size}。
+
+    request 兼容 DRF Request（query_params）与普通 Django HttpRequest（GET，
+    R4-B13 借用流列表接入分页时扩展）。
     """
-    page = max(1, parse_int(request.query_params.get("page")) or 1)
+    params = getattr(request, "query_params", None)
+    if params is None:
+        params = request.GET
+    page = max(1, parse_int(params.get("page")) or 1)
     page_size = min(PAGE_SIZE_MAX,
-                    max(1, parse_int(request.query_params.get("page_size")) or PAGE_SIZE_DEFAULT))
+                    max(1, parse_int(params.get("page_size")) or PAGE_SIZE_DEFAULT))
     total = qs.count()
     rows = qs[(page - 1) * page_size: page * page_size]
     return {

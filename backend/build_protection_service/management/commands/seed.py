@@ -117,6 +117,11 @@ class Command(BaseCommand):
         )
         pm27a = User.objects.filter(username="pm27a").first()
         master27a = Branch.objects.filter(version=v27a, name="master").first()
+        if master27a is None:
+            # 缺失即补建（R4-B15/B4-15，对齐 tr527a/tr627a 守卫）：此前 master
+            # 被删时 get_or_create(branch=None) 撞 NOT NULL 约束 IntegrityError，
+            # 整个 seed 命令中断
+            master27a = Branch.objects.create(version=v27a, name="master")
         tr527a = Branch.objects.filter(version=v27a, name="TR5").first()
         if tr527a is None:
             tr527a = Branch.objects.create(version=v27a, name="TR5")

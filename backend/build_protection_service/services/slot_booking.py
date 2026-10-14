@@ -187,6 +187,33 @@ def build_slot_calendar(month: str, user) -> tuple[Optional[dict], Optional[dict
 
 # ---------- 抢占 ----------
 
+def _raise_slot_conflict_or_reraise(exc: IntegrityError, target_date, template, verb: str):
+    """按目标唯一约束转 40904 冲突错误；非本约束的 IntegrityError 原样抛出。
+
+    R4-B8/B4-08：此前 create/reschedule 的 IntegrityError 兜底过宽——不区分
+    约束一律 40904「被他人抢占」，撞 NOT NULL/外键失效/并发删除时用户收到
+    误导性冲突提示。对齐 services.strategies._raise_conflict_or_reraise 范式：
+    SQLite 的 IntegrityError 消息只含 表名.列名（UNIQUE constraint failed:
+    build_protection_service_slotbooking.date, ...template_id）不含约束名，
+    按字段组合匹配——SlotBooking 表唯一约束仅 uniq_slot_booking_active
+    （date+template 的 reserved 部分唯一）一个，两字段组合可精确定位；
+    兼容部分后端（如 Postgres）消息携带约束名的情况。
+
+    命中目标约束返回 (40904 错误 dict, 占有人名)；否则 raise 原异常保留堆栈。
+    """
+    msg = str(exc)
+    hit = "uniq_slot_booking_active" in msg or (
+        "slotbooking.date" in msg and "slotbooking.template_id" in msg
+    )
+    if not hit:
+        raise exc
+    holder = SlotBooking.objects.filter(
+        date=target_date, template=template, status="reserved"
+    ).select_related("user").first()
+    holder_name = display_name(holder.user) if holder else "他人"
+    return _err(CODE_SLOT_CONFLICT, f"该时段{verb}被 {holder_name} 抢占，请刷新后选择其他时段"), holder_name
+
+
 def create_booking(user, payload: dict) -> tuple[Optional[dict], Optional[dict]]:
     """抢占：校验链 → 落库；唯一约束兜底并发，冲突转 40904。
 
@@ -244,16 +271,14 @@ def create_booking(user, payload: dict) -> tuple[Optional[dict], Optional[dict]]
                 version=version,
                 branch=branch,
             )
-    except IntegrityError:
-        holder = SlotBooking.objects.filter(
-            date=d, template=template, status="reserved"
-        ).select_related("user").first()
-        holder_name = display_name(holder.user) if holder else "他人"
+    except IntegrityError as exc:
+        # 仅目标约束转 40904，其余 IntegrityError 原样上抛（R4-B8）
+        conflict_err, holder_name = _raise_slot_conflict_or_reraise(exc, d, template, "刚")
         logger.info(
             "[slot-booking] conflict date=%s template=%s actor=%s holder=%s",
             d, template.id, user.username, holder_name,
         )
-        return None, _err(CODE_SLOT_CONFLICT, f"该时段刚被 {holder_name} 抢占，请刷新后选择其他时段")
+        return None, conflict_err
 
     logger.info(
         "[slot-booking] create id=%s date=%s template=%s actor=%s",
@@ -375,14 +400,12 @@ def reschedule_booking(booking: SlotBooking, actor, payload: dict) -> tuple[Opti
                 end_snapshot=template.end_time,
                 purpose=purpose,
             )
-    except IntegrityError:
-        holder = SlotBooking.objects.filter(
-            date=target_date, template=template, status="reserved"
-        ).select_related("user").first()
-        holder_name = display_name(holder.user) if holder else "他人"
-        return None, _err(
-            CODE_SLOT_CONFLICT, f"该时段已被 {holder_name} 抢占，请刷新后选择其他时段"
+    except IntegrityError as exc:
+        # 仅目标约束转 40904，其余 IntegrityError 原样上抛（R4-B8）
+        conflict_err, _holder = _raise_slot_conflict_or_reraise(
+            exc, target_date, template, "已"
         )
+        return None, conflict_err
     if not updated:
         return None, _err(CODE_UNPROCESSABLE, "该记录不是待占用状态，无法改期")
 

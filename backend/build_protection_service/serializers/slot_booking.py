@@ -38,7 +38,9 @@ class SlotTemplateSerializer(serializers.ModelSerializer):
             return raw
         parts = [x.strip() for x in raw.split(",")]
         for part in parts:
-            if not part.isdigit() or not 1 <= int(part) <= 7:
+            # isascii 前置（R4-B12/B4-12）：isdigit 会放行全角数字（"２".isdigit()
+            # 为 True 且 int("２")==2），与 valid_hhmm/parse_int 的硬化口径对齐
+            if not part.isascii() or not part.isdigit() or not 1 <= int(part) <= 7:
                 raise serializers.ValidationError("生效星期应为 1-7 的逗号分隔数字（1=周一…7=周日）")
         return ",".join(str(int(x)) for x in parts)
 

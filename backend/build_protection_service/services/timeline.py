@@ -12,8 +12,15 @@ def parse_cd(ds: str) -> date:
 
 
 def valid_hhmm(hhmm) -> bool:
-    """严格校验 HH:MM：小时 0-23、分钟 0-59，拦截 "99:99" 之类正则放行的非法值。"""
-    if not isinstance(hhmm, str) or not re.fullmatch(r"\d{2}:\d{2}", hhmm):
+    """严格校验 HH:MM：小时 0-23、分钟 0-59，拦截 "99:99" 之类正则放行的非法值。
+
+    前置 isascii（R4-B12/B4-12）：正则 \\d 会匹配 Unicode 全角数字（"２２:００"），
+    与 parsing.parse_int 的 isascii 硬化口径对齐；全角时间串入库后按字符串
+    排序的 Strategy（ordering=build_start_time）会错位。
+    """
+    if not isinstance(hhmm, str) or not hhmm.isascii():
+        return False
+    if not re.fullmatch(r"\d{2}:\d{2}", hhmm):
         return False
     h, m = hhmm.split(":")
     return int(h) <= 23 and int(m) <= 59

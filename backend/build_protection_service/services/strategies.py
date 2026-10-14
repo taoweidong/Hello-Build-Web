@@ -10,8 +10,8 @@
 """
 from django.db import IntegrityError, transaction
 
-from ..errors import CODE_DUPLICATE, CODE_STAGE_CONFLICT, CODE_UNPROCESSABLE
-from ..models import Strategy, StrategyChangeLog
+from ..errors import CODE_ASSOCIATION, CODE_DUPLICATE, CODE_STAGE_CONFLICT, CODE_UNPROCESSABLE
+from ..models import BorrowFlow, Strategy, StrategyChangeLog
 from .config import get_config
 from .conflict import detect_conflicts
 from .mutex import check_build_mutex
@@ -29,14 +29,19 @@ class StrategyValidationError(Exception):
 
 
 def _validate_name(name):
-    """策略名必填：非字符串/空串/纯空白 → 42201。
+    """策略名必填：非字符串/空串/纯空白 → 42201；超长（>200）→ 42201。
 
     Strategy.name 为非空约束字段，缺校验时缺 name 的创建请求会以
     IntegrityError 形态冒到视图层变 500（见 2026-10-12 质量评估 B-P0-2）。
+    长度上限取模型 max_length=200（R4-B10）：拒绝优于静默截断，SQLite
+    宽容超长串，迁 Postgres 即 DataError → 500。
     """
     if not isinstance(name, str) or not name.strip():
         raise StrategyValidationError(CODE_UNPROCESSABLE, "策略名必填")
-    return name.strip()
+    name = name.strip()
+    if len(name) > 200:
+        raise StrategyValidationError(CODE_UNPROCESSABLE, "策略名长度不能超过 200 字符")
+    return name
 
 
 class SimpleNamespaceTpl:
@@ -230,6 +235,26 @@ def toggle_strategy(strategy: Strategy) -> Strategy:
         )
     strategy.enabled = new_enabled
     return strategy
+
+
+@transaction.atomic
+def delete_strategy(strategy: Strategy) -> None:
+    """删除策略（R4-B1，PM 与 admin 两入口共用）：事务内拦截 pending 借用流。
+
+    BorrowFlow.strategy 为 CASCADE，直接删除会静默抹掉进行中的待审批电子流
+    （借用人/审批人无感知）与全部 ExecutionRound 历史；此前仅 PM 入口有拦截
+    （R3-B5），admin 入口反而约束更松（2026-10-15 评估 B4-01）。检查与删除
+    同一事务（SQLite IMMEDIATE 串行化写路径），防检查后插入。
+
+    拦截时抛 StrategyValidationError（40903，复用既有「存在待审批借用流」文案）；
+    审计留痕由调用方负责：PM 入口在同事务内写 AdminOpLog、admin 入口写
+    AdminOpLog（StrategyChangeLog 随策略级联删除，不能承载删除审计，R3-B5）。
+    """
+    if BorrowFlow.objects.filter(strategy=strategy, status="pending").exists():
+        raise StrategyValidationError(
+            CODE_ASSOCIATION, "存在待审批的借用申请，请先处理后再删除"
+        )
+    strategy.delete()
 
 
 def _raise_conflict_or_reraise(exc: IntegrityError, branch, build_start_time):

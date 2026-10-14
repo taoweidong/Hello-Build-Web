@@ -8,7 +8,7 @@ from django.utils.timezone import now
 from ..api import ok
 from ..models import ExecutionRound
 from ..services.config import get_config
-from . import authed_user, fail_resp, fmt_dt, json_resp, parse_body, parse_int
+from . import authed_user, body_str, fail_resp, fmt_dt, json_resp, parse_body, parse_int
 from ..errors import CODE_DUPLICATE, CODE_FORBIDDEN, CODE_NOT_FOUND, CODE_UNPROCESSABLE
 
 
@@ -114,7 +114,11 @@ def conclusion_view(request, rid):
     analysis_end = now()
     fields = {
         "conclusion": conclusion,
-        "note": body.get("note", r.note or ""),
+        # note 统一走 body_str（R4-B4/B4-04，全项目字符串提取"一律 body_str"的
+        # 最后一处漏网）：传对象/数字此前直进 update(**fields)，对象存成
+        # "{'a': 1}" 垃圾数据、非 str 撞 NOT NULL 冒 500；非 str 回退原值，
+        # 超长截断到 max_length=255（审计备注类字段，口径同 security_log R3-B12）
+        "note": body_str(body, "note", default=r.note or "", max_len=255),
         "analysis_end_at": analysis_end,
     }
     if conclusion == "pass" and r.strategy.push_mode == "normal":

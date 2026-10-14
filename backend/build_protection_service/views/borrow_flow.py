@@ -32,11 +32,28 @@ from . import (
     fetch_by_id,
     fmt_dt,
     json_resp,
+    paginate_qs,
     parse_body,
     parse_int,
 )
 
 logger = logging.getLogger("build_protection_service")
+
+# _payload 需访问的全部关联（R4-B14/B4-14）：单条响应路径（create/approve/
+# reject/cancel）此前逐关联点查固定 N+1，列表路径已正确配置；抽公共 queryset
+# 供两条路径复用（cancel 原 extra_queryset 内联写法收敛于此）。
+_FLOW_SELECT_RELATED = (
+    "strategy__branch__version",
+    "strategy__template",
+    "borrower",
+    "approver",
+    "target_branch__version",
+)
+
+
+def _flow_qs():
+    """带 select_related 的 BorrowFlow queryset（列表与单条响应路径共用）。"""
+    return BorrowFlow.objects.select_related(*_FLOW_SELECT_RELATED)
 
 
 def _payload(flow: BorrowFlow) -> dict:
@@ -95,13 +112,7 @@ def borrow_flow_list_view(request):
         return fail_resp(
             CODE_UNPROCESSABLE, "status 应为 pending/approved/rejected/cancelled"
         )
-    qs = BorrowFlow.objects.select_related(
-        "strategy__branch__version",
-        "strategy__template",
-        "borrower",
-        "approver",
-        "target_branch__version",
-    )
+    qs = _flow_qs()
     if user.role != "admin":
         # 仅返回与本人相关的电子流：自己发起的 +（PM 时）由本人审批的，
         # 避免他人版本的申请理由与审批意见对任意登录用户全量可见（信息暴露）。
@@ -111,6 +122,11 @@ def borrow_flow_list_view(request):
         qs = qs.filter(visible)
     if status:
         qs = qs.filter(status=status)
+    # 可选分页（R4-B13/B4-13）：携带 page 参数返回 {items,total,page,page_size}
+    # （page_size 默认 20 上限 100），不携带保持全量数组——与 reports 列表
+    # 向后兼容口径一致（前端未改造前行为不变）。
+    if request.GET.get("page"):
+        return json_resp(ok(paginate_qs(qs, request, _payload)))
     return json_resp(ok([_payload(f) for f in qs]))
 
 
@@ -151,6 +167,9 @@ def borrow_flow_create_view(request):
             )
     except IntegrityError:
         return fail_resp(CODE_ASSOCIATION, "该策略已有待审批的借用申请，请勿重复发起")
+    # 单条响应经 select_related 重取（R4-B14）：create 返回的实例无关联缓存，
+    # 直接 _payload 会逐关联点查 6+ 次
+    flow = _flow_qs().get(pk=flow.pk)
     return json_resp(ok(_payload(flow)))
 
 
@@ -162,7 +181,9 @@ def _handle_view(request, fid, approve: bool):
     if resp:
         return resp
     fid = parse_int(fid)
-    flow = BorrowFlow.objects.filter(id=fid).first()
+    # select_related 取单条（R4-B14）：_can_approve 与审批分支需访问
+    # strategy.branch.version / strategy.template 等关联
+    flow = _flow_qs().filter(id=fid).first()
     if not flow:
         return fail_resp(CODE_NOT_FOUND, "借用电子流不存在")
     if not _can_approve(user, flow):
@@ -192,7 +213,9 @@ def _handle_view(request, fid, approve: bool):
             if not template:
                 transaction.set_rollback(True)
                 return fail_resp(CODE_NOT_FOUND, "策略模板不存在")
-            name = f"{flow.strategy.name}({flow.target_branch.version.name}借用)"
+            # 拼接名防御截断到 Strategy.name 上限 200（R4-B10/B4-10）：源策略名
+            # (≤200) + 版本名 + "(借用)" 后缀可超限，SQLite 放行、迁 Postgres 即 500
+            name = f"{flow.strategy.name}({flow.target_branch.version.name}借用)"[:200]
             try:
                 # 推送配置从源策略复制（R3-B15）：此前固定 push_mode="normal" 且
                 # 丢弃 push_start_time，sync/固定推送策略被借用后推送配置丢失（B-P3-4）。
@@ -212,7 +235,10 @@ def _handle_view(request, fid, approve: bool):
                     err(exc.code, f"审批通过失败：{exc.message}", exc.extra),
                     status=CODE_STATUS.get(exc.code, 422),
                 )
-    flow.refresh_from_db()
+    # 单条响应经 select_related 重取（R4-B14）：替代 refresh_from_db——条件
+    # UPDATE 已改写 approver_id/状态，重取一次即同时刷新标量与关联缓存，
+    # 杜绝 _payload 逐关联点查与「approver 缓存陈旧」两类问题
+    flow = _flow_qs().get(pk=flow.id)
     return json_resp(ok(_payload(flow)))
 
 
@@ -238,17 +264,12 @@ def borrow_flow_cancel_view(request, fid):
     user, resp = authed_user(request)
     if resp:
         return resp
+    # select_related 清单收敛到 _flow_qs（R4-B14，原 cancel 独有的内联写法）
     flow, resp = fetch_by_id(
         BorrowFlow,
         fid,
         not_found="借用电子流不存在",
-        extra_queryset=BorrowFlow.objects.select_related(
-            "strategy__branch__version",
-            "strategy__template",
-            "borrower",
-            "approver",
-            "target_branch__version",
-        ),
+        extra_queryset=_flow_qs(),
     )
     if resp:
         return resp

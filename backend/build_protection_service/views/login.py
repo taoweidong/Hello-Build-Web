@@ -19,7 +19,10 @@ from ..errors import (
 
 User = get_user_model()
 
-# 登录防爆破：同一「用户名+来源 IP」连续失败 5 次锁定 15 分钟（进程内 cache，单机部署足够）。
+# 登录防爆破：同一「用户名+来源 IP」失败满 5 次锁定（进程内 cache，单机部署足够）。
+# 计数窗口为「自首次失败起 15 分钟」的固定窗口（R4-B18：add 仅在键不存在时写入
+# 计数与 TTL，incr 原子自增且不续期；旧实现每次失败 set 续期实为滑动窗口，与
+# 注释不符且读改写三步并发可稀释阈值，一并修正）；成功登录 delete 清零。
 # 联合键防止攻击者用错误密码远程锁死任意账号（如 admin）；同源针对同一账号仍会锁定。
 _LOGIN_MAX_ATTEMPTS = 5
 _LOGIN_LOCK_SECONDS = 15 * 60
@@ -42,6 +45,10 @@ def _user_payload(user):
 
 
 def login_view(request):
+    # 方法守卫（R4-B6/B4-06）：登录是写路径（失败计数/审计日志副作用），仅 POST；
+    # 此前 GET 落入「用户名与密码不能为空」语义错位
+    if request.method != "POST":
+        return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
     body = parse_body(request)
     # 类型守卫（R3-B2）：登录是未认证面，非字符串 username/password 此前会在
     # .strip()/check_password().encode() 处冒 AttributeError 变 500（B-P1-2）；
@@ -57,7 +64,15 @@ def login_view(request):
         return fail_resp(CODE_RATE_LIMITED, "失败次数过多，请 15 分钟后重试")
     user = User.objects.filter(username=username).first()
     if user is None or not user.check_password(password):
-        cache.set(fail_key, cache.get(fail_key, 0) + 1, _LOGIN_LOCK_SECONDS)
+        # 原子自增（R4-B18/B4-18）：此前 cache.set(key, cache.get(key,0)+1)
+        # 读改写三步，并发爆破可双双读到同一计数稀释 5 次阈值；add 仅在键不
+        # 存在时初始化计数 1 与 TTL（原子），incr 由 cache 后端原子自增。
+        if not cache.add(fail_key, 1, _LOGIN_LOCK_SECONDS):
+            try:
+                cache.incr(fail_key)
+            except ValueError:
+                # 键恰在 add 与 incr 之间过期：重开计数窗口
+                cache.add(fail_key, 1, _LOGIN_LOCK_SECONDS)
         security_log("login_failed", username=username, request=request)
         return fail_resp(CODE_BAD_CREDENTIALS, "用户名或密码错误")
     if not user.is_active:
@@ -70,6 +85,10 @@ def login_view(request):
 
 def logout_view(request):
     """登出：将当前访问令牌加入黑名单即时失效，并清理已过期的黑名单记录。"""
+    # 方法守卫（R4-B6/B4-06）：登出吊销 token 并写审计日志，是写操作，仅 POST；
+    # 此前 GET /auth/logout 带 Bearer 头即误杀会话（预取/爬虫/地址栏访问）
+    if request.method != "POST":
+        return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
     header = request.META.get("HTTP_AUTHORIZATION", "")
     raw = header[7:].strip() if header.lower().startswith("bearer ") else ""
     username = ""

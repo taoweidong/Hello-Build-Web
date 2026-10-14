@@ -11,16 +11,16 @@ from django.utils import timezone
 
 from ..api import ok
 from ..errors import (
-    CODE_ASSOCIATION,
     CODE_FORBIDDEN,
     CODE_NOT_FOUND,
     CODE_UNPROCESSABLE,
 )
-from ..models import AdminOpLog, BorrowFlow, Branch, Strategy, StrategyChangeLog, StrategyTemplate
+from ..models import AdminOpLog, Branch, Strategy, StrategyChangeLog, StrategyTemplate
 from ..services.config import get_config
 from ..services.strategies import (
     StrategyValidationError,
     create_strategy as svc_create,
+    delete_strategy as svc_delete,
     strategy_payload,
     toggle_strategy as svc_toggle,
     update_strategy as svc_update,
@@ -221,25 +221,26 @@ def delete_strategy(request, sid):
     perr = _check_pm_bound(request.user, s.branch)
     if perr:
         return perr
-    # R3-B5：存在待审批借用流时拦截删除（40903）——BorrowFlow.strategy 为
-    # CASCADE，直接删除会静默抹掉进行中的电子流与执行历史（B-P2-2）。
-    # 检查与删除同一事务（SQLite IMMEDIATE 串行化写路径），防检查后插入。
-    with transaction.atomic():
-        if BorrowFlow.objects.filter(strategy=s, status="pending").exists():
-            return fail_resp(CODE_ASSOCIATION, "存在待审批的借用申请，请先处理后再删除")
-        name, strategy_id = s.name, s.id
-        s.delete()
-        # 审计留痕（R3-B5）：StrategyChangeLog.strategy 为 CASCADE，随策略删除
-        # 会被级联抹掉，故删除类审计落到独立存续的 AdminOpLog（action 沿用既有
-        # "delete_strategy" 枚举，operator=当前用户，管理端"操作日志"可溯源）。
-        try:
-            AdminOpLog.objects.create(
-                operator=request.user, action="delete_strategy",
-                target_type="strategy", target_id=str(strategy_id), detail=name[:255],
-            )
-        except Exception:
-            # 审计旁路不阻断业务，但保留堆栈便于排查（与 admin._admin_log 同口径）
-            logger.exception("PM 删除策略审计写入失败：strategy=%s", strategy_id)
+    # R3-B5/R4-B1：pending 借用流拦截 + 删除收敛到 services.strategies.delete_strategy
+    # （PM 与 admin 两入口共用同一实现，行为不变）：BorrowFlow.strategy 为
+    # CASCADE，直接删除会静默抹掉进行中的电子流与执行历史（B-P2-2/B4-01）。
+    name, strategy_id = s.name, s.id
+    try:
+        with transaction.atomic():
+            svc_delete(s)
+            # 审计留痕（R3-B5）：StrategyChangeLog.strategy 为 CASCADE，随策略删除
+            # 会被级联抹掉，故删除类审计落到独立存续的 AdminOpLog（action 沿用既有
+            # "delete_strategy" 枚举，operator=当前用户，管理端"操作日志"可溯源）。
+            try:
+                AdminOpLog.objects.create(
+                    operator=request.user, action="delete_strategy",
+                    target_type="strategy", target_id=str(strategy_id), detail=name[:255],
+                )
+            except Exception:
+                # 审计旁路不阻断业务，但保留堆栈便于排查（与 admin._admin_log 同口径）
+                logger.exception("PM 删除策略审计写入失败：strategy=%s", strategy_id)
+    except StrategyValidationError as exc:
+        return validation_error_resp(exc)
     return json_resp(ok())
 
 

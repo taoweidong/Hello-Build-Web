@@ -7,6 +7,7 @@ import logging
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
+from django.db.models import ProtectedError
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny
@@ -36,7 +37,16 @@ from ..services.branch_config import (
     start_instance as svc_start,
     stop_instance as svc_stop,
 )
-from . import authed_user, body_str, fail_resp, first_error, json_resp, parse_body, parse_int
+from . import (
+    authed_user,
+    body_str,
+    check_str_len,
+    fail_resp,
+    first_error,
+    json_resp,
+    parse_body,
+    parse_int,
+)
 from ..errors import CODE_ASSOCIATION, CODE_DUPLICATE, CODE_FORBIDDEN, CODE_NOT_FOUND, CODE_UNPROCESSABLE
 
 logger = logging.getLogger("build_protection_service")
@@ -114,6 +124,12 @@ class BranchViewSet(
         name = body_str(body, "name")
         if not name:
             return fail_resp(CODE_UNPROCESSABLE, "分支名必填")
+        # 长度守卫（R4-B10）：Branch.name max_length=100、repository_url 255；
+        # description 为 TextField 无 DB 上限，不设限
+        lenerr = check_str_len(name, "分支名", 100) or check_str_len(
+            body_str(body, "repository_url"), "仓库地址", 255)
+        if lenerr:
+            return lenerr
         if Branch.objects.filter(version=version, name=name).exists():
             return fail_resp(CODE_DUPLICATE, "该版本下分支已存在")
         try:
@@ -138,7 +154,14 @@ class BranchViewSet(
         if perr:
             return perr
         branch_name = f"{branch.version.name}/{branch.name}"
-        branch.delete()  # 级联清理工程关联/启动配置/授权/实例
+        try:
+            branch.delete()  # 级联清理工程关联/启动配置/授权/实例
+        except ProtectedError:
+            # R4-B2/B4-02：SlotBooking.branch 与 BorrowFlow.target_branch 均为
+            # PROTECT，分支有抢占记录或被借用流指向时 delete() 抛 ProtectedError
+            # （DatabaseError 子类，contract_exception_handler 不接管），此前未捕获
+            # → 裸 500 破坏统一响应契约；口径对齐 admin.delete_template 转 40903。
+            return fail_resp(CODE_ASSOCIATION, "分支存在抢占记录或借用流引用，无法删除")
         logger.info("[branch-config] delete branch=%s actor=%s", branch_name, user.username)
         return json_resp(ok(message="分支已删除"))
 
@@ -206,7 +229,9 @@ class BranchViewSet(
         perr = _require_role(user, branch, ROLE_ADMIN)
         if perr:
             return perr
-        body = request.data or {}
+        # 非 dict 载荷归一为 {}（R4-B3/B4-03，R3-B2 同款）：数组/字符串等此前
+        # 经 `request.data or {}` 直传，body.get 冒 AttributeError 变 500
+        body = request.data if isinstance(request.data, dict) else {}
         target = User.objects.filter(id=parse_int(body.get("user_id"))).first()
         if target is None:
             return fail_resp(CODE_UNPROCESSABLE, "授权用户不存在")
@@ -380,6 +405,12 @@ def projects_view(request):
         name = body_str(body, "name")
         if not name:
             return fail_resp(CODE_UNPROCESSABLE, "工程名必填")
+        # 长度守卫（R4-B10）：Project.name max_length=100、repository_url 255；
+        # description 为 TextField 无 DB 上限，不设限
+        lenerr = check_str_len(name, "工程名", 100) or check_str_len(
+            body_str(body, "repository_url"), "仓库地址", 255)
+        if lenerr:
+            return lenerr
         if Project.objects.filter(name=name).exists():
             return fail_resp(CODE_DUPLICATE, "工程名已存在")
         try:

@@ -17,12 +17,14 @@ from ..services.config import get_config, set_config
 from ..services.strategies import (
     StrategyValidationError,
     create_strategy as svc_create_strategy,
+    delete_strategy as svc_delete_strategy,
     strategy_payload,
     toggle_strategy as svc_toggle_strategy,
     update_strategy as svc_update_strategy,
 )
 from . import (
     authed_user,
+    check_str_len,
     fail_resp,
     fetch_by_id,
     fmt_dt,
@@ -70,6 +72,10 @@ def create_version(user, body):
     if not isinstance(name, str) or not name.strip() or pm_user_id is None:
         return fail_resp(CODE_UNPROCESSABLE, "版本名与 PM 必填")
     name = name.strip()
+    # 长度守卫（R4-B10）：Version.name max_length=100，超长拒绝而非静默截断
+    lenerr = check_str_len(name, "版本名", 100)
+    if lenerr:
+        return lenerr
     if Version.objects.filter(name=name).exists():
         return fail_resp(CODE_DUPLICATE, "版本号已存在")
     pm = User.objects.filter(id=pm_user_id).first()
@@ -78,6 +84,10 @@ def create_version(user, body):
     # 版本挂给非 PM 角色会形成"无主版本"（该用户不会获得 PM 权限），入口拒绝
     if pm.role != "pm":
         return fail_resp(CODE_UNPROCESSABLE, "pm_user_id 必须为 PM 角色用户")
+    # R4-B5：停用用户同样形成"无主版本"（无法登录审批借用流），与 R3-B6
+    # 守护的不变量对齐，入口拒绝
+    if not pm.is_active:
+        return fail_resp(CODE_UNPROCESSABLE, "PM 用户已停用，请先启用或选择其他用户")
     status = body.get("status", "active")
     if status not in _VALID_STATUSES:
         return fail_resp(CODE_UNPROCESSABLE, "非法状态")
@@ -121,10 +131,15 @@ def update_version(request, vid):
     if body.get("name") is not None:
         if not isinstance(body["name"], str) or not body["name"].strip():
             return fail_resp(CODE_UNPROCESSABLE, "版本名不能为空")
-        dup = Version.objects.filter(name=body["name"].strip()).exclude(id=vid).exists()
+        new_name = body["name"].strip()
+        # 长度守卫（R4-B10）：Version.name max_length=100
+        lenerr = check_str_len(new_name, "版本名", 100)
+        if lenerr:
+            return lenerr
+        dup = Version.objects.filter(name=new_name).exclude(id=vid).exists()
         if dup:
             return fail_resp(CODE_DUPLICATE, "版本号已存在")
-        v.name = body["name"].strip()
+        v.name = new_name
     if body.get("pm_user_id") is not None:
         pm_id = parse_int(body["pm_user_id"])
         if pm_id is None:
@@ -134,6 +149,9 @@ def update_version(request, vid):
             return fail_resp(CODE_UNPROCESSABLE, "PM 用户不存在")
         if pm.role != "pm":
             return fail_resp(CODE_UNPROCESSABLE, "pm_user_id 必须为 PM 角色用户")
+        # R4-B5：停用用户不可绑定为版本 PM（与 create_version 同口径）
+        if not pm.is_active:
+            return fail_resp(CODE_UNPROCESSABLE, "PM 用户已停用，请先启用或选择其他用户")
         v.pm_user = pm
     if body.get("status") is not None:
         if body["status"] not in _VALID_STATUSES:
@@ -164,6 +182,10 @@ def add_branch(request, vid):
     if not isinstance(name, str) or not name.strip():
         return fail_resp(CODE_UNPROCESSABLE, "分支名必填")
     name = name.strip()
+    # 长度守卫（R4-B10）：Branch.name max_length=100
+    lenerr = check_str_len(name, "分支名", 100)
+    if lenerr:
+        return lenerr
     if Branch.objects.filter(version=v, name=name).exists():
         return fail_resp(CODE_DUPLICATE, "该版本下分支已存在")
     try:
@@ -197,6 +219,10 @@ def users_view(request):
         display_name = body.get("display_name", "")
         if not isinstance(username, str) or not username.strip():
             return fail_resp(CODE_UNPROCESSABLE, "用户名必填")
+        # 长度守卫（R4-B10）：User.username max_length=150（AbstractUser）
+        lenerr = check_str_len(username.strip(), "用户名", 150)
+        if lenerr:
+            return lenerr
         # 密码必填：不再回退默认弱口令 "123456"（2026-10-12 评估 B-P1-14）
         if not isinstance(password, str) or not password.strip():
             return fail_resp(CODE_UNPROCESSABLE, "密码必填")
@@ -207,6 +233,10 @@ def users_view(request):
             return fail_resp(CODE_UNPROCESSABLE, "非法角色")
         if not isinstance(display_name, str):
             return fail_resp(CODE_UNPROCESSABLE, "display_name 应为字符串")
+        # 长度守卫（R4-B10）：User.display_name max_length=100
+        lenerr = check_str_len(display_name, "显示名", 100)
+        if lenerr:
+            return lenerr
         if User.objects.filter(username=username).exists():
             return fail_resp(CODE_DUPLICATE, "用户名已存在")
         try:
@@ -252,6 +282,10 @@ def update_user(request, uid):
     if body.get("display_name") is not None:
         if not isinstance(body["display_name"], str):
             return fail_resp(CODE_UNPROCESSABLE, "display_name 应为字符串")
+        # 长度守卫（R4-B10）：User.display_name max_length=100
+        lenerr = check_str_len(body["display_name"], "显示名", 100)
+        if lenerr:
+            return lenerr
         u.display_name = body["display_name"]
     if body.get("is_active") is not None:
         # 严格布尔：此前 str(...).lower() in ("true","1") 会把任意垃圾值静默解析成"停用"
@@ -320,6 +354,10 @@ def templates_view(request):
         name = body.get("name")
         if not isinstance(name, str) or not name.strip():
             return fail_resp(CODE_UNPROCESSABLE, "模板名必填")
+        # 长度守卫（R4-B10）：StrategyTemplate.name max_length=100
+        lenerr = check_str_len(name.strip(), "模板名", 100)
+        if lenerr:
+            return lenerr
         if StrategyTemplate.objects.filter(name=name.strip()).exists():
             return fail_resp(CODE_DUPLICATE, "模板名已存在")
         parsed, verr = _parse_template_minutes(body)
@@ -328,12 +366,24 @@ def templates_view(request):
         description = body.get("description", "")
         if not isinstance(description, str):
             return fail_resp(CODE_UNPROCESSABLE, "description 应为字符串")
-        t = StrategyTemplate.objects.create(
-            name=name.strip(),
-            smoke_minutes=parsed.get("smoke_minutes", 0),
-            analysis_minutes=parsed.get("analysis_minutes", 0),
-            description=description,
-        )
+        # 长度守卫（R4-B10）：StrategyTemplate.description max_length=255
+        lenerr = check_str_len(description, "模板描述", 255)
+        if lenerr:
+            return lenerr
+        try:
+            # savepoint 包裹：捕获 IntegrityError 后连接仍可继续使用，
+            # 不污染外层事务（与 slot_booking 模板创建同款结构）
+            with transaction.atomic():
+                t = StrategyTemplate.objects.create(
+                    name=name.strip(),
+                    smoke_minutes=parsed.get("smoke_minutes", 0),
+                    analysis_minutes=parsed.get("analysis_minutes", 0),
+                    description=description,
+                )
+        except IntegrityError:
+            # 并发重名撞 unique 约束兜底（R4-B17/B4-17）：check-then-create 有
+            # 竞态窗口，此前未捕获 → 500 破坏契约（users_view/create_version 均已包）
+            return fail_resp(CODE_DUPLICATE, "模板名已存在")
         _admin_log(user, "create_template", target_type="template", target_id=t.id, detail=t.name)
         return json_resp(ok(_template_payload(t)))
     return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
@@ -363,6 +413,10 @@ def update_template(request, user, tid):
         if not isinstance(body["name"], str) or not body["name"].strip():
             return fail_resp(CODE_UNPROCESSABLE, "模板名不能为空")
         new_name = body["name"].strip()
+        # 长度守卫（R4-B10）：StrategyTemplate.name max_length=100
+        lenerr = check_str_len(new_name, "模板名", 100)
+        if lenerr:
+            return lenerr
         if StrategyTemplate.objects.filter(name=new_name).exclude(id=tid).exists():
             return fail_resp(CODE_DUPLICATE, "模板名已存在")
         t.name = new_name
@@ -374,6 +428,10 @@ def update_template(request, user, tid):
     if body.get("description") is not None:
         if not isinstance(body["description"], str):
             return fail_resp(CODE_UNPROCESSABLE, "description 应为字符串")
+        # 长度守卫（R4-B10）：StrategyTemplate.description max_length=255
+        lenerr = check_str_len(body["description"], "模板描述", 255)
+        if lenerr:
+            return lenerr
         t.description = body["description"]
     try:
         t.save()
@@ -436,6 +494,10 @@ def config_view(request):
         return json_resp(ok(_config_payload()))
     if request.method == "PUT":
         body = parse_body(request)
+        # 先全量校验、后原子写入（R4-B9/B4-09）：此前循环内逐键 set_config
+        # 独立提交，{"build_minutes":40,"push_minutes":"abc"} 时第一键已生效
+        # 第二键才 42201，配置进入半套中间态。
+        parsed = {}
         for key in ("build_minutes", "push_minutes", "sync_buffer_minutes"):
             if body.get(key) is not None:
                 # 值域校验（R3-B7）：int() 会把 true→1、45.7→45 截断、负数照单
@@ -445,6 +507,9 @@ def config_view(request):
                 val = parse_int(body[key])
                 if val is None or val < 0:
                     return fail_resp(CODE_UNPROCESSABLE, f"{key} 应为非负整数")
+                parsed[key] = val
+        with transaction.atomic():
+            for key, val in parsed.items():
                 set_config(key, val)
         _admin_log(user, "update_config", target_type="config", detail=str(body)[:255])
         return json_resp(ok(_config_payload()))
@@ -575,7 +640,13 @@ def _delete_admin_strategy(request, user, sid):
     s = Strategy.objects.filter(id=sid).first()
     if not s:
         return fail_resp(CODE_NOT_FOUND, "策略不存在")
-    s.delete()
+    # R4-B1：与 PM 入口共用 services.strategies.delete_strategy——事务内拦截
+    # pending 借用流（40903），此前 admin 直接 s.delete() 会经 CASCADE 静默
+    # 抹掉进行中的待审批电子流与执行历史（B4-01，admin 入口反而约束更松）。
+    try:
+        svc_delete_strategy(s)
+    except StrategyValidationError as exc:
+        return validation_error_resp(exc)
     _admin_log(user, "delete_strategy", target_type="strategy", target_id=sid)
     return json_resp(ok())
 

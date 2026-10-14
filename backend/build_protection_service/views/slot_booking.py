@@ -6,6 +6,7 @@
 import logging
 
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
@@ -65,7 +66,15 @@ class SlotTemplateViewSet(
         serializer = SlotTemplateSerializer(data=request.data or {})
         if not serializer.is_valid():
             return fail_resp(CODE_UNPROCESSABLE, first_error(serializer.errors))
-        template = serializer.save()
+        try:
+            # savepoint 包裹（对齐 create_booking 结构）：捕获 IntegrityError 后
+            # 连接仍可继续使用，不污染外层事务（ATOMIC_REQUESTS/测试事务）
+            with transaction.atomic():
+                template = serializer.save()
+        except IntegrityError:
+            # 并发重名撞 name unique 约束兜底（R4-B17/B4-17）：validate_name 的
+            # check-then-create 有竞态窗口，此前未捕获 → DRF 兜底 50000 破坏契约
+            return fail_resp(CODE_DUPLICATE, "时段名称已存在")
         logger.info("[slot-booking] template create id=%s name=%s actor=%s",
                     template.id, template.name, user.username)
         return json_resp(ok({
@@ -155,7 +164,11 @@ class SlotBookingViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
         booking = self.get_queryset().filter(pk=kwargs.get("pk")).first()
         if booking is None:
             return fail_resp(CODE_NOT_FOUND, "抢占记录不存在")
-        data, error = reschedule_booking(booking, user, request.data or {})
+        # 非 dict 载荷归一为 {}（R4-B3/B4-03，R3-B2 同款）：数组/字符串等此前
+        # 直塞服务层，payload.get 冒 AttributeError 变 500；归一后与空 body 同
+        # 语义（缺省字段沿用原值的 no-op 改期）
+        body = request.data if isinstance(request.data, dict) else {}
+        data, error = reschedule_booking(booking, user, body)
         if error:
             return fail_resp(error["code"], error["message"])
         return json_resp(ok(data))
