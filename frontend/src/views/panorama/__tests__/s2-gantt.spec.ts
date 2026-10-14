@@ -65,7 +65,7 @@ describe("S2 时空甘特", () => {
   it("锚点日四阶段区间渲染为甘特条（区间来自 /plan，推送为虚线描边）", async () => {
     ({ wrapper } = await mountLayout(PanoramaGantt, "/panorama/gantt"));
     // 锚点日 = query.dateFrom = 2026-10-12
-    expect(wrapper.find(".day-title").text()).toContain("2026年10月12日");
+    expect(wrapper.find(".biz-range-title").text()).toContain("2026年10月12日");
     const lanes = wrapper.findAll(".lane");
     // 分支泳道：main（4 阶段）+ 未关联分支（1 空闲时段），仅看有任务分支默认开
     expect(lanes).toHaveLength(2);
@@ -98,7 +98,7 @@ describe("S2 时空甘特", () => {
     // （多段 await：getWeekly / getSlotCalendar / listBorrowFlows / getPlan，
     // 单次 flush 不足以让借用流 settle，故循环多次确保整表刷新写完）
     for (let i = 0; i < 3; i++) await flushPromises();
-    expect(wrapper.find(".day-title").text()).toContain("2026年10月13日");
+    expect(wrapper.find(".biz-range-title").text()).toContain("2026年10月13日");
     // 10-13 成为锚点日：main 展开为四阶段区间；该日本人抢占落在 release 分支；
     // 借用流锚定在「发起日」created_at=2026-10-13（非新构建时间 10-14，新构建时间
     // 只出现在副标题），故当日也有一条借用 → 共 3 个分支泳道

@@ -3,37 +3,38 @@
 <!-- 阶段区间一律取服务端 /plan 的 timeline（锚点日），其余日期退化为点标记，不硬算时长 -->
 <template>
   <div class="biz-page">
-    <el-card shadow="never" class="toolbar-card">
-      <div class="toolbar">
-        <div class="toolbar-left">
+    <el-card shadow="never" class="biz-toolbar-card">
+      <div class="biz-toolbar">
+        <div class="biz-toolbar-left">
           <el-button
             circle
             aria-label="前一天"
             size="small"
             @click="shiftDay(-1)"
           >
-            <IconifyIconOffline :icon="ArrowLeft" class="nav-icon" />
+            <IconifyIconOffline :icon="ArrowLeft" class="biz-nav-icon" />
           </el-button>
-          <span class="day-title">{{ dayTitle }}</span>
+          <span class="biz-range-title">{{ dayTitle }}</span>
           <el-button
             circle
             aria-label="后一天"
             size="small"
             @click="shiftDay(1)"
           >
-            <IconifyIconOffline :icon="ArrowRight" class="nav-icon" />
+            <IconifyIconOffline :icon="ArrowRight" class="biz-nav-icon" />
           </el-button>
           <el-button size="small" text type="primary" @click="goToday"
             >今天</el-button
           >
+          <!-- 文案常显于开关右侧：inline-prompt 会把文案塞进滑块内，
+               两种状态宽度不一导致工具条跳动，故不启用 -->
           <el-switch
             v-model="onlyBusy"
             size="small"
             active-text="仅看有任务分支"
-            inline-prompt
           />
         </div>
-        <div class="toolbar-right">
+        <div class="biz-toolbar-right">
           <el-tooltip placement="bottom">
             <template #content>
               锚点日展示四阶段区间，其余日期为时间点标记<br />
@@ -42,7 +43,7 @@
             </template>
             <el-icon class="hint-icon"><InfoFilled /></el-icon>
           </el-tooltip>
-          <div class="legend">
+          <div class="biz-legend">
             <span v-for="s in STAGE_LEGEND" :key="s.key" class="legend-item">
               <i class="dot" :style="{ background: STAGE_COLORS[s.key] }" />{{
                 s.label
@@ -272,94 +273,10 @@ async function onBarClick(e: ScheduleEvent) {
 </script>
 
 <style scoped lang="scss">
-/* 头部工具卡压掉 el-card 默认留白；主图卡 body 收敛 */
-.toolbar-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-
-  :deep(.el-card__body) {
-    padding: 10px 14px;
-  }
-}
-
 .hint-icon {
   font-size: 14px;
   color: var(--el-text-color-placeholder);
   cursor: help;
-}
-
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.toolbar-left {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.nav-icon {
-  width: 14px;
-  height: 14px;
-}
-
-.day-title {
-  min-width: 150px;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-  text-align: center;
-}
-
-.toolbar-right {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-}
-
-.tooltip-text {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-
-.legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-
-  .legend-item {
-    display: inline-flex;
-    gap: 4px;
-    align-items: center;
-  }
-
-  .dot {
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-  }
-
-  .diamond {
-    border-radius: 2px;
-    transform: rotate(45deg);
-  }
-
-  .dot-slot {
-    background: var(--el-color-success);
-  }
-
-  .dot-borrow {
-    background: var(--el-color-warning);
-  }
 }
 
 .gantt-card {
@@ -419,6 +336,12 @@ async function onBarClick(e: ScheduleEvent) {
   font-size: 11px;
   color: var(--el-text-color-secondary);
   transform: translateX(-50%);
+}
+
+/* 末位刻度（24:00）右缘对齐轨道末端：默认居中会有一半溢出，
+   在 overflow-x:auto 容器里撑出一段无意义的横向滚动 */
+.ruler-track .tick:last-child {
+  transform: translateX(-100%);
 }
 
 .bar {

@@ -33,7 +33,7 @@ import { getPlan } from "@/api/plan";
 import { listBorrowFlows } from "@/api/borrowFlow";
 import { getPanoramaTodos } from "@/api/panorama";
 import PanoramaBoard from "../layouts/s4-board/index.vue";
-import { mountLayout, setTestUser } from "./helpers";
+import { mountLayout, openMoreMenu, setTestUser } from "./helpers";
 import {
   makeBorrowFlow,
   makePlanVersions,
@@ -133,13 +133,20 @@ describe("S4 分组看板", () => {
     expect(titles.some(t => t.startsWith("v3.2"))).toBe(true);
     expect(titles.some(t => t.startsWith("v4.0"))).toBe(true);
     // 操作按钮按 permissions 渲染：借用有「通过/驳回」，抢占有「释放」；
-    // 本人借用带「撤销申请」(canCancel)，本人 reserved 带「改期」(canReschedule)
+    // 本人 reserved 带「改期」(canReschedule) —— 均在前两个，常驻行内
     const boardText = wrapper.text();
     expect(boardText).toContain("通过");
     expect(boardText).toContain("驳回");
     expect(boardText).toContain("释放");
     expect(boardText).toContain("改期");
-    expect(boardText).toContain("撤销申请");
+    // 本人借用带「撤销申请」(canCancel)：超出「行内最多 2 个」上限，
+    // 收进「更多」下拉（teleport 到 body，行内不再直排）
+    const borrowRow = wrapper
+      .findAll(".row")
+      .find(r => r.text().includes("李四 借用"))!;
+    expect(borrowRow.text()).not.toContain("撤销申请");
+    const menu = await openMoreMenu(borrowRow);
+    expect(menu.textContent).toContain("撤销申请");
   });
 
   it("批量模式：勾选后计数正确，退出批量清空勾选", async () => {
@@ -236,6 +243,9 @@ describe("S4 分组看板", () => {
       .findAll("button")
       .find(b => b.text() === "刷新")!
       .trigger("click");
+    // 刷新是多段异步拉取：加载期间分组区让位给骨架、行短暂卸载，
+    // 必须显式 flush 等整表写回后再断言行内容（不能对着旧 DOM 断言）
+    for (let i = 0; i < 3; i++) await flushPromises();
     // 首屏 2 次（版本回填）+ 手动刷新 1 次
     expect(weeklyMock).toHaveBeenCalledTimes(3);
     expect(batchBarText()).toContain("已选 1 项");

@@ -3,25 +3,25 @@
 <!-- 唯一支持完整批量的布局（批量释放走串行单条接口 + 逐条汇总） -->
 <template>
   <div class="biz-page">
-    <el-card shadow="never" class="toolbar-card">
-      <div class="toolbar">
-        <div class="toolbar-left">
+    <el-card shadow="never" class="biz-toolbar-card">
+      <div class="biz-toolbar">
+        <div class="biz-toolbar-left">
           <el-button
             circle
             aria-label="上一周期"
             size="small"
             @click="shiftRange(-1)"
           >
-            <IconifyIconOffline :icon="ArrowLeft" class="nav-icon" />
+            <IconifyIconOffline :icon="ArrowLeft" class="biz-nav-icon" />
           </el-button>
-          <span class="range-title">{{ rangeText }}</span>
+          <span class="biz-range-title">{{ rangeText }}</span>
           <el-button
             circle
             aria-label="下一周期"
             size="small"
             @click="shiftRange(1)"
           >
-            <IconifyIconOffline :icon="ArrowRight" class="nav-icon" />
+            <IconifyIconOffline :icon="ArrowRight" class="biz-nav-icon" />
           </el-button>
           <el-button size="small" text type="primary" @click="goThisWeek"
             >本周</el-button
@@ -32,7 +32,7 @@
             <el-option label="按状态" value="status" />
           </el-select>
         </div>
-        <div class="biz-filter-right">
+        <div class="biz-toolbar-right">
           <el-button size="small" @click="toggleBatch">
             {{ batchMode ? "退出批量" : "批量模式" }}
           </el-button>
@@ -72,134 +72,67 @@
       </el-button>
     </div>
 
-    <el-card
-      v-for="group in groups"
-      :key="group.key"
-      shadow="never"
-      class="group-card biz-content-card"
-    >
-      <template #header>
-        <div class="biz-card-head">
-          <span class="biz-card-title">
-            {{ group.name }}
-            <el-tag size="small" type="info" effect="plain">{{
-              group.events.length
-            }}</el-tag>
-          </span>
-          <el-button
-            size="small"
-            text
-            type="primary"
-            @click="group.collapsed = !group.collapsed"
-          >
-            {{ group.collapsed ? "展开" : "收起" }}
-          </el-button>
-        </div>
-      </template>
-      <div v-show="!group.collapsed" class="row-list">
-        <div v-for="e in group.events.slice(0, 50)" :key="e.id" class="row">
-          <el-checkbox
-            v-if="batchMode"
-            :model-value="isSelected(e)"
-            @update:model-value="toggleSelect(e, $event)"
-          />
-          <span class="row-color" :style="{ background: e.color }" />
-          <span class="row-main">
-            <span class="row-title">{{ e.title }}</span>
-            <span class="row-sub">
-              {{ e.date }} {{ e.time
-              }}{{ e.endTime !== e.time ? `-${e.endTime}` : "" }}
-              <!-- 按分支分组时组名即分支，行内不再重复 -->
-              <template v-if="groupBy !== 'branch'">
-                · {{ e.branchName || "未关联分支" }}</template
-              >
-              · {{ e.subtitle }}
+    <!-- 首屏/翻周期加载：先出骨架，避免分组区整块空白（与 S2/S3/S5 同口径） -->
+    <el-skeleton v-if="loading" :rows="4" animated />
+    <template v-else>
+      <el-card
+        v-for="group in groups"
+        :key="group.key"
+        shadow="never"
+        class="group-card biz-content-card"
+      >
+        <template #header>
+          <div class="biz-card-head">
+            <span class="biz-card-title">
+              {{ group.name }}
+              <el-tag size="small" type="info" effect="plain">{{
+                group.events.length
+              }}</el-tag>
             </span>
-          </span>
-          <el-tag size="small" :type="tagType(e)" effect="plain">{{
-            e.statusText
-          }}</el-tag>
-          <span class="row-actions">
             <el-button
-              v-if="e.permissions.canEdit"
               size="small"
               text
               type="primary"
-              @click="actions.openEdit(e)"
-              >修改</el-button
+              @click="group.collapsed = !group.collapsed"
             >
-            <el-button
-              v-if="e.permissions.canBorrow"
-              size="small"
-              text
-              type="primary"
-              @click="actions.openBorrow(e)"
-              >借用</el-button
-            >
-            <el-button
-              v-if="e.permissions.canOccupy"
-              size="small"
-              text
-              type="primary"
-              @click="actions.openOccupy(e)"
-              >抢占</el-button
-            >
-            <el-button
-              v-if="e.permissions.canRelease"
-              size="small"
-              text
-              type="danger"
-              @click="actions.release(e)"
-              >释放</el-button
-            >
-            <el-button
-              v-if="e.permissions.canReschedule"
-              size="small"
-              text
-              type="primary"
-              @click="actions.openReschedule(e)"
-              >改期</el-button
-            >
-            <el-button
-              v-if="e.permissions.canApprove"
-              size="small"
-              text
-              type="primary"
-              @click="actions.approve(e)"
-              >通过</el-button
-            >
-            <el-button
-              v-if="e.permissions.canApprove"
-              size="small"
-              text
-              type="danger"
-              @click="actions.reject(e)"
-              >驳回</el-button
-            >
-            <el-button
-              v-if="e.permissions.canCancel"
-              size="small"
-              text
-              type="warning"
-              @click="actions.cancelBorrow(e)"
-              >撤销申请</el-button
-            >
-            <el-button
-              v-if="e.source === 'slot'"
-              size="small"
-              text
-              @click="actions.openDetail(e)"
-              >详情</el-button
-            >
-          </span>
+              {{ group.collapsed ? "展开" : "收起" }}
+            </el-button>
+          </div>
+        </template>
+        <div v-show="!group.collapsed" class="row-list">
+          <div v-for="e in group.events.slice(0, 50)" :key="e.id" class="row">
+            <el-checkbox
+              v-if="batchMode"
+              :model-value="isSelected(e)"
+              @update:model-value="toggleSelect(e, $event)"
+            />
+            <span class="row-color" :style="{ background: e.color }" />
+            <span class="row-main">
+              <span class="row-title">{{ e.title }}</span>
+              <span class="row-sub">
+                {{ e.date }} {{ e.time
+                }}{{ e.endTime !== e.time ? `-${e.endTime}` : "" }}
+                <!-- 按分支分组时组名即分支，行内不再重复 -->
+                <template v-if="groupBy !== 'branch'">
+                  · {{ e.branchName || "未关联分支" }}</template
+                >
+                · {{ e.subtitle }}
+              </span>
+            </span>
+            <el-tag size="small" :type="tagType(e)" effect="plain">{{
+              e.statusText
+            }}</el-tag>
+            <!-- 前两个操作常驻行内，其余进「更多」下拉（shared/EventActionMenu） -->
+            <EventActionMenu :actions="rowActions(e)" />
+          </div>
+          <p v-if="group.events.length > 50" class="biz-tip">
+            仅显示前 50 条，请缩小时间范围或使用筛选收敛。
+          </p>
         </div>
-        <p v-if="group.events.length > 50" class="biz-tip">
-          仅显示前 50 条，请缩小时间范围或使用筛选收敛。
-        </p>
-      </div>
-    </el-card>
+      </el-card>
 
-    <el-empty v-if="!groups.length && !loading" description="暂无调度数据" />
+      <el-empty v-if="!groups.length" description="暂无调度数据" />
+    </template>
 
     <ScheduleDialogs />
   </div>
@@ -212,7 +145,9 @@ import ArrowLeft from "~icons/ep/arrow-left";
 import ArrowRight from "~icons/ep/arrow-right";
 import { usePanoramaPage } from "../../usePanoramaPage";
 import PanoramaFilterBar from "../../shared/PanoramaFilterBar.vue";
+import EventActionMenu from "../../shared/EventActionMenu.vue";
 import ScheduleDialogs from "../../shared/ScheduleDialogs.vue";
+import { buildEventActions } from "../../shared/eventActions";
 import { borrowStatusMeta, bookingStatusMeta } from "@/views/constants";
 import type { ScheduleEvent } from "../../types";
 
@@ -280,6 +215,11 @@ function tagType(
   return "primary";
 }
 
+/** 行内操作：前两个常驻，其余进「更多」下拉（顺序见 shared/eventActions） */
+function rowActions(e: ScheduleEvent) {
+  return buildEventActions(e, actions);
+}
+
 function isSelected(e: ScheduleEvent) {
   return selectedIds.value.has(e.id);
 }
@@ -333,43 +273,6 @@ function onScopeChange(value: "all" | "mine") {
 </script>
 
 <style scoped lang="scss">
-.toolbar-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-
-  :deep(.el-card__body) {
-    padding: 10px 14px;
-  }
-}
-
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.toolbar-left {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.nav-icon {
-  width: 14px;
-  height: 14px;
-}
-
-.range-title {
-  min-width: 120px;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-  text-align: center;
-}
-
 .batch-bar {
   display: flex;
   gap: 8px;
@@ -428,12 +331,5 @@ function onScopeChange(value: "all" | "mine") {
     color: var(--el-text-color-secondary);
     white-space: nowrap;
   }
-}
-
-.row-actions {
-  display: flex;
-  flex: none;
-  gap: 4px;
-  align-items: center;
 }
 </style>

@@ -18,7 +18,7 @@ import { getPlan } from "@/api/plan";
 import { listBorrowFlows } from "@/api/borrowFlow";
 import { getPanoramaTodos } from "@/api/panorama";
 import PanoramaTimeline from "../layouts/s5-timeline/index.vue";
-import { mountLayout, setTestUser } from "./helpers";
+import { mountLayout, openMoreMenu, setTestUser } from "./helpers";
 import {
   makeBorrowFlow,
   makePlanVersions,
@@ -88,7 +88,7 @@ describe("S5 时间轴流水", () => {
       PanoramaTimeline,
       "/panorama/timeline?date=2026-10-13"
     ));
-    expect(wrapper.find(".day-title").text()).toContain("2026年10月13日");
+    expect(wrapper.find(".biz-range-title").text()).toContain("2026年10月13日");
     // 深链把查询收敛为单日：/plan 以该日为锚点取四阶段区间（而非默认周首日）
     expect(planMock).toHaveBeenCalledTimes(1);
     expect(planMock).toHaveBeenCalledWith({ date: "2026-10-13" }, undefined);
@@ -136,25 +136,32 @@ describe("S5 时间轴流水", () => {
       "早间窗口",
       "李四 借用 主链路策略"
     ]);
-    // 本人抢占有释放 + 改期入口（reserved && mine，P2-R2），借用行无时段操作
+    // 本人抢占有释放 + 改期入口（reserved && mine，P2-R2），借用行无时段操作；
+    // 行内最多常驻 2 个操作，「详情」收进「更多」下拉
     expect(
       rowOf("早间窗口")
         .findAll("button")
         .map(b => b.text())
-    ).toEqual(["释放", "改期", "详情"]);
+    ).toEqual(["释放", "改期", "更多"]);
+    // 下拉 teleport 到 body：打开后断言被收纳的操作
+    const slotMenu = await openMoreMenu(rowOf("早间窗口"));
+    expect(slotMenu.textContent).toContain("详情");
 
     await selectFilter("只看借用");
     expect(rows()).toHaveLength(1);
     const borrow = rows()[0];
     expect(borrow.find(".body-title").text()).toBe("李四 借用 主链路策略");
-    // 借用事件：通过/驳回（canApprove）+ 撤销申请（本人 + 待审批，P2-R1）+ 复制
+    // 借用事件：通过/驳回（canApprove）常驻行内；撤销申请（本人 + 待审批，
+    // P2-R1）+ 复制收进「更多」
     expect(borrow.text()).toContain("待审批");
     expect(borrow.findAll("button").map(b => b.text())).toEqual([
       "通过",
       "驳回",
-      "撤销申请",
-      "复制"
+      "更多"
     ]);
+    const borrowMenu = await openMoreMenu(borrow);
+    expect(borrowMenu.textContent).toContain("撤销申请");
+    expect(borrowMenu.textContent).toContain("复制");
   });
 
   it("「折叠空闲时段」只隐藏未占用的时段行，占用行不受影响", async () => {
@@ -187,7 +194,7 @@ describe("S5 时间轴流水", () => {
       .find(b => b.attributes("aria-label") === "后一天")!
       .trigger("click");
     await flushPromises();
-    expect(wrapper.find(".day-title").text()).toContain("2026年10月14日");
+    expect(wrapper.find(".biz-range-title").text()).toContain("2026年10月14日");
     // 重新以 10-14 为锚点拉取：10-14 成为锚点日 → 策略展开为四阶段区间
     expect(planMock).toHaveBeenLastCalledWith(
       { date: "2026-10-14" },
@@ -217,13 +224,13 @@ describe("S5 时间轴流水", () => {
       PanoramaTimeline,
       "/panorama/timeline?date=2026-10-14"
     ));
-    expect(wrapper.find(".day-title").text()).toContain("2026年10月14日");
+    expect(wrapper.find(".biz-range-title").text()).toContain("2026年10月14日");
     await wrapper
       .findAll("button")
       .find(b => b.text() === "今天")!
       .trigger("click");
     await flushPromises();
-    expect(wrapper.find(".day-title").text()).toContain("2026年10月13日");
+    expect(wrapper.find(".biz-range-title").text()).toContain("2026年10月13日");
     // 回到今日：锚点日四阶段 + 冲突徽标一并回来
     expect(rows()).toHaveLength(6);
     expect(rowOf("分析 · 主链路策略").find(".el-tag--danger").exists()).toBe(

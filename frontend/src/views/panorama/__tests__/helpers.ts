@@ -5,7 +5,9 @@
 // 注意：vi.mock 不放在本文件——各 spec 顶部自行 mock 四个数据源模块，
 // 与 composables/__tests__/useWeeklyPanorama.spec.ts 的既有风格保持一致。
 import { mount, flushPromises } from "@vue/test-utils";
+import { vi } from "vitest";
 import type { Component } from "vue";
+import type { DOMWrapper } from "@vue/test-utils";
 import { createMemoryHistory, createRouter, type Router } from "vue-router";
 import { businessUserKey } from "@/store/constants";
 import {
@@ -47,6 +49,28 @@ export async function makePanoramaRouter(): Promise<Router> {
       { path: "/:pathMatch(.*)*", component: { template: "<div />" } }
     ]
   });
+}
+
+/**
+ * 打开行内「更多」下拉并返回菜单元素（ul.el-dropdown-menu）。
+ * EventActionMenu 行内最多常驻 2 个操作，其余经 el-dropdown 收纳。
+ * 两个坑：① 菜单隐藏态也常驻 DOM，不能按文档序 querySelector 取第一个，
+ * 必须用触发按钮的 aria-controls 精确定位本行那份；
+ * ② el-tooltip 的 show-after 走 setTimeout，spec 冻结了定时器，
+ * 点击后必须 advanceTimersByTime 才会真正展开。
+ */
+export async function openMoreMenu(
+  row: DOMWrapper<Element>
+): Promise<HTMLElement> {
+  const trigger = row.findAll("button").find(b => b.text().includes("更多"))!;
+  await trigger.trigger("click");
+  vi.advanceTimersByTime(50);
+  await flushPromises();
+  const menu = document.getElementById(
+    trigger.attributes("aria-controls")!
+  ) as HTMLElement | null;
+  if (!menu) throw new Error("「更多」下拉未找到");
+  return menu;
 }
 
 /**

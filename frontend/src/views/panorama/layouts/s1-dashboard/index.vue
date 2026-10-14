@@ -2,32 +2,32 @@
 <!-- 定位：值不值得点进去看。适用：每日巡检 / 投屏 / 值班快速发现异常 -->
 <template>
   <div class="biz-page" :class="{ 'present-mode': presentMode }">
-    <el-card shadow="never" class="toolbar-card biz-toolbar-card">
-      <div class="toolbar">
-        <div class="toolbar-left">
+    <el-card shadow="never" class="biz-toolbar-card">
+      <div class="biz-toolbar">
+        <div class="biz-toolbar-left">
           <el-button
             circle
             aria-label="上一周"
             size="small"
             @click="shiftWeek(-1)"
           >
-            <IconifyIconOffline :icon="ArrowLeft" class="nav-icon" />
+            <IconifyIconOffline :icon="ArrowLeft" class="biz-nav-icon" />
           </el-button>
-          <span class="range-title">{{ rangeText }}</span>
+          <span class="biz-range-title">{{ rangeText }}</span>
           <el-button
             circle
             aria-label="下一周"
             size="small"
             @click="shiftWeek(1)"
           >
-            <IconifyIconOffline :icon="ArrowRight" class="nav-icon" />
+            <IconifyIconOffline :icon="ArrowRight" class="biz-nav-icon" />
           </el-button>
           <el-button size="small" text type="primary" @click="goThisWeek"
             >本周</el-button
           >
         </div>
-        <div class="toolbar-right">
-          <span class="tooltip-text">
+        <div class="biz-toolbar-right">
+          <span class="biz-toolbar-text">
             {{
               lastLoadedAt
                 ? `更新于 ${formatTime(lastLoadedAt, "HH:mm:ss")}`
@@ -302,17 +302,7 @@ function heatTitle(
 </script>
 
 <style scoped lang="scss">
-/* 头部工具卡 + 各面板：压掉 el-card 默认留白，避免三层卡片 padding 叠加 */
-.toolbar-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-
-  :deep(.el-card__body) {
-    padding: 10px 14px;
-  }
-}
-
+/* 面板卡：压掉 el-card 默认 header/body 留白（子面板比页面主卡更紧一档） */
 .panel {
   :deep(.el-card__header) {
     padding: 8px 12px;
@@ -323,45 +313,7 @@ function heatTitle(
   }
 }
 
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.toolbar-left {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.nav-icon {
-  width: 14px;
-  height: 14px;
-}
-
-.range-title {
-  min-width: 120px;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-  text-align: center;
-}
-
-.toolbar-right {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.tooltip-text {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-
-// 投屏模式：只放大字号与格子高度，不引入任何新配色（沿用语义变量）
+/* 投屏模式：只放大字号与格子高度，不引入任何新配色（沿用语义变量） */
 .present-mode {
   .stat-item .stat-value {
     font-size: 32px;

@@ -2,25 +2,25 @@
 <!-- 抢占主战场 + 策略标记叠加；复用 slot-booking 既有月历组件（改造后支持非抢占事件标记） -->
 <template>
   <div class="biz-page">
-    <el-card shadow="never" class="toolbar-card biz-toolbar-card">
-      <div class="toolbar">
-        <div class="toolbar-left">
+    <el-card shadow="never" class="biz-toolbar-card">
+      <div class="biz-toolbar">
+        <div class="biz-toolbar-left">
           <el-button
             circle
             aria-label="上一月"
             size="small"
             @click="shiftMonth(-1)"
           >
-            <IconifyIconOffline :icon="ArrowLeft" class="nav-icon" />
+            <IconifyIconOffline :icon="ArrowLeft" class="biz-nav-icon" />
           </el-button>
-          <span class="month-title">{{ monthLabel }}</span>
+          <span class="biz-range-title">{{ monthLabel }}</span>
           <el-button
             circle
             aria-label="下一月"
             size="small"
             @click="shiftMonth(1)"
           >
-            <IconifyIconOffline :icon="ArrowRight" class="nav-icon" />
+            <IconifyIconOffline :icon="ArrowRight" class="biz-nav-icon" />
           </el-button>
           <el-button size="small" text type="primary" @click="goThisMonth"
             >本月</el-button
@@ -33,7 +33,7 @@
           <el-divider direction="vertical" />
           <span class="stat-mine">我的 {{ kpi.mySlots }} 段</span>
         </div>
-        <div class="toolbar-right">
+        <div class="biz-toolbar-right">
           <el-button
             size="small"
             :type="kpi.pendingBorrow ? 'warning' : 'default'"
@@ -41,6 +41,17 @@
           >
             待我审批{{ kpi.pendingBorrow ? `（${kpi.pendingBorrow}）` : "" }}
           </el-button>
+          <!-- 图例并入工具条右组：原独占一行，纯为省一行高度 -->
+          <div class="biz-legend">
+            <span class="legend-item"><i class="dot dot-slot" />抢占时段</span>
+            <span class="legend-item"
+              ><i class="dot dot-strategy" />策略任务</span
+            >
+            <span class="legend-item"
+              ><i class="dot dot-borrow" />待审借用</span
+            >
+            <span class="legend-item"><i class="dot dot-expired" />已过期</span>
+          </div>
         </div>
       </div>
       <PanoramaFilterBar
@@ -56,12 +67,6 @@
         @open-my-bookings="actions.openMyBookings()"
         @refresh="refresh()"
       />
-      <div class="legend">
-        <span class="legend-item"><i class="dot dot-slot" />抢占时段</span>
-        <span class="legend-item"><i class="dot dot-strategy" />策略任务</span>
-        <span class="legend-item"><i class="dot dot-borrow" />待审借用</span>
-        <span class="legend-item"><i class="dot dot-expired" />已过期</span>
-      </div>
     </el-card>
 
     <el-card shadow="never" class="biz-content-card">
@@ -95,7 +100,7 @@
                 text
                 size="small"
                 type="primary"
-                @click="openDayDetail(cell.date)"
+                @click="goTimeline(cell.date)"
               >
                 +{{ cell.events.length - 3 }} 更多
               </el-button>
@@ -112,6 +117,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import dayjs from "dayjs";
+import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import ArrowLeft from "~icons/ep/arrow-left";
 import ArrowRight from "~icons/ep/arrow-right";
@@ -128,6 +134,7 @@ defineOptions({ name: "PanoramaMonthLayout" });
 // 首屏即加载当前月全量：月历是「抢占主战场」，若沿用默认本周范围，
 // 当月大部分单元格会空摆，用户会误判整月无数据（翻月时 syncMonth 才补齐）
 const month = ref(dayjs().format("YYYY-MM"));
+const router = useRouter();
 
 const {
   query,
@@ -221,45 +228,13 @@ async function onEventClick(event: ScheduleEvent) {
   else await actions.openBorrow(event);
 }
 
-function openDayDetail(date: string) {
-  ElMessage.info(`${date} 当日共 ${byDay.value[date]?.length ?? 0} 项调度`);
+/** 下钻当日时间轴（S5）：与 S1 热力格点击同一下钻口径，保持同一数据中枢 */
+function goTimeline(date: string) {
+  router.push(`/panorama/timeline?date=${date}`);
 }
 </script>
 
 <style scoped lang="scss">
-.toolbar-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.toolbar-left {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.nav-icon {
-  width: 14px;
-  height: 14px;
-}
-
-.month-title {
-  min-width: 96px;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-  text-align: center;
-}
-
 .toolbar-stats {
   font-size: 13px;
   color: var(--el-text-color-secondary);
@@ -269,41 +244,13 @@ function openDayDetail(date: string) {
   }
 }
 
-.legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
+/* 月历专属色点（容器 .biz-legend 与通用色点在 business.scss） */
+.dot-strategy {
+  background: var(--el-color-primary);
+}
 
-  .legend-item {
-    display: inline-flex;
-    gap: 4px;
-    align-items: center;
-  }
-
-  .dot {
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-
-    &.dot-slot {
-      background: var(--el-color-success);
-    }
-
-    &.dot-strategy {
-      background: var(--el-color-primary);
-    }
-
-    &.dot-borrow {
-      background: var(--el-color-warning);
-    }
-
-    &.dot-expired {
-      background: var(--el-fill-color);
-    }
-  }
+.dot-expired {
+  background: var(--el-fill-color);
 }
 
 .month-grid {

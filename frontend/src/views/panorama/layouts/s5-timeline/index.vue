@@ -3,25 +3,25 @@
 <!-- 适用：tester 复盘冒烟冲突、admin 排查「谁在何时改了什么」、值班交接 -->
 <template>
   <div class="biz-page">
-    <el-card shadow="never" class="toolbar-card">
-      <div class="toolbar">
-        <div class="toolbar-left">
+    <el-card shadow="never" class="biz-toolbar-card">
+      <div class="biz-toolbar">
+        <div class="biz-toolbar-left">
           <el-button
             circle
             aria-label="前一天"
             size="small"
             @click="shiftDay(-1)"
           >
-            <IconifyIconOffline :icon="ArrowLeft" class="nav-icon" />
+            <IconifyIconOffline :icon="ArrowLeft" class="biz-nav-icon" />
           </el-button>
-          <span class="day-title">{{ dayTitle }}</span>
+          <span class="biz-range-title">{{ dayTitle }}</span>
           <el-button
             circle
             aria-label="后一天"
             size="small"
             @click="shiftDay(1)"
           >
-            <IconifyIconOffline :icon="ArrowRight" class="nav-icon" />
+            <IconifyIconOffline :icon="ArrowRight" class="biz-nav-icon" />
           </el-button>
           <el-button size="small" text type="primary" @click="goToday"
             >今天</el-button
@@ -36,7 +36,7 @@
             折叠空闲时段
           </el-checkbox>
         </div>
-        <div class="tooltip-text">共 {{ rows.length }} 条</div>
+        <div class="biz-toolbar-text">共 {{ rows.length }} 条</div>
       </div>
       <PanoramaFilterBar
         :versions="versionOptions"
@@ -83,86 +83,8 @@
                 {{ row.branchName || "未关联分支" }} · {{ row.subtitle }}
               </span>
             </div>
-            <div class="body-actions">
-              <el-button
-                v-if="row.permissions.canEdit"
-                size="small"
-                text
-                type="primary"
-                @click="actions.openEdit(row)"
-                >修改</el-button
-              >
-              <el-button
-                v-if="row.permissions.canBorrow"
-                size="small"
-                text
-                type="primary"
-                @click="actions.openBorrow(row)"
-                >借用</el-button
-              >
-              <el-button
-                v-if="row.permissions.canOccupy"
-                size="small"
-                text
-                type="primary"
-                @click="actions.openOccupy(row)"
-                >抢占</el-button
-              >
-              <el-button
-                v-if="row.permissions.canRelease"
-                size="small"
-                text
-                type="danger"
-                @click="actions.release(row)"
-                >释放</el-button
-              >
-              <el-button
-                v-if="row.permissions.canReschedule"
-                size="small"
-                text
-                type="primary"
-                @click="actions.openReschedule(row)"
-                >改期</el-button
-              >
-              <el-button
-                v-if="row.permissions.canApprove"
-                size="small"
-                text
-                type="primary"
-                @click="actions.approve(row)"
-                >通过</el-button
-              >
-              <el-button
-                v-if="row.permissions.canApprove"
-                size="small"
-                text
-                type="danger"
-                @click="actions.reject(row)"
-                >驳回</el-button
-              >
-              <el-button
-                v-if="row.permissions.canCancel"
-                size="small"
-                text
-                type="warning"
-                @click="actions.cancelBorrow(row)"
-                >撤销申请</el-button
-              >
-              <el-button
-                v-if="row.source === 'slot'"
-                size="small"
-                text
-                @click="actions.openDetail(row)"
-                >详情</el-button
-              >
-              <el-button
-                v-if="row.source === 'borrow'"
-                size="small"
-                text
-                @click="actions.copyText(row)"
-                >复制</el-button
-              >
-            </div>
+            <!-- 前两个操作常驻行内，其余进「更多」下拉（shared/EventActionMenu） -->
+            <EventActionMenu :actions="rowActions(row)" />
           </div>
         </li>
       </ol>
@@ -180,7 +102,9 @@ import ArrowLeft from "~icons/ep/arrow-left";
 import ArrowRight from "~icons/ep/arrow-right";
 import { usePanoramaPage } from "../../usePanoramaPage";
 import PanoramaFilterBar from "../../shared/PanoramaFilterBar.vue";
+import EventActionMenu from "../../shared/EventActionMenu.vue";
 import ScheduleDialogs from "../../shared/ScheduleDialogs.vue";
+import { buildEventActions, withCopyAction } from "../../shared/eventActions";
 import { detectCrossSourceConflicts } from "../../selectors";
 import { borrowStatusMeta, bookingStatusMeta } from "@/views/constants";
 import type { ScheduleEvent } from "../../types";
@@ -235,6 +159,12 @@ function tagType(
   return "primary";
 }
 
+/** 行内操作：前两个常驻，其余进「更多」下拉；
+ *  借用事件额外带「复制」（S4 看板不提供） */
+function rowActions(e: ScheduleEvent) {
+  return withCopyAction(buildEventActions(e, actions), e, actions);
+}
+
 /** 深链 ?date=YYYY-MM-DD（由 S1 热力格下钻带入） */
 watch(
   () => route.query.date,
@@ -270,48 +200,6 @@ function onScopeChange(value: "all" | "mine") {
 </script>
 
 <style scoped lang="scss">
-.toolbar-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-
-  :deep(.el-card__body) {
-    padding: 10px 14px;
-  }
-}
-
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.toolbar-left {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.nav-icon {
-  width: 14px;
-  height: 14px;
-}
-
-.day-title {
-  min-width: 150px;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-  text-align: center;
-}
-
-.tooltip-text {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-}
-
 .track {
   display: flex;
   flex-direction: column;
@@ -381,10 +269,8 @@ function onScopeChange(value: "all" | "mine") {
   white-space: nowrap;
 }
 
-.body-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+/* 操作组与标题行的间距：EventActionMenu 根元素带本页 scope 属性，可直接选中 */
+.track-body > .action-group {
   margin-top: 4px;
 }
 </style>

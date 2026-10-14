@@ -2,7 +2,9 @@
 // 重点：首屏加载当前月全量（非默认本周）；单元格事件卡渲染与点击分发
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import dayjs from "dayjs";
+import { flushPromises } from "@vue/test-utils";
 import type { VueWrapper } from "@vue/test-utils";
+import type { Router } from "vue-router";
 import { ElMessage } from "element-plus";
 
 vi.mock("@/api/weekly", () => ({ getWeekly: vi.fn() }));
@@ -35,6 +37,7 @@ const todosMock = vi.mocked(getPanoramaTodos);
 const FIXED_NOW = new Date("2026-10-13T10:00:00");
 
 let wrapper: VueWrapper;
+let router: Router;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -99,15 +102,18 @@ describe("S3 月历矩阵", () => {
     expect(more).toBeTruthy();
   });
 
-  it("点击更多入口提示当日调度总数", async () => {
-    const infoSpy = vi.spyOn(ElMessage, "info");
-    ({ wrapper } = await mountLayout(PanoramaMonth, "/panorama/month"));
+  it("点击更多入口下钻当日时间轴（S5）", async () => {
+    ({ wrapper, router } = await mountLayout(PanoramaMonth, "/panorama/month"));
     const cell = cellOf("2026-10-13");
     await cell
       .findAll("button")
       .find(b => b.text() === "+1 更多")!
       .trigger("click");
-    expect(infoSpy).toHaveBeenCalledWith("2026-10-13 当日共 4 项调度");
+    // router.push 为异步导航，需等待路由更新后再断言
+    await flushPromises();
+    // 与 S1 热力格同一下钻口径：带日期进当日时间轴，而非弹个 toast 了事
+    expect(router.currentRoute.value.path).toBe("/panorama/timeline");
+    expect(router.currentRoute.value.query.date).toBe("2026-10-13");
   });
 
   it("过期事件点击只读提示（冻结时刻下 10-12 全部已过期）", async () => {
@@ -128,7 +134,7 @@ describe("S3 月历矩阵", () => {
       .findAll("button")
       .find(b => b.attributes("aria-label") === "上一月")!
       .trigger("click");
-    expect(wrapper.find(".month-title").text()).toBe("2026年9月");
+    expect(wrapper.find(".biz-range-title").text()).toBe("2026年9月");
     // 9 月无策略数据之外的拉取口径：week_start 落在 8 月底所在周
     expect(weeklyMock).toHaveBeenLastCalledWith(
       expect.objectContaining({ week_start: "2026-08-31" }),

@@ -101,10 +101,97 @@
   overflow-x: auto;
 }
 
-/* 紧凑工具卡（页面头部「工具条 + 筛选栏」容器）：压掉 el-card 默认 body 留白 */
+/* 页面头部工具条卡：纵向堆叠（工具条 + 筛选栏），压掉 el-card 默认 body 留白。
+ * 调度全景五个布局共用，替代各自复制的局部 .toolbar-card */
 .biz-toolbar-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
   .el-card__body {
     padding: 10px 14px;
+  }
+}
+
+/* 工具条行：左主导航、右操作，窄屏换行 */
+.biz-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* 工具条左侧主导航组（翻页 + 周期标题 + 回到本期） */
+.biz-toolbar-left {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* 工具条右侧操作组（统计 / 图例 / 入口按钮） */
+.biz-toolbar-right {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* 工具条圆形翻页按钮内的图标尺寸 */
+.biz-nav-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* 工具条周期标题（周范围 / 当日 / 月份）：加粗居中，min-width 兜底防翻页跳动 */
+.biz-range-title {
+  min-width: 120px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  text-align: center;
+}
+
+/* 工具条右侧弱化文字（更新时间 / 条目计数） */
+.biz-toolbar-text {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+/* 图例（甘特四阶段 / 月历事件类型）：容器与通用色点；
+ * 页面专属色点（如月历的策略/过期）在布局 scoped 样式里自行补 */
+.biz-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+
+  .legend-item {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+  }
+
+  .dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .diamond {
+    border-radius: 2px;
+    transform: rotate(45deg);
+  }
+
+  .dot-slot {
+    background: var(--el-color-success);
+  }
+
+  .dot-borrow {
+    background: var(--el-color-warning);
   }
 }
 
