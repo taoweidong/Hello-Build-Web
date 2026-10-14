@@ -309,3 +309,12 @@ el-tabs 两 Tab：
 - **分页实现收敛（R3-B11）**：视图层 `_paginate` 提升为 `views/__init__.paginate_qs` 共享助手（reports 同款复用），响应结构与非法参数回退语义不变。
 - **seed 幂等修复（R3-B8）**：轮转抢占记录 `get_or_create` 锚点改为 (date, template)，status 只进 defaults——此前 status 在 lookup 里，首跑末尾释放的历史记录第二跑被复活为 reserved（同键双记录）；幂等测试测量点同步修正（首跑后立即取样，第二/三跑立即比对，含 released 计数）。
 - **前端**：抢占状态文案唯一来源收敛 `views/constants.bookingStatusMeta`（RecordsPanel/MyBookingsDrawer 两份逐字复制与不可达「已过期」分支删除）；中文星期数组唯一来源 `utils/week`（`WEEKDAY_CN_MON`/`WEEKDAY_CN_SUN`，页面内禁止手写）；RecordsPanel 默认日期筛选（近一个月）赋值先于首次 load（此前首查不带条件，表格展示全量而筛选器却显示着范围）；MyBookingsDrawer「加载更多」加在途守卫防连点重复 append；horizon 默认 60 天与页大小 20 提为模块常量。
+
+## 修订记录（2026-10-15 第四轮质量优化，并回填 2026-10-13 改期端点）
+
+- **改期端点回填（2026-10-13 随调度全景 P2 上线，此前仅记于调度全景 spec 修订五）**：新增 `PATCH /api/slot-bookings/<id>` 抢占改期——仅本人或 admin、仅 reserved 状态，校验链与抢占同构（目标时段冲突 → 40904）；调度全景「抢占改期」弹窗接线（权限位 `canReschedule`）。
+- **非 dict 载荷归一（R4-B3）**：改期 `partial_update` 改 `request.data if isinstance(request.data, dict) else {}`——此前传 JSON 数组/字符串直塞服务层，`payload.get` 冒 AttributeError 变 500（R3-B2 同款漏网）；归一后与空 body 同语义（缺省字段沿用原值的 no-op 改期）。
+- **IntegrityError 精确匹配（R4-B8）**：create_booking/reschedule_booking 抽公共 `_raise_slot_conflict_or_reraise`——异常消息命中目标约束 `uniq_slot_booking_active`（SQLite 消息只含字段组合，按 `slotbooking.date`+`slotbooking.template_id` 匹配；兼容 Postgres 携带约束名）才转 40904 冲突，否则原样 re-raise 保留堆栈；此前不区分约束一律 40904「被他人抢占」，撞 NOT NULL/外键失效时误导用户（范式对齐 `services.strategies._raise_conflict_or_reraise`）。
+- **模板创建并发重名兜底（R4-B17）**：`SlotTemplateViewSet.create` 与 admin `create_template` 包 savepoint 捕获 IntegrityError → 40902（「时段名称已存在」/「模板名已存在」）——validate_name 的 check-then-create 有竞态窗口，此前未捕获走 DRF 兜底 50000 破坏契约。
+- **全角数字拒绝（R4-B12）**：`validate_weekdays` 前置 `isascii`（`"２".isdigit()` 为 True 且 `int("２")==2`，此前全角数字放行后 `isoweekday()` 匹配错位）；`services/timeline.valid_hhmm` 同款前置（正则 `\d` 匹配全角，全角时间串入库后 Strategy 按字符串排序错位），与 `parse_int` 硬化口径对齐。
+- **seed master 分支守卫（R4-B15）**：`_seed_extra_strategies` 对 27A master 分支补「缺失即重建」守卫（对齐 tr527a/tr627a 既有写法）——此前 master 被删后以 None 分支 get_or_create → IntegrityError 中断整个 seed。

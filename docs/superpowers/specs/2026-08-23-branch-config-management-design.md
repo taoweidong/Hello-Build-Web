@@ -227,3 +227,9 @@ stop ──► STOPPED ◄── stop
 **前端**：
 - `npm run typecheck` 通过
 - 浏览器手动联调：新建分支 → 添加工程 → 编辑启动参数 → 启动/停止（观察状态流转 STARTING→RUNNING、轮询刷新）→ 授权成员 → 切换角色账号验证按钮显隐与 403 场景
+## 修订记录（2026-10-15 第四轮质量优化）
+
+- **分支删除 PROTECT 兜底（R4-B2）**：`SlotBooking.branch` 与 `BorrowFlow.target_branch` 均为 PROTECT——分支存在抢占记录或被借用流指向时 `branch.delete()` 抛 `ProtectedError`（DatabaseError 子类，contract_exception_handler 不接管），此前未捕获 → 裸 500 破坏统一响应契约；现转 40903「分支存在抢占记录或借用流引用，无法删除」（口径对齐 admin.delete_template）。§验收「分支删除：级联清理…」相应修正为：**无 PROTECT 引用的分支**才走级联删除（工程关联/启动配置/授权/实例）。
+- **permissions 非 dict 载荷归一（R4-B3）**：`POST /branches/<id>/permissions` 此前 `request.data or {}` 直传，JSON 数组/字符串载荷 `body.get` 冒 AttributeError 变 500；改 `isinstance(request.data, dict)` 归一为 `{}` 走既有缺参分支（42201）。
+- **长度守卫（R4-B10）**：分支名/工程名 ≤100、仓库地址 ≤255，超长 → 42201 拒绝（`views/__init__.check_str_len`，max_len 取模型真实 max_length，拒绝优于静默截断）；description 为 TextField 无 DB 上限，不设限。
+- **stop_instance 条件 UPDATE（R4-B16）**：实例停止由读改写无条件 save 改为 `filter(id, status__in=("STARTING","RUNNING")).update(status="STOPPED", ...)`——此前并发双 stop 均成功且后者覆盖首次的 stopped_at/log_tail；rowcount=0 视为并发窗口内已被他人停止，重读当前状态幂等返回（对齐 R3-B9 release_booking 范式）。状态机语义不变：stop → STOPPED 且带 stopped_at/exit_code；重复 stop 幂等。

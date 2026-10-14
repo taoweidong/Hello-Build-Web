@@ -71,3 +71,7 @@
 - `npm run test`：新增 19 例（weeklyReport 10 / composable 9），全量通过
 - `npm run typecheck` / `lint:eslint` / `lint:prettier` / `lint:stylelint` / `npm run build` 通过
 - 视觉验收：dev server + Playwright 截图核对桌面（1440）/平板（834）/移动（390）三档布局；配色与系统（pure-admin 浅色 + EP 默认）一致
+
+## 修订记录（2026-10-15 第四轮质量优化）
+
+- **ReportHeader 周日边界（R4-F4，修 F-M1）**：周进度 7 格点「今天」呼吸圈判定与 `elapsed` 解耦——原条件要求 `elapsed<7`，今天恰为所展示周的周日时 `elapsed=7`，当天 7 格全实心、无 today 标记（R3-F11 修复引入的边界回归）；改为 `todayIndex = diff(today, weekStart)`（0-6，今天落在所展示周内才标记），「整周已过去」（今天在周后，todayIndex=-1）仍不标今天，R3-F11 语义保留。新增组件级边界 spec `components/__tests__/ReportHeader.spec.ts`（今天=周日/今天=周一/历史周/未来周）。

@@ -24,3 +24,6 @@ venv/
 logs/
 .workbuddy/
 .zcodeignore
+# uv 本地锁文件（依赖声明唯一来源为 backend/pyproject.toml，锁文件为本地 uv 运行产物；
+# 若团队正式采用 uv 管理工作流可改为入库，勿长期悬置未跟踪——2026-10-15 第四轮评估「其他观察」）
+backend/uv.lock

@@ -63,3 +63,11 @@
 - **请求体类型守卫（R3-B2）**：`new_build_time`/`reason`/`comment` 非字符串一律经 `body_str` 归一为 `""` 走既有校验分支（42201），此前在 `.strip()` 处冒 AttributeError 变 500。
 - **时间序列化统一上海墙钟（R3-B3）**：`handled_at`/`created_at` 走 `fmt_dt`（此前手工 strftime 输出 UTC 墙钟，前端早 8 小时展示）。
 - **联动变更**：策略删除前拦截 pending 借用流（40903，防 `BorrowFlow.strategy` CASCADE 静默抹掉进行中电子流，见 build-strategy-web spec 同日修订）；前端时间格式化统一 `formatFlowTime`（内部走 `utils/business.formatTime`，输出与手写 `.replace("T"," ")` 逐字节等价）；`borrowFlowUrl` 改用 `utils/appUrl.appHashUrl` 拼装；`formatBorrowFlowText` 补 approved 分支与 approver_name/handle_comment/handled_at 空值兜底测试（`api/__tests__/borrowFlow.spec.ts`）。
+
+## 修订记录（2026-10-15 第四轮质量优化，并回填 2026-10-13 撤销功能）
+
+- **撤销功能回填（2026-10-13 随调度全景 P2 上线，此前仅记于调度全景 spec 修订五）**：新增 `POST /api/borrow-flows/<id>/cancel`——仅借用人本人、仅 pending 可撤，条件 UPDATE `filter(id, status="pending").update(...)` 防并发双撤；`BorrowFlow` 增 `cancelled` 状态与 `cancelled_at` 字段（migration 0013）；撤销不删记录保留审计；`uniq_pending_borrow_flow` 只约束 pending，撤销后同策略可立即重发。前端状态筛选补 cancelled 选项（此前撤销过的申请无法筛选定位，R4-F13）；调度全景 S1/S4/S5 与审批抽屉提供撤销入口（权限位 `canCancel`，见调度全景 spec 修订五/六）。
+- **列表可选分页（R4-B13）**：携带 `page` 参数返回 `{items,total,page,page_size}`（走 `views/__init__.paginate_qs`，page_size 默认 20 上限 100），不携带保持全量数组——与 reports 列表向后兼容口径一致，前端未改造前行为不变。
+- **单条响应路径 select_related（R4-B14）**：`_payload` 所需关联清单抽公共 `_flow_qs()`，create/approve/reject/cancel 单条响应与列表路径复用——此前单条路径逐关联点查固定 N+1（6+ 次查询，`assertNumQueries` 锁定）；approve 原 `refresh_from_db` 改为 `_flow_qs` 重取，同时消除 approver 关联缓存陈旧问题。
+- **长度守卫（R4-B10）**：审批通过建策略拼接名 `{原策略名}({目标版本}借用)` 防御性截断到 `Strategy.name` 上限 200（源策略名 ≤200 + 版本名 + 后缀可超限，SQLite 放行、迁 Postgres 即 DataError 500）；发起 `reason` 超 500、审批意见 `comment` 超 255 截断（审计/备注类字段沿用 `body_str` max_len 截断口径）。
+- **策略删除拦截收敛（R4-B1）**：第三轮的「删除策略前拦截 pending 借用流（40903）」仅 PM 入口生效，admin 入口 `_delete_admin_strategy` 直接 `s.delete()` 会经 CASCADE 静默抹掉进行中电子流（admin 反而约束更松）。现拦截 + 删除收敛到共享 `services.strategies.delete_strategy`（同一事务），PM 与 admin 两入口行为一致；审计仍由调用方入口写 AdminOpLog（R3-B5 口径不变）。
