@@ -2,7 +2,7 @@
 <!-- 抢占主战场 + 策略标记叠加；复用 slot-booking 既有月历组件（改造后支持非抢占事件标记） -->
 <template>
   <div class="biz-page">
-    <el-card shadow="never" class="toolbar-card">
+    <el-card shadow="never" class="toolbar-card biz-toolbar-card">
       <div class="toolbar">
         <div class="toolbar-left">
           <el-button
@@ -32,8 +32,6 @@
           <span>已抢占 {{ kpi.weekSlotOccupied }} 段</span>
           <el-divider direction="vertical" />
           <span class="stat-mine">我的 {{ kpi.mySlots }} 段</span>
-          <el-divider direction="vertical" />
-          <span>待审批 {{ kpi.pendingBorrow }}</span>
         </div>
         <div class="toolbar-right">
           <el-button
@@ -66,7 +64,7 @@
       </div>
     </el-card>
 
-    <el-card shadow="never">
+    <el-card shadow="never" class="biz-content-card">
       <el-skeleton v-if="loading" :rows="7" animated />
       <el-empty v-else-if="!monthCells.length" description="本月暂无调度数据" />
       <div v-else class="biz-scroll-x">
@@ -237,16 +235,16 @@ function openDayDetail(date: string) {
 
 .toolbar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .toolbar-left {
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
 }
 
 .nav-icon {
@@ -256,10 +254,10 @@ function openDayDetail(date: string) {
 
 .month-title {
   min-width: 96px;
-  text-align: center;
   font-size: 16px;
   font-weight: 600;
   color: var(--el-text-color-primary);
+  text-align: center;
 }
 
 .toolbar-stats {
@@ -280,15 +278,15 @@ function openDayDetail(date: string) {
 
   .legend-item {
     display: inline-flex;
-    align-items: center;
     gap: 4px;
+    align-items: center;
   }
 
   .dot {
+    display: inline-block;
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    display: inline-block;
 
     &.dot-slot {
       background: var(--el-color-success);
@@ -311,26 +309,32 @@ function openDayDetail(date: string) {
 .month-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 6px;
+  gap: 4px;
   min-width: 900px;
 }
 
 .grid-head {
-  padding: 6px 0;
-  text-align: center;
+  padding: 4px 0;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+  text-align: center;
 }
 
+/* 日历格紧凑：高度由 96→76，芯片行内压薄，单日一屏可见密度提高 */
 .grid-cell {
-  min-height: 96px;
-  padding: 6px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
+  min-height: 76px;
+  padding: 4px 5px;
   overflow: hidden;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+
+  :deep(.schedule-chip) {
+    padding: 2px 6px;
+    line-height: 14px;
+  }
 
   &.cell-out {
     background: var(--el-fill-color-light);
@@ -342,20 +346,20 @@ function openDayDetail(date: string) {
 }
 
 .cell-date {
+  display: flex;
+  gap: 4px;
+  align-items: center;
   font-size: 13px;
   font-weight: 600;
   color: var(--el-text-color-primary);
-  display: flex;
-  align-items: center;
-  gap: 4px;
 
   .today-tag {
+    padding: 0 4px;
     font-size: 11px;
     font-weight: 400;
     color: var(--el-color-primary);
     border: 1px solid var(--el-color-primary);
     border-radius: 4px;
-    padding: 0 4px;
   }
 }
 

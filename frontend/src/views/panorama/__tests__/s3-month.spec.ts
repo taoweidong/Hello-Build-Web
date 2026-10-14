@@ -79,7 +79,8 @@ describe("S3 月历矩阵", () => {
     expect(wrapper.text()).toContain("策略 31");
     expect(wrapper.text()).toContain("已抢占 1 段");
     expect(wrapper.text()).toContain("我的 1 段");
-    expect(wrapper.text()).toContain("待审批 1");
+    // 待审批计数由「待我审批（N）」按钮承载（与统计行去重）
+    expect(wrapper.text()).toContain("待我审批（1）");
     // 首屏查询范围即当前月全月，而非默认本周（月历是抢占主战场）
     expect(weeklyMock).toHaveBeenCalledWith(
       expect.objectContaining({ week_start: "2026-09-28" }),

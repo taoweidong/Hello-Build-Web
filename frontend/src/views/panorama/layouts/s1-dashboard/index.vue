@@ -2,7 +2,7 @@
 <!-- 定位：值不值得点进去看。适用：每日巡检 / 投屏 / 值班快速发现异常 -->
 <template>
   <div class="biz-page" :class="{ 'present-mode': presentMode }">
-    <el-card shadow="never" class="toolbar-card">
+    <el-card shadow="never" class="toolbar-card biz-toolbar-card">
       <div class="toolbar">
         <div class="toolbar-left">
           <el-button
@@ -56,27 +56,27 @@
     </el-card>
 
     <div class="biz-stat-grid">
-      <div class="stat-item">
+      <div class="biz-card biz-card-compact stat-item">
         <div class="stat-label">今日构建</div>
         <div class="stat-value">{{ kpi.todayBuild }}</div>
       </div>
-      <div class="stat-item">
+      <div class="biz-card biz-card-compact stat-item">
         <div class="stat-label">本周抢占</div>
         <div class="stat-value">
           {{ kpi.weekSlotOccupied }}<small>/{{ kpi.weekSlotTotal }}</small>
         </div>
       </div>
-      <div class="stat-item">
+      <div class="biz-card biz-card-compact stat-item">
         <div class="stat-label">待我审批</div>
         <div class="stat-value" :class="{ 'stat-alert': pendingApproval }">
           {{ pendingApproval }}
         </div>
       </div>
-      <div class="stat-item">
+      <div class="biz-card biz-card-compact stat-item">
         <div class="stat-label">我的有效抢占</div>
         <div class="stat-value">{{ myReservedSlots }}</div>
       </div>
-      <div class="stat-item">
+      <div class="biz-card biz-card-compact stat-item">
         <div class="stat-label">跨源冲突</div>
         <div class="stat-value" :class="{ 'stat-alert': kpi.conflictCount }">
           {{ kpi.conflictCount }}
@@ -302,24 +302,39 @@ function heatTitle(
 </script>
 
 <style scoped lang="scss">
+/* 头部工具卡 + 各面板：压掉 el-card 默认留白，避免三层卡片 padding 叠加 */
 .toolbar-card {
   display: flex;
   flex-direction: column;
   gap: 10px;
+
+  :deep(.el-card__body) {
+    padding: 10px 14px;
+  }
+}
+
+.panel {
+  :deep(.el-card__header) {
+    padding: 8px 12px;
+  }
+
+  :deep(.el-card__body) {
+    padding: 10px 12px;
+  }
 }
 
 .toolbar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .toolbar-left {
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
 }
 
 .nav-icon {
@@ -329,16 +344,16 @@ function heatTitle(
 
 .range-title {
   min-width: 120px;
-  text-align: center;
   font-size: 16px;
   font-weight: 600;
   color: var(--el-text-color-primary);
+  text-align: center;
 }
 
 .toolbar-right {
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
 }
 
 .tooltip-text {
@@ -360,18 +375,20 @@ function heatTitle(
 
 .stat-item {
   .stat-label {
-    font-size: 13px;
+    font-size: 12px;
     color: var(--el-text-color-secondary);
   }
 
   .stat-value {
-    margin-top: 4px;
-    font-size: 24px;
-    font-weight: 500;
+    margin-top: 2px;
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.2;
     color: var(--el-text-color-primary);
 
     small {
       font-size: 13px;
+      font-weight: 400;
       color: var(--el-text-color-secondary);
     }
   }
@@ -409,22 +426,22 @@ function heatTitle(
 .heat-corner,
 .heat-head,
 .heat-time {
+  padding: 4px 0;
   font-size: 12px;
   color: var(--el-text-color-secondary);
   text-align: center;
-  padding: 4px 0;
 }
 
 .heat-cell {
-  min-height: 28px;
-  border-radius: 4px;
-  background: var(--el-color-primary-light-8);
-  color: var(--el-text-color-primary);
-  font-size: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 28px;
+  font-size: 12px;
+  color: var(--el-text-color-primary);
   cursor: pointer;
+  background: var(--el-color-primary-light-8);
+  border-radius: 4px;
 
   &.heat-empty {
     background: var(--el-fill-color-light);
@@ -436,16 +453,16 @@ function heatTitle(
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin: 0;
   padding: 0;
-  list-style: none;
+  margin: 0;
   font-size: 13px;
   color: var(--el-text-color-regular);
+  list-style: none;
 
   li {
     display: flex;
-    align-items: center;
     gap: 8px;
+    align-items: center;
   }
 }
 

@@ -53,7 +53,7 @@
       />
     </el-card>
 
-    <el-card shadow="never">
+    <el-card shadow="never" class="biz-content-card">
       <el-skeleton v-if="loading" :rows="8" animated />
       <el-empty v-else-if="!rows.length" description="当日暂无调度流水" />
       <ol v-else class="track">
@@ -78,9 +78,10 @@
                 effect="dark"
                 >重合</el-tag
               >
-            </div>
-            <div class="body-sub">
-              {{ row.branchName || "未关联分支" }} · {{ row.subtitle }}
+              <!-- 次要信息并入标题行尾部弱化展示，条目从三行压到两行 -->
+              <span class="body-sub">
+                {{ row.branchName || "未关联分支" }} · {{ row.subtitle }}
+              </span>
             </div>
             <div class="body-actions">
               <el-button
@@ -273,20 +274,24 @@ function onScopeChange(value: "all" | "mine") {
   display: flex;
   flex-direction: column;
   gap: 10px;
+
+  :deep(.el-card__body) {
+    padding: 10px 14px;
+  }
 }
 
 .toolbar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .toolbar-left {
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
 }
 
 .nav-icon {
@@ -296,10 +301,10 @@ function onScopeChange(value: "all" | "mine") {
 
 .day-title {
   min-width: 150px;
-  text-align: center;
   font-size: 16px;
   font-weight: 600;
   color: var(--el-text-color-primary);
+  text-align: center;
 }
 
 .tooltip-text {
@@ -310,9 +315,9 @@ function onScopeChange(value: "all" | "mine") {
 .track {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin: 0;
+  gap: 6px;
   padding: 0;
+  margin: 0;
   list-style: none;
 }
 
@@ -345,7 +350,7 @@ function onScopeChange(value: "all" | "mine") {
 }
 
 .track-body {
-  padding: 8px 10px;
+  padding: 6px 10px;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
 
@@ -356,8 +361,8 @@ function onScopeChange(value: "all" | "mine") {
 
 .body-head {
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
 
   .body-title {
     font-size: 13px;
@@ -366,16 +371,20 @@ function onScopeChange(value: "all" | "mine") {
   }
 }
 
+/* 次要信息行内弱化：标题行尾部单行省略，不再独占一行 */
 .body-sub {
-  margin-top: 4px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 12px;
-  color: var(--el-text-color-secondary);
+  color: var(--el-text-color-placeholder);
+  white-space: nowrap;
 }
 
 .body-actions {
-  margin-top: 6px;
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+  margin-top: 4px;
 }
 </style>

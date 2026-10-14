@@ -101,6 +101,22 @@
   overflow-x: auto;
 }
 
+/* 紧凑工具卡（页面头部「工具条 + 筛选栏」容器）：压掉 el-card 默认 body 留白 */
+.biz-toolbar-card {
+  .el-card__body {
+    padding: 10px 14px;
+  }
+}
+
+/* 紧凑内容卡（el-card 主数据区）：压掉 el-card 默认 20px body 留白，
+ * 用于「工具条卡 + 数据卡」两段的页面骨架，避免多层卡片 padding 叠加 */
+.biz-content-card {
+  .el-card__header,
+  .el-card__body {
+    padding: 12px 14px;
+  }
+}
+
 /* 可点击卡片：悬停 / 键盘焦点态统一 */
 .biz-clickable {
   cursor: pointer;

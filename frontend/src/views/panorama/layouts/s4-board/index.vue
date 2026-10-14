@@ -26,14 +26,13 @@
           <el-button size="small" text type="primary" @click="goThisWeek"
             >本周</el-button
           >
-          <span class="biz-sub">分组</span>
-          <el-select v-model="groupBy" size="small" style="width: 120px">
+          <el-select v-model="groupBy" size="small" style="width: 110px">
             <el-option label="按版本" value="version" />
             <el-option label="按分支" value="branch" />
             <el-option label="按状态" value="status" />
           </el-select>
         </div>
-        <div class="toolbar-left">
+        <div class="biz-filter-right">
           <el-button size="small" @click="toggleBatch">
             {{ batchMode ? "退出批量" : "批量模式" }}
           </el-button>
@@ -77,7 +76,7 @@
       v-for="group in groups"
       :key="group.key"
       shadow="never"
-      class="group-card"
+      class="group-card biz-content-card"
     >
       <template #header>
         <div class="biz-card-head">
@@ -109,9 +108,12 @@
             <span class="row-title">{{ e.title }}</span>
             <span class="row-sub">
               {{ e.date }} {{ e.time
-              }}{{ e.endTime !== e.time ? `-${e.endTime}` : "" }} ·
-              {{ e.branchName || "未关联分支" }} ·
-              {{ e.subtitle }}
+              }}{{ e.endTime !== e.time ? `-${e.endTime}` : "" }}
+              <!-- 按分支分组时组名即分支，行内不再重复 -->
+              <template v-if="groupBy !== 'branch'">
+                · {{ e.branchName || "未关联分支" }}</template
+              >
+              · {{ e.subtitle }}
             </span>
           </span>
           <el-tag size="small" :type="tagType(e)" effect="plain">{{
@@ -335,20 +337,24 @@ function onScopeChange(value: "all" | "mine") {
   display: flex;
   flex-direction: column;
   gap: 10px;
+
+  :deep(.el-card__body) {
+    padding: 10px 14px;
+  }
 }
 
 .toolbar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .toolbar-left {
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
 }
 
 .nav-icon {
@@ -358,37 +364,34 @@ function onScopeChange(value: "all" | "mine") {
 
 .range-title {
   min-width: 120px;
-  text-align: center;
   font-size: 16px;
   font-weight: 600;
   color: var(--el-text-color-primary);
+  text-align: center;
 }
 
 .batch-bar {
   display: flex;
-  align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  align-items: center;
+  padding: 6px 12px;
+  background: var(--el-color-warning-light-9);
   border: 1px solid var(--el-color-warning-light-5);
   border-radius: 8px;
-  background: var(--el-color-warning-light-9);
 }
 
-.group-card {
-  margin-bottom: 12px;
-}
-
+/* biz-page 已有 12px gap，无需再叠加 margin-bottom */
 .row-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .row {
   display: flex;
-  align-items: center;
   gap: 8px;
-  padding: 6px 8px;
+  align-items: center;
+  padding: 4px 8px;
   border-radius: 6px;
 
   &:hover {
@@ -404,33 +407,33 @@ function onScopeChange(value: "all" | "mine") {
 }
 
 .row-main {
-  flex: 1;
-  min-width: 0;
   display: flex;
+  flex: 1;
   flex-direction: column;
+  min-width: 0;
 
   .row-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
     font-size: 13px;
     font-weight: 500;
     color: var(--el-text-color-primary);
-    overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .row-sub {
-    font-size: 12px;
-    color: var(--el-text-color-secondary);
     overflow: hidden;
     text-overflow: ellipsis;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
     white-space: nowrap;
   }
 }
 
 .row-actions {
   display: flex;
-  align-items: center;
-  gap: 4px;
   flex: none;
+  gap: 4px;
+  align-items: center;
 }
 </style>

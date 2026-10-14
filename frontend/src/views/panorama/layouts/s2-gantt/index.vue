@@ -33,8 +33,26 @@
             inline-prompt
           />
         </div>
-        <div class="tooltip-text">
-          锚点日展示四阶段区间，其余日期为时间点标记
+        <div class="toolbar-right">
+          <el-tooltip placement="bottom">
+            <template #content>
+              锚点日展示四阶段区间，其余日期为时间点标记<br />
+              更新于
+              {{ lastLoadedAt ? formatTime(lastLoadedAt, "HH:mm:ss") : "—" }}
+            </template>
+            <el-icon class="hint-icon"><InfoFilled /></el-icon>
+          </el-tooltip>
+          <div class="legend">
+            <span v-for="s in STAGE_LEGEND" :key="s.key" class="legend-item">
+              <i class="dot" :style="{ background: STAGE_COLORS[s.key] }" />{{
+                s.label
+              }}
+            </span>
+            <span class="legend-item"><i class="dot dot-slot" />抢占</span>
+            <span class="legend-item"
+              ><i class="diamond dot-borrow" />借用</span
+            >
+          </div>
         </div>
       </div>
       <PanoramaFilterBar
@@ -50,20 +68,9 @@
         @open-my-bookings="actions.openMyBookings()"
         @refresh="refresh()"
       />
-      <div class="legend">
-        <span v-for="s in STAGE_LEGEND" :key="s.key" class="legend-item">
-          <i class="dot" :style="{ background: STAGE_COLORS[s.key] }" />{{
-            s.label
-          }}
-        </span>
-        <span class="legend-item"><i class="dot dot-slot" />已抢占时段</span>
-        <span class="legend-item"
-          ><i class="diamond dot-borrow" />待审借用</span
-        >
-      </div>
     </el-card>
 
-    <el-card shadow="never" class="gantt-card">
+    <el-card shadow="never" class="gantt-card biz-content-card">
       <el-skeleton v-if="loading" :rows="6" animated />
       <el-empty v-else-if="!lanes.length" description="该日暂无调度数据" />
       <div v-else class="gantt-scroll">
@@ -86,7 +93,7 @@
               {{ lane.name }}
               <small v-if="lane.count">（{{ lane.count }}）</small>
             </div>
-            <div class="lane-track">
+            <div class="lane-track" :style="{ height: laneHeight(lane) }">
               <div
                 v-for="e in lane.events"
                 :key="e.id"
@@ -118,6 +125,8 @@ import dayjs from "dayjs";
 import { ElMessage } from "element-plus";
 import ArrowLeft from "~icons/ep/arrow-left";
 import ArrowRight from "~icons/ep/arrow-right";
+import InfoFilled from "~icons/ep/info-filled";
+import { formatTime } from "@/utils/business";
 import { usePanoramaPage } from "../../usePanoramaPage";
 import PanoramaFilterBar from "../../shared/PanoramaFilterBar.vue";
 import ScheduleDialogs from "../../shared/ScheduleDialogs.vue";
@@ -184,6 +193,12 @@ function pct(time: string): string {
   return `${(((h || 0) * 60 + (m || 0)) / 1440) * 100}%`;
 }
 
+/** 泳道高度按子轨道数伸缩（单轨 24px/条），避免固定 48px 的空白或多轨遮挡 */
+function laneHeight(lane: { lanes: Map<string, number> }): string {
+  const rows = lane.lanes.size ? Math.max(...lane.lanes.values()) + 1 : 1;
+  return `${rows * 24 + 2}px`;
+}
+
 /** 甘特条悬浮文案（抽成函数，避免模板内嵌套模板字符串） */
 function barTitle(e: ScheduleEvent): string {
   const range = e.endTime !== e.time ? `${e.time}-${e.endTime}` : e.time;
@@ -205,7 +220,7 @@ function barStyle(e: ScheduleEvent, subLane: number) {
   return {
     left: `${(start / 1440) * 100}%`,
     width: `${width}%`,
-    top: `${subLane * 26}px`,
+    top: `${subLane * 24 + 1}px`,
     background: e.kind === "push" ? "transparent" : color,
     borderColor: color,
     borderStyle: e.kind === "push" ? "dashed" : "solid"
@@ -257,24 +272,35 @@ async function onBarClick(e: ScheduleEvent) {
 </script>
 
 <style scoped lang="scss">
+/* 头部工具卡压掉 el-card 默认留白；主图卡 body 收敛 */
 .toolbar-card {
   display: flex;
   flex-direction: column;
   gap: 10px;
+
+  :deep(.el-card__body) {
+    padding: 10px 14px;
+  }
+}
+
+.hint-icon {
+  font-size: 14px;
+  color: var(--el-text-color-placeholder);
+  cursor: help;
 }
 
 .toolbar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .toolbar-left {
   display: flex;
-  align-items: center;
   gap: 8px;
+  align-items: center;
 }
 
 .nav-icon {
@@ -284,10 +310,17 @@ async function onBarClick(e: ScheduleEvent) {
 
 .day-title {
   min-width: 150px;
-  text-align: center;
   font-size: 16px;
   font-weight: 600;
   color: var(--el-text-color-primary);
+  text-align: center;
+}
+
+.toolbar-right {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
 }
 
 .tooltip-text {
@@ -298,21 +331,21 @@ async function onBarClick(e: ScheduleEvent) {
 .legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 12px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
 
   .legend-item {
     display: inline-flex;
-    align-items: center;
     gap: 4px;
+    align-items: center;
   }
 
   .dot {
+    display: inline-block;
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    display: inline-block;
   }
 
   .diamond {
@@ -340,23 +373,23 @@ async function onBarClick(e: ScheduleEvent) {
 .gantt {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .ruler,
 .lane {
   display: grid;
-  grid-template-columns: 160px minmax(0, 1fr);
+  grid-template-columns: 140px minmax(0, 1fr);
   gap: 8px;
   align-items: center;
 }
 
 .ruler-label,
 .lane-label {
-  font-size: 13px;
-  color: var(--el-text-color-regular);
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
   white-space: nowrap;
 
   small {
@@ -364,12 +397,13 @@ async function onBarClick(e: ScheduleEvent) {
   }
 }
 
+/* 轨道高度由 laneHeight() 内联控制（按子轨道数伸缩），此处只给兜底最小高度 */
 .ruler-track,
 .lane-track {
   position: relative;
-  height: 48px;
-  border-radius: 4px;
+  min-height: 26px;
   background: var(--el-fill-color-light);
+  border-radius: 4px;
 }
 
 .ruler-track {
@@ -382,24 +416,24 @@ async function onBarClick(e: ScheduleEvent) {
 .tick {
   position: absolute;
   top: 0;
-  transform: translateX(-50%);
   font-size: 11px;
   color: var(--el-text-color-secondary);
+  transform: translateX(-50%);
 }
 
 .bar {
   position: absolute;
-  height: 22px;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  // 彩底白字走 Element Plus 语义变量（不写死 hex，深浅色均不破面）
-  color: var(--el-color-white);
-  font-size: 11px;
   display: flex;
   align-items: center;
+  height: 22px;
   padding: 0 4px;
   overflow: hidden;
+  font-size: 11px;
+  // 彩底白字走 Element Plus 语义变量（不写死 hex，深浅色均不破面）
+  color: var(--el-color-white);
   cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 4px;
 
   .bar-text {
     overflow: hidden;
@@ -414,13 +448,13 @@ async function onBarClick(e: ScheduleEvent) {
   }
 
   &.bar-past {
-    opacity: 0.45;
     text-decoration: line-through;
+    opacity: 0.45;
   }
 
   &.bar-borrow {
-    background: var(--el-color-warning-light-9);
     color: var(--el-color-warning);
+    background: var(--el-color-warning-light-9);
     border-style: solid;
   }
 }

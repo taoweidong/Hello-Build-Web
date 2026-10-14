@@ -3,7 +3,6 @@
 <template>
   <div class="biz-filter-bar">
     <div class="biz-filter-left">
-      <span class="biz-sub">版本</span>
       <el-select
         :model-value="versionId"
         placeholder="全部版本"
@@ -19,7 +18,6 @@
           :value="v.version_id"
         />
       </el-select>
-      <span class="biz-sub">分支</span>
       <el-select
         :model-value="branchIds"
         multiple
@@ -45,7 +43,7 @@
         仅看我的
       </el-checkbox>
     </div>
-    <div class="biz-filter-left">
+    <div class="biz-filter-right">
       <LayoutSwitcher />
       <el-button size="small" @click="emit('open-my-bookings')"
         >我的抢占</el-button
