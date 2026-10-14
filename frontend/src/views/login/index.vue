@@ -97,15 +97,43 @@ useEventListener(document, "keydown", ({ code }) => {
 });
 
 // ---- 开发阶段快速登录：一键填充演示账号并登录（生产构建不渲染、口令字面量随死代码被摇树） ----
-const quickAccounts = isDev
+interface QuickAccount {
+  username: string;
+  label: string;
+  role: string;
+}
+
+interface QuickGroup {
+  title: string;
+  color: string;
+  accounts: QuickAccount[];
+}
+
+const quickGroups: QuickGroup[] = isDev
   ? [
-      { username: "admin", label: "管理员" },
-      { username: "pm27a", label: "27A PM" },
-      { username: "pm27b", label: "27B PM" },
-      { username: "pm26b", label: "26B PM" },
-      { username: "builder", label: "构建" },
-      { username: "tester", label: "测试" },
-      { username: "integrator", label: "集成" }
+      {
+        title: "管理",
+        color: "danger",
+        accounts: [{ username: "admin", label: "管理员", role: "admin" }]
+      },
+      {
+        title: "版本负责人",
+        color: "warning",
+        accounts: [
+          { username: "pm27a", label: "27A", role: "pm" },
+          { username: "pm27b", label: "27B", role: "pm" },
+          { username: "pm26b", label: "26B", role: "pm" }
+        ]
+      },
+      {
+        title: "执行",
+        color: "primary",
+        accounts: [
+          { username: "builder", label: "构建", role: "builder" },
+          { username: "tester", label: "测试", role: "tester" },
+          { username: "integrator", label: "集成", role: "integrator" }
+        ]
+      }
     ]
   : [];
 
@@ -192,20 +220,30 @@ async function onQuickLogin(username: string) {
               </el-button>
             </Motion>
 
-            <!-- 开发阶段快速登录：一键切换演示账号（生产构建不渲染） -->
+            <!-- 开发阶段快速登录：按角色分组一键切换演示账号（生产构建不渲染） -->
             <Motion :delay="300">
               <div v-if="isDev" class="quick-login">
-                <span class="quick-label">快速登录：</span>
-                <el-button
-                  v-for="acc in quickAccounts"
-                  :key="acc.username"
-                  class="quick-btn"
-                  size="small"
-                  :disabled="disabled || loading"
-                  @click="onQuickLogin(acc.username)"
+                <div
+                  v-for="group in quickGroups"
+                  :key="group.title"
+                  class="quick-group"
                 >
-                  {{ acc.label }}
-                </el-button>
+                  <span class="quick-group-title">{{ group.title }}</span>
+                  <div class="quick-group-buttons">
+                    <el-button
+                      v-for="acc in group.accounts"
+                      :key="acc.username"
+                      class="quick-btn"
+                      size="small"
+                      :type="group.color as any"
+                      plain
+                      :disabled="disabled || loading"
+                      @click="onQuickLogin(acc.username)"
+                    >
+                      {{ acc.label }}
+                    </el-button>
+                  </div>
+                </div>
               </div>
             </Motion>
           </el-form>
@@ -226,19 +264,37 @@ async function onQuickLogin(username: string) {
 
 .quick-login {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin-top: 10px;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--el-border-color-lighter);
+}
 
-  .quick-label {
+.quick-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  .quick-group-title {
+    flex-shrink: 0;
+    width: 72px;
     font-size: 12px;
-    color: var(--el-text-color-placeholder);
+    color: var(--el-text-color-secondary);
+    text-align: right;
+  }
+
+  .quick-group-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
   }
 
   .quick-btn {
+    padding: 5px 12px;
     margin: 0;
-    padding: 5px 10px;
+    font-size: 12px;
+    border-radius: 4px;
   }
 }
 </style>
