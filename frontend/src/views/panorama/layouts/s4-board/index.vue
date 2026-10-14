@@ -10,7 +10,7 @@
             circle
             aria-label="上一周期"
             size="small"
-            @click="shiftRange(-1)"
+            @click="shiftBy(-7)"
           >
             <IconifyIconOffline :icon="ArrowLeft" class="biz-nav-icon" />
           </el-button>
@@ -19,7 +19,7 @@
             circle
             aria-label="下一周期"
             size="small"
-            @click="shiftRange(1)"
+            @click="shiftBy(7)"
           >
             <IconifyIconOffline :icon="ArrowRight" class="biz-nav-icon" />
           </el-button>
@@ -45,9 +45,9 @@
         :branch-ids="query.branchIds ?? []"
         :scope="query.scope ?? 'all'"
         :loading="loading"
-        @update:version-id="onVersionChange"
-        @update:branch-ids="onBranchChange"
-        @update:scope="onScopeChange"
+        @update:version-id="setVersion"
+        @update:branch-ids="setBranches"
+        @update:scope="setScope"
         @open-my-bookings="actions.openMyBookings()"
         @refresh="refresh()"
       />
@@ -166,7 +166,13 @@ const {
   branchOptions,
   templates,
   horizonDays,
-  refresh
+  refresh,
+  // 查询变更器统一走装配总线（R4-F9：删除本文件逐字复制的处理器副本）
+  setVersion,
+  setBranches,
+  setScope,
+  shiftBy,
+  goThisWeek
 } = usePanoramaPage();
 
 const groupBy = ref<"version" | "branch" | "status">("version");
@@ -235,40 +241,6 @@ function toggleSelect(e: ScheduleEvent, value: string | number | boolean) {
 function toggleBatch() {
   batchMode.value = !batchMode.value;
   if (!batchMode.value) selectedIds.value = new Set();
-}
-
-function shiftRange(delta: number) {
-  const from = dayjs(query.value.dateFrom)
-    .add(delta * 7, "day")
-    .format("YYYY-MM-DD");
-  query.value = {
-    ...query.value,
-    dateFrom: from,
-    dateTo: dayjs(from).add(6, "day").format("YYYY-MM-DD")
-  };
-}
-
-function goThisWeek() {
-  const monday = dayjs()
-    .subtract((dayjs().day() + 6) % 7, "day")
-    .format("YYYY-MM-DD");
-  query.value = {
-    ...query.value,
-    dateFrom: monday,
-    dateTo: dayjs(monday).add(6, "day").format("YYYY-MM-DD")
-  };
-}
-
-function onVersionChange(value: number | undefined) {
-  query.value = { ...query.value, versionId: value, branchIds: [] };
-}
-
-function onBranchChange(value: number[]) {
-  query.value = { ...query.value, branchIds: value };
-}
-
-function onScopeChange(value: "all" | "mine") {
-  query.value = { ...query.value, scope: value };
 }
 </script>
 

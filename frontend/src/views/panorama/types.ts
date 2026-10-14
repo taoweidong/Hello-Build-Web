@@ -158,6 +158,11 @@ export interface ScheduleData {
    */
   todos: Ref<PanoramaTodos | null>;
   /**
+   * 查询范围超过 3 个自然月：抢占矩阵仅覆盖前 3 个月（请求放大保护），
+   * 画布层据此显式提示「范围过大」，避免用户把缺失误读为「无抢占」（R4-F13）。
+   */
+  slotTruncated: Ref<boolean>;
+  /**
    * 手动/查询变更刷新。`silent` 供中枢轮询透传（后台请求不弹全局 toast）；
    * 返回是否成功——轮询据此决定退避计次。
    */

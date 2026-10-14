@@ -145,6 +145,8 @@ import DayDetailDialog from "./components/DayDetailDialog.vue";
 import MyBookingsDrawer from "./components/MyBookingsDrawer.vue";
 import { getCurrentUser } from "@/utils/business";
 import { buildMonthCells, summarizeCalendar } from "@/utils/slotCalendar";
+// 默认可抢窗口唯一来源（R4-F13/F-L4：删除本地副本，与 useScheduleData 同源）
+import { DEFAULT_HORIZON_DAYS } from "@/views/constants";
 
 defineOptions({ name: "SlotBookingIndex" });
 
@@ -156,9 +158,6 @@ const isAdmin = computed(() => getCurrentUser()?.role === "admin");
 const loading = ref(false);
 const loadError = ref("");
 const calendar = ref<SlotCalendarResponse | null>(null);
-
-/** 后端未返回 horizon_days 时的默认可抢占窗口（天），与后端配置默认值一致（R3-F11 提常量） */
-const DEFAULT_HORIZON_DAYS = 60;
 
 const month = ref<string>(
   typeof route.query.month === "string"

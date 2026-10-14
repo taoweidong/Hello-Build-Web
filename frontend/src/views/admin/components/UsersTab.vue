@@ -40,11 +40,22 @@ function openUserDialog(u?: UserInfo) {
   }
 }
 
+/** 用户弹窗保存请求进行中（按钮 :loading 防双击重复提交，对齐 VersionsTab 范式，R4-F3） */
+const savingUser = ref(false);
+
 async function saveUser() {
   if (!userForm.username) {
     ElMessage.warning("请输入用户名");
     return;
   }
+  // 后端已强制初始密码必填（不再回退弱口令默认值）
+  if (!userForm.id && !userForm.password) {
+    ElMessage.warning("请输入初始密码");
+    return;
+  }
+  // 在途守卫：并发第二次 create 会撞 40902 重名弹错（F-H3）
+  if (savingUser.value) return;
+  savingUser.value = true;
   try {
     if (userForm.id) {
       await adminApi.updateUser(userForm.id, {
@@ -54,11 +65,6 @@ async function saveUser() {
       });
       ElMessage.success("用户已更新");
     } else {
-      // 后端已强制初始密码必填（不再回退弱口令默认值）
-      if (!userForm.password) {
-        ElMessage.warning("请输入初始密码");
-        return;
-      }
       await adminApi.createUser({
         username: userForm.username,
         password: userForm.password,
@@ -67,11 +73,13 @@ async function saveUser() {
       });
       ElMessage.success("用户已创建");
     }
+    userDialog.value = false;
+    emit("refresh");
   } catch {
-    return; // 失败已由拦截器提示（如重名 40902），保留弹窗便于修改重试
+    // 失败已由拦截器提示（如重名 40902），保留弹窗便于修改重试
+  } finally {
+    savingUser.value = false;
   }
-  userDialog.value = false;
-  emit("refresh");
 }
 
 async function toggleUser(u: UserInfo) {
@@ -188,7 +196,9 @@ async function resetPassword(u: UserInfo) {
       </el-form>
       <template #footer>
         <el-button @click="userDialog = false">取消</el-button>
-        <el-button type="primary" @click="saveUser">保存</el-button>
+        <el-button type="primary" :loading="savingUser" @click="saveUser"
+          >保存</el-button
+        >
       </template>
     </el-dialog>
   </div>

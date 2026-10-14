@@ -61,9 +61,9 @@
         :branch-ids="query.branchIds ?? []"
         :scope="query.scope ?? 'all'"
         :loading="loading"
-        @update:version-id="onVersionChange"
-        @update:branch-ids="onBranchChange"
-        @update:scope="onScopeChange"
+        @update:version-id="setVersion"
+        @update:branch-ids="setBranches"
+        @update:scope="setScope"
         @open-my-bookings="actions.openMyBookings()"
         @refresh="refresh()"
       />
@@ -149,7 +149,12 @@ const {
   branchOptions,
   templates,
   horizonDays,
-  refresh
+  refresh,
+  // 查询变更器统一走装配总线（R4-F9：删除本文件逐字复制的处理器副本）
+  setVersion,
+  setBranches,
+  setScope,
+  setDateRange
 } = usePanoramaPage({
   dateFrom: dayjs(`${month.value}-01`).format("YYYY-MM-DD"),
   dateTo: dayjs(`${month.value}-01`).endOf("month").format("YYYY-MM-DD")
@@ -175,11 +180,10 @@ const strategyCount = computed(
 );
 
 function syncMonth() {
-  query.value = {
-    ...query.value,
-    dateFrom: dayjs(`${month.value}-01`).format("YYYY-MM-DD"),
-    dateTo: dayjs(`${month.value}-01`).endOf("month").format("YYYY-MM-DD")
-  };
+  setDateRange(
+    dayjs(`${month.value}-01`).format("YYYY-MM-DD"),
+    dayjs(`${month.value}-01`).endOf("month").format("YYYY-MM-DD")
+  );
 }
 
 function shiftMonth(delta: number) {
@@ -192,18 +196,6 @@ function shiftMonth(delta: number) {
 function goThisMonth() {
   month.value = dayjs().format("YYYY-MM");
   syncMonth();
-}
-
-function onVersionChange(value: number | undefined) {
-  query.value = { ...query.value, versionId: value, branchIds: [] };
-}
-
-function onBranchChange(value: number[]) {
-  query.value = { ...query.value, branchIds: value };
-}
-
-function onScopeChange(value: "all" | "mine") {
-  query.value = { ...query.value, scope: value };
 }
 
 /** 事件点击分发：抢占/释放走时段弹窗，策略走编辑或借用，借用走审批抽屉 */
@@ -230,7 +222,8 @@ async function onEventClick(event: ScheduleEvent) {
 
 /** 下钻当日时间轴（S5）：与 S1 热力格点击同一下钻口径，保持同一数据中枢 */
 function goTimeline(date: string) {
-  router.push(`/panorama/timeline?date=${date}`);
+  // 对象写法交给 router 序列化 query（R4-F13/F-L5：不再模板串手拼 URL）
+  router.push({ path: "/panorama/timeline", query: { date } });
 }
 </script>
 

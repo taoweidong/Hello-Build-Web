@@ -109,7 +109,11 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="抢占时刻" prop="created_at" width="160" />
+      <el-table-column label="抢占时刻" width="160">
+        <template #default="{ row }">
+          {{ formatDateTime(row.created_at) }}
+        </template>
+      </el-table-column>
       <el-table-column label="操作" width="90" fixed="right" align="center">
         <template #default="{ row }">
           <el-button
@@ -152,6 +156,8 @@ import {
 } from "@/api/slotBooking";
 // 抢占状态文案/颜色映射唯一来源（页面内禁止复制，含不可达 expired 死分支已删除）
 import { bookingStatusMeta } from "@/views/constants";
+// 后端秒级时间戳统一展示（R4-F7：不再裸展示含 "T" 分隔符的原始串）
+import { formatDateTime } from "@/utils/business";
 
 defineOptions({ name: "SlotRecordsPanel" });
 

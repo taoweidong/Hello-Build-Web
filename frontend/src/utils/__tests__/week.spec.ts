@@ -5,6 +5,7 @@ import {
   buildDateRange,
   buildMonthWeeks,
   isoWeek,
+  mondayOf,
   WEEKDAY_CN_MON,
   WEEKDAY_CN_SUN
 } from "@/utils/week";
@@ -77,6 +78,27 @@ describe("buildMonthWeeks", () => {
         expect(dayjs(w.value).diff(prev, "day")).toBe(7);
       }
     });
+  });
+});
+
+describe("mondayOf 所在周周一（R4-F6/F9 唯一来源）", () => {
+  it("周一自身返回自身", () => {
+    expect(mondayOf("2026-10-12")).toBe("2026-10-12");
+  });
+
+  it("周中/周日回退到本周周一（day()=0 的周日不换到下一周）", () => {
+    expect(mondayOf("2026-10-13")).toBe("2026-10-12"); // 周二
+    expect(mondayOf("2026-10-15")).toBe("2026-10-12"); // 周四
+    expect(mondayOf("2026-10-18")).toBe("2026-10-12"); // 周日
+  });
+
+  it("跨月回退（2026-10-01 所在周周一为 09-28）", () => {
+    expect(mondayOf("2026-10-01")).toBe("2026-09-28");
+  });
+
+  it("与 useScheduleData 原私有 weekMondayOf 口径一致（weekly week_start 锚点）", () => {
+    // 中枢以 dateFrom 所在周周一请求 /weekly：月历首屏 10-01 → 09-28（s3 spec 同口径）
+    expect(mondayOf("2026-09-28")).toBe("2026-09-28");
   });
 });
 

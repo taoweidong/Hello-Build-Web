@@ -89,6 +89,11 @@ describe("S5 时间轴流水", () => {
       "/panorama/timeline?date=2026-10-13"
     ));
     expect(wrapper.find(".biz-range-title").text()).toContain("2026年10月13日");
+    // R4-F6：星期文案走 utils/week 中文唯一来源（2026-10-13 为周二，不得出现 "Tue"）
+    expect(wrapper.find(".biz-range-title").text()).toContain("周二");
+    expect(wrapper.find(".biz-range-title").text()).not.toMatch(
+      /Mon|Tue|Wed|Thu|Fri|Sat|Sun/
+    );
     // 深链把查询收敛为单日：/plan 以该日为锚点取四阶段区间（而非默认周首日）
     expect(planMock).toHaveBeenCalledTimes(1);
     expect(planMock).toHaveBeenCalledWith({ date: "2026-10-13" }, undefined);

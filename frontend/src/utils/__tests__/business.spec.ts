@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   canApproveBorrowFlow,
   canEditPanorama,
+  formatDateTime,
   formatTime,
   getCurrentUser,
   isPastSlot,
@@ -73,6 +74,22 @@ describe("utils/business", () => {
 
     it("formatTime 非法输入输出 Invalid Date（dayjs 语义，不抛异常）", () => {
       expect(formatTime("garbage")).toBe("Invalid Date");
+    });
+  });
+
+  describe("formatDateTime 秒级时间戳统一展示（R4-F7）", () => {
+    it("后端 T 分隔串 → 'YYYY-MM-DD HH:mm:ss'，与 formatTime 自定义格式逐字节等价", () => {
+      const sample = "2026-10-10T09:00:00";
+      expect(formatDateTime(sample)).toBe("2026-10-10 09:00:00");
+      expect(formatDateTime(sample)).toBe(
+        formatTime(sample, "YYYY-MM-DD HH:mm:ss")
+      );
+    });
+
+    it("空值（null/undefined/空串）回退空串，不输出 Invalid Date", () => {
+      expect(formatDateTime("")).toBe("");
+      expect(formatDateTime(null)).toBe("");
+      expect(formatDateTime(undefined)).toBe("");
     });
   });
 

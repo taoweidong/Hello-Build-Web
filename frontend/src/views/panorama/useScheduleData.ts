@@ -10,8 +10,8 @@
 // - 轮询退避 / document.hidden 暂停 / silent 请求 / 卸载守卫：
 //   设计文档原计划「由展示层各自接入」，实测那会让 5 个布局各复制一份
 //   定时器 + visibilitychange + onBeforeUnmount 逻辑（branch-config 页正是
-//   因漏了卸载守卫出过僵尸轮询 R3-F1）。故收敛到中枢一处实现，
-//   布局页经 `autoRefreshMs` 选项 opt-out，不再各自接线。
+//   因漏了卸载守卫出过僵尸轮询 R3-F1）。故收敛到中枢一处实现，布局页不再
+//   各自接线（原 `autoRefreshMs` opt-out 选项从无生产调用方，按 YAGNI 删除，R4-F13）。
 import {
   computed,
   onBeforeUnmount,
@@ -28,7 +28,10 @@ import { listBorrowFlows } from "@/api/borrowFlow";
 import { getPanoramaTodos, type PanoramaTodos } from "@/api/panorama";
 import type { Timeline, WeeklyData } from "@/api/types";
 import { getCurrentUser } from "@/utils/business";
-import { buildDateRange } from "@/utils/week";
+// 周一计算与中文星期数组唯一来源（R4-F6/F9：删除本地 weekMondayOf 与 WEEKDAY_CN_MON 副本）
+import { buildDateRange, mondayOf, WEEKDAY_CN_MON } from "@/utils/week";
+// 默认可抢窗口唯一来源（R4-F13/F-L4：删除本地副本，与 slot-booking 页同源）
+import { DEFAULT_HORIZON_DAYS } from "@/views/constants";
 import { POLL_BASE_MS, pollDelay } from "@/utils/polling";
 import { useBranchColors } from "@/composables/useBranchColors";
 import { mapStrategyEvents } from "./sources/strategySource";
@@ -42,47 +45,24 @@ import type {
   ScheduleQuery
 } from "./types";
 
-/** 后端未返回 horizon_days 时的默认窗口（与 slot-booking 页口径一致） */
-const DEFAULT_HORIZON_DAYS = 60;
-
-/** 中枢可选项 */
-export interface ScheduleDataOptions {
-  /**
-   * 自动轮询间隔（毫秒）。默认 `POLL_BASE_MS`（30s），失败按 pollDelay 指数退避至 300s 封顶；
-   * 传 `false` 关闭自动轮询（仅保留查询变更刷新与写动作后 refresh）。
-   */
-  autoRefreshMs?: number | false;
-}
-
-/** 一周起点（周一） */
-function weekMondayOf(dateStr: string): string {
-  return dayjs(dateStr)
-    .subtract((dayjs(dateStr).day() + 6) % 7, "day")
-    .format("YYYY-MM-DD");
-}
-
-/** 范围内涉及的自然月（去重，最多 3 个，避免范围过大导致请求放大） */
-function monthsOf(from: string, to: string): string[] {
+/**
+ * 范围内涉及的自然月（去重，最多 3 个，避免范围过大导致请求放大）。
+ * truncated 标记范围超过 3 个自然月（R4-F13/F-L7）：第 4 个月起抢占矩阵静默
+ * 缺失曾让用户误读为「无抢占」，画布层据 slotTruncated 显式提示。
+ */
+export function monthsOf(
+  from: string,
+  to: string
+): { months: string[]; truncated: boolean } {
   const out: string[] = [];
   let cur = dayjs(from).startOf("month");
   const end = dayjs(to).startOf("month");
   while (cur.isBefore(end) || cur.isSame(end)) {
     out.push(cur.format("YYYY-MM"));
     cur = cur.add(1, "month");
-    if (out.length >= 3) break;
   }
-  return out;
+  return { months: out.slice(0, 3), truncated: out.length > 3 };
 }
-
-const WEEKDAY_CN_MON = [
-  "周一",
-  "周二",
-  "周三",
-  "周四",
-  "周五",
-  "周六",
-  "周日"
-] as const;
 
 /** 构造布局无关的日期轴 */
 export function buildScheduleDays(
@@ -98,10 +78,7 @@ export function buildScheduleDays(
   }));
 }
 
-export function useScheduleData(
-  query: Ref<ScheduleQuery>,
-  options: ScheduleDataOptions = {}
-): ScheduleData {
+export function useScheduleData(query: Ref<ScheduleQuery>): ScheduleData {
   const loading = ref(false);
   const lastLoadedAt = ref<Date | null>(null);
   const events = ref<ScheduleEvent[]>([]);
@@ -110,6 +87,8 @@ export function useScheduleData(
   const horizonDays = ref(DEFAULT_HORIZON_DAYS);
   /** 服务端待办聚合；接口不可用时保持 null，页面回退前端聚合 */
   const todos = ref<PanoramaTodos | null>(null);
+  /** 查询范围超过 3 个自然月：抢占矩阵仅覆盖前 3 个月，画布层需显式提示（R4-F13） */
+  const slotTruncated = ref(false);
   const user = getCurrentUser();
 
   const branches = computed(() => weekly.value?.branches ?? []);
@@ -153,7 +132,7 @@ export function useScheduleData(
       // 1) 策略骨架（weekly 未选版本时返回空策略，回填后由下方 watcher 二次拉取）
       const weeklyData = await getWeekly(
         {
-          week_start: weekMondayOf(q.dateFrom),
+          week_start: mondayOf(q.dateFrom),
           version_id: q.versionId
         },
         cfg
@@ -168,12 +147,13 @@ export function useScheduleData(
         return true; // 版本变化触发 watcher 二次拉取
       }
 
-      // 2) 时段抢占矩阵（按自然月聚合）
-      const monthList = monthsOf(q.dateFrom, q.dateTo);
+      // 2) 时段抢占矩阵（按自然月聚合；超 3 个月截断并外化提示标记）
+      const { months: monthList, truncated } = monthsOf(q.dateFrom, q.dateTo);
       const calendarList = await Promise.all(
         monthList.map(m => getSlotCalendar(m, cfg))
       );
       if (current !== seq) return true;
+      slotTruncated.value = truncated;
       const calendarMap: Record<string, SlotCalendarResponse> = {};
       for (const c of calendarList) {
         calendarMap[c.month] = c;
@@ -252,10 +232,6 @@ export function useScheduleData(
   }
 
   // ---------- 自动轮询（退避 + 隐藏暂停 + 卸载守卫，5 布局共用一处）----------
-  const autoMs =
-    options.autoRefreshMs === false
-      ? 0
-      : (options.autoRefreshMs ?? POLL_BASE_MS);
   let pollFailures = 0;
   // 注意：显式用 window.setTimeout（浏览器语义返回 number），
   // 不用全局 setTimeout——本仓库 @types/node 在，全局签名返回 NodeJS.Timeout
@@ -272,11 +248,14 @@ export function useScheduleData(
   }
 
   function schedulePoll() {
-    if (disposed || !autoMs) return;
+    if (disposed) return;
     stopPoll();
     // 后台标签页不打点，恢复可见时由 visibilitychange 立即补一次
     if (document.hidden) return;
-    pollTimer = window.setTimeout(pollOnce, pollDelay(pollFailures, autoMs));
+    pollTimer = window.setTimeout(
+      pollOnce,
+      pollDelay(pollFailures, POLL_BASE_MS)
+    );
   }
 
   async function pollOnce() {
@@ -355,6 +334,7 @@ export function useScheduleData(
     templates,
     horizonDays,
     todos,
+    slotTruncated,
     refresh
   };
 }
@@ -363,7 +343,7 @@ export function useScheduleData(
 export function defaultWeekQuery(
   overrides: Partial<ScheduleQuery> = {}
 ): ScheduleQuery {
-  const monday = weekMondayOf(dayjs().format("YYYY-MM-DD"));
+  const monday = mondayOf(dayjs().format("YYYY-MM-DD"));
   return {
     dateFrom: monday,
     dateTo: dayjs(monday).add(6, "day").format("YYYY-MM-DD"),

@@ -105,7 +105,8 @@ interface QuickAccount {
 
 interface QuickGroup {
   title: string;
-  color: string;
+  /** el-button 语义类型联合（R4-F14：模板处不再 `as any` 逃逸类型检查） */
+  color: "primary" | "success" | "info" | "warning" | "danger";
   accounts: QuickAccount[];
 }
 
@@ -235,7 +236,7 @@ async function onQuickLogin(username: string) {
                       :key="acc.username"
                       class="quick-btn"
                       size="small"
-                      :type="group.color as any"
+                      :type="group.color"
                       plain
                       :disabled="disabled || loading"
                       @click="onQuickLogin(acc.username)"

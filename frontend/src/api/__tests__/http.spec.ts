@@ -84,7 +84,16 @@ describe("api/http 拦截器", () => {
     await expect(service.get("/demo")).rejects.toMatchObject({ code: 40100 });
     expect(removeTokenMock).toHaveBeenCalled();
     expect(localStorage.getItem("build-user-info")).toBeNull();
-    expect(window.location.hash).toContain("login");
+    expect(window.location.hash).toBe("#/login");
+  });
+
+  it("401 跳转 URL 走 appHashUrl 唯一来源：含 origin 与部署子路径（R4-F12）", async () => {
+    useAdapter(httpErrorAdapter(401, { code: 40100, message: "未认证" }));
+    await expect(service.get("/demo")).rejects.toMatchObject({ code: 40100 });
+    // 与 utils/appUrl.appHashUrl 同款拼法（origin + pathname + #/login），
+    // 不再手拼 `${pathname}#/login` 丢 origin
+    const { origin, pathname } = window.location;
+    expect(window.location.href).toBe(`${origin}${pathname}#/login`);
   });
 
   it("40101 登录态过期 → 同样清理并跳登录（与 40100 同路径）", async () => {

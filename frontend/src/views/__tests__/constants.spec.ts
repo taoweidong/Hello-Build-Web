@@ -4,6 +4,7 @@ import {
   bookingStatusMeta,
   borrowStatusMeta,
   branchRoleMeta,
+  DEFAULT_HORIZON_DAYS,
   instanceStatusMeta,
   pushModeMeta,
   reportConclusionMeta,
@@ -12,6 +13,19 @@ import {
   roleTextMap,
   slotStatusText
 } from "@/views/constants";
+
+describe("默认可抢窗口常量（R4-F13/F-L4 唯一来源）", () => {
+  it("DEFAULT_HORIZON_DAYS 为 60（与后端 RuntimeConfig 默认值一致）", () => {
+    expect(DEFAULT_HORIZON_DAYS).toBe(60);
+  });
+
+  it("borrowStatusMeta 覆盖 cancelled（借用状态筛选项的文案来源）", () => {
+    expect(borrowStatusMeta("cancelled")).toEqual({
+      text: "已撤销",
+      type: "info"
+    });
+  });
+});
 
 describe("报告结论/状态", () => {
   it("reportConclusionMeta 命中与兜底", () => {

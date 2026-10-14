@@ -1,10 +1,7 @@
 // 三源归约单测：mapStrategyEvents / mapSlotEvents / mapBorrowEvents
 // 重点锁定：锚点日区间来自服务端、其余日期退化为点事件、过期惰性判定、六动作权限包口径
 import { describe, expect, it } from "vitest";
-import {
-  countPendingApproval,
-  mapBorrowEvents
-} from "@/views/panorama/sources/borrowSource";
+import { mapBorrowEvents } from "@/views/panorama/sources/borrowSource";
 import { mapSlotEvents } from "@/views/panorama/sources/slotSource";
 import { mapStrategyEvents } from "@/views/panorama/sources/strategySource";
 import {
@@ -538,22 +535,6 @@ describe("mapBorrowEvents", () => {
   });
 });
 
-describe("countPendingApproval", () => {
-  it("与 canApproveBorrowFlow 同口径计数", () => {
-    const flows = [
-      makeBorrowFlow({ id: 1, source_version_id: 3 }),
-      makeBorrowFlow({ id: 2, source_version_id: 4 }),
-      makeBorrowFlow({ id: 3, source_version_id: 3 })
-    ];
-    expect(
-      countPendingApproval(flows, { role: "admin", bound_version_id: 9 })
-    ).toBe(3);
-    expect(
-      countPendingApproval(flows, { role: "pm", bound_version_id: 3 })
-    ).toBe(2);
-    expect(
-      countPendingApproval(flows, { role: "pm", bound_version_id: 5 })
-    ).toBe(0);
-    expect(countPendingApproval(flows, null)).toBe(0);
-  });
-});
+// 原 countPendingApproval 用例随死导出删除（R4-F13/F-L2）：生产红点计数由
+// /panorama/todos 的 pending_approval 承载；审批权限口径已由上方
+// mapBorrowEvents「审批权限」用例与 utils/business.canApproveBorrowFlow 单测锁定。

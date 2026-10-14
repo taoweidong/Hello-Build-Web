@@ -58,6 +58,16 @@ export function buildMonthWeeks(
 }
 
 /**
+ * 所在周的周一 "YYYY-MM-DD"（本地日历算法，day() 0=周日 → 偏移 (day()+6)%7）。
+ * 唯一来源（R4-F6/F9）：全景数据中枢 weekMondayOf 与 s1/s4 布局 goThisWeek
+ * 的内联周一计算全部收敛到此，禁止页面再手写 `(day()+6)%7`。
+ */
+export function mondayOf(dateStr: string): string {
+  const d = dayjs(dateStr);
+  return d.subtract((d.day() + 6) % 7, "day").format("YYYY-MM-DD");
+}
+
+/**
  * 闭区间日期列表 ["YYYY-MM-DD"]（含首尾），按日升序；入参非法返回 []。
  * 调度全景各布局的日期轴统一由此生成（周/月/单日/自定义范围）。
  */

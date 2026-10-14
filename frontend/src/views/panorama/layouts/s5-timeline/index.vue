@@ -10,7 +10,7 @@
             circle
             aria-label="前一天"
             size="small"
-            @click="shiftDay(-1)"
+            @click="shiftBy(-1)"
           >
             <IconifyIconOffline :icon="ArrowLeft" class="biz-nav-icon" />
           </el-button>
@@ -19,7 +19,7 @@
             circle
             aria-label="后一天"
             size="small"
-            @click="shiftDay(1)"
+            @click="shiftBy(1)"
           >
             <IconifyIconOffline :icon="ArrowRight" class="biz-nav-icon" />
           </el-button>
@@ -45,13 +45,22 @@
         :branch-ids="query.branchIds ?? []"
         :scope="query.scope ?? 'all'"
         :loading="loading"
-        @update:version-id="onVersionChange"
-        @update:branch-ids="onBranchChange"
-        @update:scope="onScopeChange"
+        @update:version-id="setVersion"
+        @update:branch-ids="setBranches"
+        @update:scope="setScope"
         @open-my-bookings="actions.openMyBookings()"
         @refresh="refresh()"
       />
     </el-card>
+
+    <!-- 范围超 3 个自然月：抢占矩阵仅覆盖前 3 个月，显式提示避免误读为「无抢占」（R4-F13） -->
+    <el-alert
+      v-if="slotTruncated"
+      title="范围过大，抢占矩阵仅展示前 3 个月"
+      type="warning"
+      :closable="false"
+      show-icon
+    />
 
     <el-card shadow="never" class="biz-content-card">
       <el-skeleton v-if="loading" :rows="8" animated />
@@ -107,6 +116,8 @@ import ScheduleDialogs from "../../shared/ScheduleDialogs.vue";
 import { buildEventActions, withCopyAction } from "../../shared/eventActions";
 import { detectCrossSourceConflicts } from "../../selectors";
 import { borrowStatusMeta, bookingStatusMeta } from "@/views/constants";
+// 中文星期唯一来源（R4-F6：dayjs `ddd` 依赖 zh-cn locale，本项目从未加载会中英混排）
+import { WEEKDAY_CN_SUN } from "@/utils/week";
 import type { ScheduleEvent } from "../../types";
 
 defineOptions({ name: "PanoramaTimelineLayout" });
@@ -125,14 +136,25 @@ const {
   branchOptions,
   templates,
   horizonDays,
-  refresh
+  slotTruncated,
+  refresh,
+  // 查询变更器统一走装配总线（R4-F9：删除本文件逐字复制的处理器副本）
+  setVersion,
+  setBranches,
+  setScope,
+  setDateRange,
+  shiftBy,
+  goToday
 } = usePanoramaPage();
 
 const filter = ref<"all" | "mine" | "conflict" | "borrow">("all");
 /** 折叠空闲时段：隐藏「空闲可抢占」的时段行，把注意力收敷到已占用/待办上 */
 const hideAvailable = ref(false);
 const anchor = computed(() => query.value.dateFrom);
-const dayTitle = computed(() => dayjs(anchor.value).format("YYYY年M月D日 ddd"));
+const dayTitle = computed(
+  () =>
+    `${dayjs(anchor.value).format("YYYY年M月D日")} ${WEEKDAY_CN_SUN[dayjs(anchor.value).day()]}`
+);
 
 const dayEvents = computed(() => byDay.value[anchor.value] ?? []);
 const conflictIds = computed(
@@ -170,33 +192,11 @@ watch(
   () => route.query.date,
   value => {
     if (typeof value === "string" && dayjs(value).isValid()) {
-      query.value = { ...query.value, dateFrom: value, dateTo: value };
+      setDateRange(value, value);
     }
   },
   { immediate: true }
 );
-
-function shiftDay(delta: number) {
-  const from = dayjs(anchor.value).add(delta, "day").format("YYYY-MM-DD");
-  query.value = { ...query.value, dateFrom: from, dateTo: from };
-}
-
-function goToday() {
-  const today = dayjs().format("YYYY-MM-DD");
-  query.value = { ...query.value, dateFrom: today, dateTo: today };
-}
-
-function onVersionChange(value: number | undefined) {
-  query.value = { ...query.value, versionId: value, branchIds: [] };
-}
-
-function onBranchChange(value: number[]) {
-  query.value = { ...query.value, branchIds: value };
-}
-
-function onScopeChange(value: "all" | "mine") {
-  query.value = { ...query.value, scope: value };
-}
 </script>
 
 <style scoped lang="scss">

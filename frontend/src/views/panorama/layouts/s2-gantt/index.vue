@@ -10,7 +10,7 @@
             circle
             aria-label="前一天"
             size="small"
-            @click="shiftDay(-1)"
+            @click="shiftBy(-1)"
           >
             <IconifyIconOffline :icon="ArrowLeft" class="biz-nav-icon" />
           </el-button>
@@ -19,7 +19,7 @@
             circle
             aria-label="后一天"
             size="small"
-            @click="shiftDay(1)"
+            @click="shiftBy(1)"
           >
             <IconifyIconOffline :icon="ArrowRight" class="biz-nav-icon" />
           </el-button>
@@ -63,13 +63,22 @@
         :branch-ids="query.branchIds ?? []"
         :scope="query.scope ?? 'all'"
         :loading="loading"
-        @update:version-id="onVersionChange"
-        @update:branch-ids="onBranchChange"
-        @update:scope="onScopeChange"
+        @update:version-id="setVersion"
+        @update:branch-ids="setBranches"
+        @update:scope="setScope"
         @open-my-bookings="actions.openMyBookings()"
         @refresh="refresh()"
       />
     </el-card>
+
+    <!-- 范围超 3 个自然月：抢占矩阵仅覆盖前 3 个月，显式提示避免误读为「无抢占」（R4-F13） -->
+    <el-alert
+      v-if="slotTruncated"
+      title="范围过大，抢占矩阵仅展示前 3 个月"
+      type="warning"
+      :closable="false"
+      show-icon
+    />
 
     <el-card shadow="never" class="gantt-card biz-content-card">
       <el-skeleton v-if="loading" :rows="6" animated />
@@ -128,10 +137,12 @@ import ArrowLeft from "~icons/ep/arrow-left";
 import ArrowRight from "~icons/ep/arrow-right";
 import InfoFilled from "~icons/ep/info-filled";
 import { formatTime } from "@/utils/business";
+// 中文星期唯一来源（R4-F6：dayjs `ddd` 依赖 zh-cn locale，本项目从未加载会中英混排）
+import { WEEKDAY_CN_SUN } from "@/utils/week";
 import { usePanoramaPage } from "../../usePanoramaPage";
 import PanoramaFilterBar from "../../shared/PanoramaFilterBar.vue";
 import ScheduleDialogs from "../../shared/ScheduleDialogs.vue";
-import { lanePack } from "../../selectors";
+import { groupByBranch, lanePack } from "../../selectors";
 import { STAGE_COLORS } from "@/components/gantt/types";
 import type { ScheduleEvent } from "../../types";
 
@@ -150,7 +161,14 @@ const {
   branchOptions,
   templates,
   horizonDays,
-  refresh
+  slotTruncated,
+  refresh,
+  // 查询变更器统一走装配总线（R4-F9：删除本文件逐字复制的处理器副本）
+  setVersion,
+  setBranches,
+  setScope,
+  shiftBy,
+  goToday
 } = usePanoramaPage();
 
 const STAGE_LEGEND = [
@@ -164,27 +182,23 @@ const onlyBusy = ref(true);
 const ticks = ["00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00"];
 
 const anchor = computed(() => query.value.dateFrom);
-const dayTitle = computed(() => dayjs(anchor.value).format("YYYY年M月D日 ddd"));
+const dayTitle = computed(
+  () =>
+    `${dayjs(anchor.value).format("YYYY年M月D日")} ${WEEKDAY_CN_SUN[dayjs(anchor.value).day()]}`
+);
 
-/** 泳道：按分支分组；空泳道可折叠（无虚拟滚动，控制 DOM 量） */
+/** 泳道：按分支分组走 selectors.groupByBranch 唯一实现（R4-F13/F-L2：删除内联
+ * 重复分组）；空泳道可折叠（无虚拟滚动，控制 DOM 量），泳道内再 lanePack 分轨 */
 const lanes = computed(() => {
   const dayEvents = byDay.value[anchor.value] ?? [];
-  const map = new Map<string, ScheduleEvent[]>();
-  for (const e of dayEvents) {
-    const key = `${e.branchId ?? "none"}`;
-    (map.get(key) || map.set(key, []).get(key)!).push(e);
-  }
-  return [...map.entries()]
-    .map(([key, list]) => {
-      const { lanes: subLanes } = lanePack(list);
-      return {
-        key,
-        name: list[0].branchName || "未关联分支",
-        count: list.length,
-        events: list,
-        lanes: subLanes
-      };
-    })
+  return groupByBranch(dayEvents)
+    .map(g => ({
+      key: `${g.branchId ?? "none"}`,
+      name: g.branchName,
+      count: g.events.length,
+      events: g.events,
+      lanes: lanePack(g.events).lanes
+    }))
     .filter(l => !onlyBusy.value || l.count > 0)
     .sort((a, b) => b.count - a.count);
 });
@@ -226,28 +240,6 @@ function barStyle(e: ScheduleEvent, subLane: number) {
     borderColor: color,
     borderStyle: e.kind === "push" ? "dashed" : "solid"
   };
-}
-
-function shiftDay(delta: number) {
-  const from = dayjs(anchor.value).add(delta, "day").format("YYYY-MM-DD");
-  query.value = { ...query.value, dateFrom: from, dateTo: from };
-}
-
-function goToday() {
-  const today = dayjs().format("YYYY-MM-DD");
-  query.value = { ...query.value, dateFrom: today, dateTo: today };
-}
-
-function onVersionChange(value: number | undefined) {
-  query.value = { ...query.value, versionId: value, branchIds: [] };
-}
-
-function onBranchChange(value: number[]) {
-  query.value = { ...query.value, branchIds: value };
-}
-
-function onScopeChange(value: "all" | "mine") {
-  query.value = { ...query.value, scope: value };
 }
 
 async function onBarClick(e: ScheduleEvent) {

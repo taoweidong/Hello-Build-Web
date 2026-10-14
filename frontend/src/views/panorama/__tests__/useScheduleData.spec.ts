@@ -18,7 +18,7 @@ import { getSlotCalendar } from "@/api/slotBooking";
 import { getPlan } from "@/api/plan";
 import { listBorrowFlows } from "@/api/borrowFlow";
 import { getPanoramaTodos } from "@/api/panorama";
-import { useScheduleData, type ScheduleDataOptions } from "../useScheduleData";
+import { monthsOf, useScheduleData } from "../useScheduleData";
 import {
   WEEK_FROM,
   makeBorrowFlow,
@@ -48,16 +48,14 @@ function makeQuery(over: Partial<ScheduleQuery> = {}): ScheduleQuery {
   };
 }
 
-/** 挂载 composable 宿主组件；query 提升到外层便于用例改写 */
-function mountData(
-  options?: ScheduleDataOptions,
-  queryOverrides: Partial<ScheduleQuery> = {}
-) {
+/** 挂载 composable 宿主组件；query 提升到外层便于用例改写
+ * （原 autoRefreshMs 选项从无生产调用方，已按 YAGNI 删除，R4-F13/F-L3） */
+function mountData(queryOverrides: Partial<ScheduleQuery> = {}) {
   let api!: ReturnType<typeof useScheduleData>;
   const query = ref<ScheduleQuery>(makeQuery(queryOverrides));
   const Comp = defineComponent({
     setup() {
-      api = useScheduleData(query, options);
+      api = useScheduleData(query);
       return () => h("div");
     }
   });
@@ -284,14 +282,48 @@ describe("useScheduleData 自动轮询", () => {
     await flushPromises();
     expect(weeklyMock).toHaveBeenCalledTimes(1);
   });
+});
 
-  it("autoRefreshMs: false 关闭自动轮询（仅保留查询变更与写动作刷新）", async () => {
-    const { wrapper } = mountData({ autoRefreshMs: false });
+describe("monthsOf 自然月聚合与截断标记（R4-F13/F-L7）", () => {
+  it("单月/跨 3 个月：不截断", () => {
+    expect(monthsOf("2026-10-12", "2026-10-18")).toEqual({
+      months: ["2026-10"],
+      truncated: false
+    });
+    expect(monthsOf("2026-10-31", "2026-12-01")).toEqual({
+      months: ["2026-10", "2026-11", "2026-12"],
+      truncated: false
+    });
+  });
+
+  it("超过 3 个自然月：仅取前 3 个月且 truncated=true（第 4 个月起矩阵缺失需提示）", () => {
+    expect(monthsOf("2026-10-01", "2027-03-01")).toEqual({
+      months: ["2026-10", "2026-11", "2026-12"],
+      truncated: true
+    });
+  });
+
+  it("中枢把截断标记外化到 slotTruncated（画布层据此提示）", async () => {
+    const { wrapper, api } = mountData({
+      dateFrom: "2026-10-01",
+      dateTo: "2027-03-01"
+    });
     await flushPromises();
-    expect(weeklyMock).toHaveBeenCalledTimes(1);
-    vi.advanceTimersByTime(600_000);
+    expect(api.slotTruncated.value).toBe(true);
+    // 抢占矩阵只发前 3 个月的请求（请求放大保护口径不变）
+    expect(calendarMock).toHaveBeenCalledTimes(3);
+    expect(calendarMock.mock.calls.map(c => c[0])).toEqual([
+      "2026-10",
+      "2026-11",
+      "2026-12"
+    ]);
+    wrapper.unmount();
+  });
+
+  it("常规周范围：slotTruncated 为 false", async () => {
+    const { wrapper, api } = mountData();
     await flushPromises();
-    expect(weeklyMock).toHaveBeenCalledTimes(1);
+    expect(api.slotTruncated.value).toBe(false);
     wrapper.unmount();
   });
 });

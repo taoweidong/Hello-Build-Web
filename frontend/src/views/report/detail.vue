@@ -1,7 +1,15 @@
 <script setup lang="ts">
 // 验证报告详情/编辑页：报告单布局（居中标题 + 信息行 + 末行发布人/核心结论/操作）
 // 权限：tester/builder 且作者可编辑发布；新建态天然为编辑态
-import { ref, reactive, computed, onMounted, nextTick, watch } from "vue";
+import {
+  ref,
+  reactive,
+  computed,
+  onMounted,
+  nextTick,
+  watch,
+  type Component
+} from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import html2canvas from "html2canvas-pro";
@@ -175,8 +183,8 @@ function statusTag(s: string) {
   return reportStatusMeta(s);
 }
 
-// 结论图标映射
-const conclusionIconMap: Record<string, any> = {
+// 结论图标映射（R4-F14：Component 联合替代 Record<string, any>）
+const conclusionIconMap: Record<string, Component> = {
   pass: CheckDouble,
   fail: CloseCircle,
   risk: ErrorWarning

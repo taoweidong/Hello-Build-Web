@@ -71,9 +71,10 @@ const props = defineProps<{
   flows: ScheduleEvent[];
 }>();
 
+// 原声明的 handled 事件从未 emit 也无监听方，已删除（R4-F13/F-L2）：
+// 审批通过/驳回/撤销走动作总线，成功后总线内部统一 data.refresh()，父级无需再感知
 const emit = defineEmits<{
   (e: "update:modelValue", value: boolean): void;
-  (e: "handled"): void;
 }>();
 
 const { data, actions } = usePanorama();

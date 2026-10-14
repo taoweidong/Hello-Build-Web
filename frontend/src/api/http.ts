@@ -1,10 +1,38 @@
 // 业务 API 请求封装 —— Axios 实例
 // 统一处理后端契约：响应 { code, message, data }；错误码语义见后端 errors.py。
 // 失败路径统一 reject BizError（code/message/data/httpStatus），业务侧直接取 e.code / e.message。
-import axios from "axios";
+import axios, { type AxiosResponse } from "axios";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { getToken, removeToken } from "@/utils/auth";
 import { businessUserKey } from "@/store/constants";
+// 401 跳转 URL 唯一来源（R4-F12/F-L1：保留部署子路径，不再手拼 `${pathname}#/login`）
+import { appHashUrl } from "@/utils/appUrl";
+
+/** 后端统一响应信封（成功契约 code === 0） */
+interface ApiEnvelope {
+  code?: number;
+  message?: string;
+  data?: unknown;
+}
+
+/** 错误响应体：兼容 { detail: { code, message } } 与 { code, message } 两种结构 */
+interface ApiErrorBody extends ApiEnvelope {
+  detail?: ApiEnvelope;
+}
+
+/**
+ * axios 错误的结构化收窄（R4-F14：替代 `(err: any)`）。
+ * 不用 axios.isAxiosError——它按实例标记判定，测试替身/网关改造过的普通 Error
+ * 只要带 response/config 也应走同一契约解析，故按结构收窄。
+ */
+interface AxiosLikeError {
+  config?: { silent?: boolean };
+  response?: { status?: number; data?: ApiErrorBody };
+}
+
+function asAxiosLike(err: unknown): AxiosLikeError {
+  return typeof err === "object" && err !== null ? (err as AxiosLikeError) : {};
+}
 
 declare module "axios" {
   interface AxiosRequestConfig {
@@ -61,9 +89,9 @@ function clearBusinessUser() {
   }
 }
 
-// 响应拦截：统一解包 data 与错误处理
+// 响应拦截：统一解包 data 与错误处理（参数类型化，R4-F14：不再 `(res: any)/(err: any)`）
 service.interceptors.response.use(
-  (res: any) => {
+  (res: AxiosResponse<ApiEnvelope>) => {
     const d = res.data;
     // 契约约定成功时 code === 0
     if (d && d.code !== 0) {
@@ -71,32 +99,29 @@ service.interceptors.response.use(
         ElMessage.error(d.message || "请求失败");
       }
       return Promise.reject(
-        new BizError(d.code, d.message || "请求失败", d.data)
+        new BizError(d.code ?? -1, d.message || "请求失败", d.data)
       );
     }
-    // 成功直接返回 data 字段，方便业务层使用
-    return d?.data;
+    // 成功直接返回 data 字段，方便业务层使用（各 API 模块以声明的返回类型收窄语义；
+    // axios 类型签名要求拦截器返回 AxiosResponse，此处为契约解包点的唯一豁免 cast）
+    return d?.data as unknown as AxiosResponse<ApiEnvelope>;
   },
-  (err: any) => {
-    const silent = err?.config?.silent === true;
+  (err: unknown) => {
+    const e = asAxiosLike(err);
+    const silent = e.config?.silent === true;
     // 兼容后端两种错误结构：{ detail: { code, message } } 或 { code, message }
-    const body = err?.response?.data || {};
-    const detail = body?.detail || body;
-    const code = detail?.code;
-    const message = detail?.message;
+    const body = e.response?.data ?? {};
+    const detail = body.detail ?? body;
+    const code = detail.code;
+    const message = detail.message;
     if (code === 40100 || code === 40101) {
       // 未认证/登录态失效：清理并跳登录（静默请求同样跳转，登录态失效必须感知）
       removeToken();
       clearBusinessUser();
-      // 保留部署子路径（pathname），避免子路径部署时硬编码 /#/login 断链
-      window.location.href = `${window.location.pathname}#/login`;
+      // appHashUrl 唯一来源：保留 origin + 部署子路径，子路径部署不断链（R4-F12）
+      window.location.href = appHashUrl("/login");
       return Promise.reject(
-        new BizError(
-          code,
-          message || "未认证",
-          body?.data,
-          err?.response?.status
-        )
+        new BizError(code, message || "未认证", body.data, e.response?.status)
       );
     }
     if (!silent) {
@@ -117,8 +142,8 @@ service.interceptors.response.use(
       new BizError(
         code ?? -1,
         message || "请求失败",
-        body?.data,
-        err?.response?.status
+        body.data,
+        e.response?.status
       )
     );
   }

@@ -11,6 +11,8 @@ import type {
 import { isPastSlot } from "@/utils/business";
 import { bookingStatusMeta } from "@/views/constants";
 import type { ScheduleEvent, SchedulePermissions } from "../types";
+// 时长计算唯一来源（R4-F8/F-M6：删除本文件私有 durationOf 副本）
+import { durationOf } from "./strategySource";
 
 export interface MapSlotOptions {
   calendar: SlotCalendarResponse;
@@ -89,14 +91,4 @@ export function mapSlotEvents(opts: MapSlotOptions): ScheduleEvent[] {
     }
   }
   return out;
-}
-
-/** 分钟差（HH:mm） */
-function durationOf(time: string, endTime: string): number {
-  const toMin = (v: string) => {
-    const [h, m] = v.split(":").map(Number);
-    return (h || 0) * 60 + (m || 0);
-  };
-  const diff = toMin(endTime) - toMin(time);
-  return diff > 0 ? diff : 0;
 }

@@ -79,7 +79,12 @@
       </p>
       <template #footer>
         <el-button @click="ui.rescheduleVisible = false">取消</el-button>
-        <el-button type="primary" @click="actions.confirmReschedule()">
+        <!-- :loading 防双击并发 PATCH（第二个大概率 40904 误报冲突，R4-F11） -->
+        <el-button
+          type="primary"
+          :loading="ui.rescheduling"
+          @click="actions.confirmReschedule()"
+        >
           确定改期
         </el-button>
       </template>
@@ -90,7 +95,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import dayjs from "dayjs";
-import { ElMessage } from "element-plus";
 import StrategyEditDialog from "@/views/weekly-new/components/StrategyEditDialog.vue";
 import StrategyBorrowDialog from "@/views/weekly-new/components/StrategyBorrowDialog.vue";
 import BookingDialog from "@/views/slot-booking/components/BookingDialog.vue";
@@ -109,6 +113,8 @@ const borrowFlows = computed(() =>
 );
 
 async function onSaved() {
+  // 先作废策略详情缓存再刷新：否则保存后重开编辑弹窗仍用旧缓存预填（R4-F1/F-H1）
+  actions.invalidateStrategyCache();
   await data.refresh();
 }
 

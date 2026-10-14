@@ -8,6 +8,7 @@ import {
   formatBorrowFlowText,
   formatFlowTime
 } from "@/views/borrow-flow/format";
+import { formatTime } from "@/utils/business";
 
 function makeFlow(overrides: Partial<BorrowFlowItem> = {}): BorrowFlowItem {
   return {
@@ -149,5 +150,16 @@ describe("formatFlowTime 电子流时间格式化（替代手写 replace，输�
     expect(formatFlowTime(null)).toBe("");
     expect(formatFlowTime(undefined)).toBe("");
     expect(formatFlowTime("")).toBe("");
+  });
+
+  it("R4-F7 等价性锁定：与 utils/business.formatTime 秒级格式逐字节一致（统一前置验证）", () => {
+    for (const v of [
+      "2026-10-11T16:30:00",
+      "2026-10-11 16:30:00",
+      "2026-01-01T00:00:00",
+      "2026-12-31T23:59:59"
+    ]) {
+      expect(formatFlowTime(v)).toBe(formatTime(v, "YYYY-MM-DD HH:mm:ss"));
+    }
   });
 });

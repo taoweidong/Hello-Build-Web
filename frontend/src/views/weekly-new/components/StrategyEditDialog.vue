@@ -157,15 +157,20 @@ const saving = ref(false);
 
 // 模板选项：优先 /admin/templates（admin/pm 均可读），失败降级为当前策略自身的模板
 const templateOptions = ref<TemplateItem[]>([]);
+// 是否已成功拉取模板（R4-F13/F-L9）：区分「成功加载」与「降级」——此前以
+// 「数组非空」判定已加载，降级填充的单选项会把后续每次打开锁死且无提示；
+// 现降级不置位，下次打开自动重试拉取
+const templatesLoaded = ref(false);
 watch(
   () => props.modelValue,
   async visible => {
     if (!visible || !props.strategy) return;
     fillForm();
-    if (templateOptions.value.length === 0) {
+    if (!templatesLoaded.value) {
       try {
         // 统一走 API 层（禁止裸 http.get 绕过模块封装，R3-F6）
         templateOptions.value = await adminApi.getTemplates();
+        templatesLoaded.value = true;
       } catch {
         templateOptions.value = [
           {

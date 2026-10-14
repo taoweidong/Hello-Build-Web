@@ -32,7 +32,7 @@
       </div>
       <div class="detail-row">
         <span class="detail-label">抢占时刻</span>
-        <span>{{ entry.booking.created_at }}</span>
+        <span>{{ formatDateTime(entry.booking.created_at) }}</span>
       </div>
       <el-alert
         v-if="!isMine"
@@ -76,6 +76,8 @@ import {
 } from "@/api/slotBooking";
 // 中文星期数组唯一来源（utils/week，页面内禁止手写复制）
 import { WEEKDAY_CN_SUN } from "@/utils/week";
+// 后端秒级时间戳统一展示（R4-F7：不再裸展示含 "T" 分隔符的原始串）
+import { formatDateTime } from "@/utils/business";
 
 defineOptions({ name: "SlotDetailDialog" });
 

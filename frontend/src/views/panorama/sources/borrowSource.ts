@@ -71,12 +71,6 @@ export function mapBorrowEvents(opts: MapBorrowOptions): ScheduleEvent[] {
   });
 }
 
-/** 待我审批数量（红点）：与 canApproveBorrowFlow 同口径 */
-export function countPendingApproval(
-  flows: BorrowFlowItem[],
-  user: MapBorrowOptions["user"]
-): number {
-  return flows.filter(f =>
-    canApproveBorrowFlow(user, { source_version_id: f.source_version_id })
-  ).length;
-}
+// 原 countPendingApproval（待我审批红点）生产零调用已删除（R4-F13/F-L2）：
+// 红点计数由服务端聚合 /panorama/todos 的 pending_approval 承载（S1 消费），
+// 前端如需同口径计数直接用 canApproveBorrowFlow 过滤，不再维护死导出。

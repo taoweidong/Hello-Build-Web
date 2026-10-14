@@ -10,9 +10,12 @@
           style="width: 140px"
           @change="load"
         >
-          <el-option label="待审批" value="pending" />
-          <el-option label="已通过" value="approved" />
-          <el-option label="已驳回" value="rejected" />
+          <el-option
+            v-for="opt in statusFilterOptions"
+            :key="opt.value"
+            :label="opt.label"
+            :value="opt.value"
+          />
         </el-select>
         <el-checkbox v-model="onlyMine">仅看我可审批的</el-checkbox>
         <span class="toolbar-tip">
@@ -206,6 +209,11 @@ const route = useRoute();
 const loading = ref(false);
 const flows = ref<BorrowFlowItem[]>([]);
 const statusFilter = ref<BorrowFlowItem["status"] | undefined>(undefined);
+// 状态筛选项文案唯一来源 constants.borrowStatusMeta（R4-F13/F-L8：补 cancelled，
+// 撤销功能上线后曾漏配，撤销过的申请无法筛选定位）
+const statusFilterOptions = (
+  ["pending", "approved", "rejected", "cancelled"] as const
+).map(value => ({ value, label: borrowStatusMeta(value).text }));
 const onlyMine = ref(false);
 // 直达链接打开的只读详情
 const detailVisible = ref(false);

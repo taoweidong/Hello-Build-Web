@@ -83,4 +83,14 @@ export function formatTime(
   return dayjs(parseTime(value)).format(fmt);
 }
 
+/**
+ * 后端秒级时间戳（"%Y-%m-%dT%H:%M:%S"）统一展示为 "YYYY-MM-DD HH:mm:ss"。
+ * 唯一实现（R4-F7）：原 views/borrow-flow/format.formatFlowTime 上移至此，
+ * 抢占记录/我的抢占/时段详情等 created_at 裸展示处一律改用本函数；
+ * 空值先判空回退空串（formatTime 直接吃空串会输出 "Invalid Date"）。
+ */
+export function formatDateTime(value: string | null | undefined): string {
+  return value ? formatTime(value, "YYYY-MM-DD HH:mm:ss") : "";
+}
+
 export { dayjs };

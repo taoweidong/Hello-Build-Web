@@ -104,12 +104,20 @@ const elapsed = computed(() => {
   return now.diff(start, "day") + 1;
 });
 
-/** 7 天格点：已过=实心、今天=呼吸圈、未来=空心；
- * 整周已过去（elapsed=7，查看历史周）时不再有「今天」，末格不标呼吸圈（R3-F11） */
+/** 今天在所展示周内的下标（0-6）；今天不落在本周（历史周/未来周）时为 -1 */
+const todayIndex = computed(() => {
+  const diff = dayjs(props.today).diff(dayjs(props.weekStart), "day");
+  return diff >= 0 && diff <= 6 ? diff : -1;
+});
+
+/** 7 天格点：已过=实心、今天=呼吸圈、未来=空心。
+ * today 判定与 elapsed 解耦（R4-F4 修 F-M1）：本周周日当天 elapsed=7，
+ * 原「elapsed<7」条件会把当天呼吸圈一并抹掉；「整周已过去」（今天落在周后，
+ * todayIndex=-1）仍不标今天，R3-F11 语义保留。 */
 const pips = computed(() =>
   Array.from({ length: 7 }, (_, i) => ({
     done: i < elapsed.value,
-    today: i === elapsed.value - 1 && elapsed.value > 0 && elapsed.value < 7
+    today: i === todayIndex.value
   }))
 );
 </script>

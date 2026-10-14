@@ -27,7 +27,7 @@
           <div class="item-purpose">{{ row.purpose }}</div>
           <div class="item-meta">
             <span>{{ row.version_name }} / {{ row.branch_name }}</span>
-            <span>抢占于 {{ row.created_at }}</span>
+            <span>抢占于 {{ formatDateTime(row.created_at) }}</span>
           </div>
           <div v-if="row.status === 'reserved'" class="item-actions">
             <el-button
@@ -79,6 +79,8 @@ import {
 // 展示映射/星期数组唯一来源（views/constants 与 utils/week，页面内禁止复制）
 import { bookingStatusMeta } from "@/views/constants";
 import { WEEKDAY_CN_SUN } from "@/utils/week";
+// 后端秒级时间戳统一展示（R4-F7：不再裸展示含 "T" 分隔符的原始串）
+import { formatDateTime } from "@/utils/business";
 
 defineOptions({ name: "MyBookingsDrawer" });
 

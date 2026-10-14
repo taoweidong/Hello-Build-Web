@@ -39,11 +39,17 @@ function openTemplateDialog(t?: TemplateItem) {
   }
 }
 
+/** 模板弹窗保存请求进行中（按钮 :loading 防双击重复提交，对齐 VersionsTab 范式，R4-F3） */
+const savingTemplate = ref(false);
+
 async function saveTemplate() {
   if (!templateForm.name) {
     ElMessage.warning("请输入模板名称");
     return;
   }
+  // 在途守卫：并发第二次 create 会撞 40902 重名弹错（F-H3）
+  if (savingTemplate.value) return;
+  savingTemplate.value = true;
   try {
     if (templateForm.id) {
       await adminApi.updateTemplate(templateForm.id, {
@@ -62,11 +68,13 @@ async function saveTemplate() {
       });
       ElMessage.success("模板已创建");
     }
+    templateDialog.value = false;
+    emit("refresh");
   } catch {
-    return; // 失败已由拦截器提示（如重名 40902），保留弹窗便于修改重试
+    // 失败已由拦截器提示（如重名 40902），保留弹窗便于修改重试
+  } finally {
+    savingTemplate.value = false;
   }
-  templateDialog.value = false;
-  emit("refresh");
 }
 
 async function deleteTemplate(t: TemplateItem) {
@@ -155,7 +163,12 @@ async function deleteTemplate(t: TemplateItem) {
       </el-form>
       <template #footer>
         <el-button @click="templateDialog = false">取消</el-button>
-        <el-button type="primary" @click="saveTemplate">保存</el-button>
+        <el-button
+          type="primary"
+          :loading="savingTemplate"
+          @click="saveTemplate"
+          >保存</el-button
+        >
       </template>
     </el-dialog>
   </div>

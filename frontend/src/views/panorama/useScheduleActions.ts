@@ -8,7 +8,9 @@
 // - 弹窗全部复用既有组件（StrategyEditDialog / StrategyBorrowDialog /
 //   BookingDialog / SlotDetailDialog / MyBookingsDrawer），本文件只负责编排。
 import { reactive } from "vue";
+import dayjs from "dayjs";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { DEFAULT_HORIZON_DAYS } from "@/views/constants";
 import type { CalendarDayCell, SlotTemplateItem } from "@/api/slotBooking";
 import { getStrategies } from "@/api/strategy";
 import {
@@ -18,6 +20,9 @@ import {
 } from "@/api/borrowFlow";
 import { releaseBooking, rescheduleBooking } from "@/api/slotBooking";
 import type { StrategyItem, WeeklyStrategy } from "@/api/types";
+// 复制统一走带降级与假成功防护的封装；借用文案唯一来源在 borrow-flow/format（R4-F5）
+import { copyText as copyToClipboard } from "@/utils/clipboard";
+import { formatBorrowFlowText } from "@/views/borrow-flow/format";
 import type { ScheduleData } from "./types";
 import type { ScheduleEvent } from "./types";
 
@@ -50,6 +55,8 @@ export interface ScheduleActions {
     rescheduleTemplateId: number | null;
     rescheduleTemplates: SlotTemplateItem[];
     rescheduleHorizonEnd: string;
+    /** 改期提交在途（按钮 :loading 防双击并发 PATCH，R4-F11） */
+    rescheduling: boolean;
   };
   openEdit(event: ScheduleEvent): Promise<void>;
   openBorrow(event: ScheduleEvent): Promise<void>;
@@ -67,19 +74,34 @@ export interface ScheduleActions {
   cancelBorrow(event: ScheduleEvent): Promise<void>;
   batchRelease(events: ScheduleEvent[]): Promise<void>;
   copyText(event: ScheduleEvent): Promise<void>;
+  /** 保存/启停后使策略详情缓存失效（weekly 页 invalidateStrategyCache 同款范式，R4-F1） */
+  invalidateStrategyCache(): void;
 }
 
 /** 由布局页调用一次，返回动作总线 */
 export function useScheduleActions(data: ScheduleData): ScheduleActions {
-  /** 策略详情缓存（weekly 契约不含 template_id/enabled，编辑前按需补全） */
-  let strategyCache: StrategyItem[] | null = null;
+  /**
+   * 策略详情缓存（weekly 契约不含 template_id/enabled，编辑前按需补全）。
+   * 按 versionId 键控：切版本后旧缓存不再命中（此前全链路无失效且不区分版本，
+   * 切版本会拿旧列表 find 不中而误报「策略详情获取失败」，R4-F1/F-H1）。
+   */
+  let strategyCache: {
+    versionId: number | undefined;
+    list: StrategyItem[];
+  } | null = null;
   async function loadStrategyDetails(
     versionId: number | undefined
   ): Promise<StrategyItem[]> {
-    if (!strategyCache) {
-      strategyCache = await getStrategies({ version_id: versionId });
+    if (!strategyCache || strategyCache.versionId !== versionId) {
+      const list = await getStrategies({ version_id: versionId });
+      strategyCache = { versionId, list };
     }
-    return strategyCache;
+    return strategyCache.list;
+  }
+
+  /** 编辑保存后调用：时间/名称/启用状态可能已变化，缓存必须作废（对齐 weekly 范式） */
+  function invalidateStrategyCache() {
+    strategyCache = null;
   }
 
   const ui = reactive({
@@ -106,7 +128,8 @@ export function useScheduleActions(data: ScheduleData): ScheduleActions {
     rescheduleDate: "",
     rescheduleTemplateId: null as number | null,
     rescheduleTemplates: [] as SlotTemplateItem[],
-    rescheduleHorizonEnd: ""
+    rescheduleHorizonEnd: "",
+    rescheduling: false
   });
 
   async function openEdit(event: ScheduleEvent) {
@@ -192,6 +215,9 @@ export function useScheduleActions(data: ScheduleData): ScheduleActions {
       ElMessage.warning("请选择新的日期");
       return;
     }
+    // 在途守卫：双击并发两个 PATCH，第二个大概率 40904 误报「目标时段被占」（R4-F11/F-M9）
+    if (ui.rescheduling) return;
+    ui.rescheduling = true;
     try {
       await rescheduleBooking(booking.id, {
         date: ui.rescheduleDate,
@@ -202,15 +228,17 @@ export function useScheduleActions(data: ScheduleData): ScheduleActions {
       await data.refresh();
     } catch {
       // 40904 目标时段被占 / 42201 越窗口或模板不适用：拦截器已提示，弹窗保留供重选
+    } finally {
+      ui.rescheduling = false;
     }
   }
 
-  /** 可抢窗口截止日（口径与 slot-booking 页一致：today + horizon_days） */
+  /** 可抢窗口截止日（口径与 slot-booking 页一致：today + horizon_days；
+   * dayjs 本地时间实现，默认窗口取 DEFAULT_HORIZON_DAYS 唯一来源，R4-F13/F-L5） */
   function horizonEndOf(): string {
-    const d = new Date();
-    d.setDate(d.getDate() + (data.horizonDays.value || 60));
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    return dayjs()
+      .add(data.horizonDays.value || DEFAULT_HORIZON_DAYS, "day")
+      .format("YYYY-MM-DD");
   }
 
   async function release(event: ScheduleEvent) {
@@ -333,7 +361,12 @@ export function useScheduleActions(data: ScheduleData): ScheduleActions {
     }
   }
 
-  /** 批量释放：串行循环单条接口 + 逐条汇总（禁止批量端点，PRD P1-R4） */
+  /**
+   * 批量释放：串行循环单条接口 + 逐条汇总（禁止批量端点，PRD P1-R4）。
+   * 含「他人抢占」时先收集统一释放原因（后端规定非 owner 释放必填原因，
+   * 此前恒传空串导致 admin 批量释放他人条目逐条静默失败，R4-F2/F-H2）；
+   * 汇总消息按成败分级：全部成功走 success，存在失败走 warning。
+   */
   async function batchRelease(events: ScheduleEvent[]) {
     const releasable = events.filter(
       e => e.permissions.canRelease || e.permissions.canReleaseOthers
@@ -342,6 +375,9 @@ export function useScheduleActions(data: ScheduleData): ScheduleActions {
       ElMessage.warning("所选条目中没有你可释放的抢占");
       return;
     }
+    const othersCount = releasable.filter(
+      e => !e.mine && e.permissions.canReleaseOthers
+    ).length;
     try {
       await ElMessageBox.confirm(
         `将串行释放 ${releasable.length} 条抢占记录，逐条处理并汇总结果。`,
@@ -355,6 +391,26 @@ export function useScheduleActions(data: ScheduleData): ScheduleActions {
     } catch {
       return;
     }
+    // 他人条目统一原因（必填）；自己的条目沿用空串口径
+    let othersReason = "";
+    if (othersCount > 0) {
+      try {
+        const { value } = await ElMessageBox.prompt(
+          `所选条目包含 ${othersCount} 条他人抢占，管理员释放他人时段必须填写原因（对该批他人条目统一生效）。`,
+          "批量释放原因",
+          {
+            type: "warning",
+            confirmButtonText: "开始释放",
+            cancelButtonText: "取消",
+            inputValidator: (v: string) =>
+              v && v.trim().length > 0 ? true : "请填写释放原因"
+          }
+        );
+        othersReason = String(value ?? "").trim();
+      } catch {
+        return; // 用户取消：整批中止，不做部分释放
+      }
+    }
     let ok = 0;
     let fail = 0;
     for (const e of releasable) {
@@ -364,32 +420,29 @@ export function useScheduleActions(data: ScheduleData): ScheduleActions {
           fail += 1;
           continue;
         }
-        await releaseBooking(booking.id, "");
+        await releaseBooking(booking.id, e.mine ? "" : othersReason);
         ok += 1;
       } catch {
         fail += 1;
       }
     }
-    ElMessage.success(`批量释放完成：成功 ${ok} 条，失败 ${fail} 条`);
+    const summary = `批量释放完成：成功 ${ok} 条，失败 ${fail} 条`;
+    if (fail === 0) ElMessage.success(summary);
+    else ElMessage.warning(summary);
     await data.refresh();
   }
 
-  /** 复制电子流文本（仅借用事件；VNode 文本渲染，禁 dangerouslyUseHTMLString） */
+  /**
+   * 复制电子流文本（仅借用事件）。
+   * 文案组装唯一来源 borrow-flow/format.formatBorrowFlowText（与借用审批页同一实现，
+   * 不再手写副本）；剪贴板走 utils/clipboard（textarea 降级 + 假成功防护，
+   * 非 HTTPS/权限被拒时 navigator.clipboard 为 undefined 也不再直接抛错，R4-F5/F-M2）。
+   */
   async function copyText(event: ScheduleEvent) {
     if (event.raw.type !== "borrow") return;
-    const f = event.raw.data;
-    const text = [
-      `借用申请：${f.borrower_name} 借用「${f.strategy_name}」`,
-      `来源：${f.source_version_name}/${f.source_branch_name}（${f.original_build_time}）`,
-      `目标：${f.target_version_name}/${f.target_branch_name}（新构建时间 ${f.new_build_time}）`,
-      `原因：${f.reason || "无"}`
-    ].join("\n");
-    try {
-      await navigator.clipboard.writeText(text);
-      ElMessage.success("已复制借用信息");
-    } catch {
-      ElMessage.warning("复制失败，请手动选择文本复制");
-    }
+    const ok = await copyToClipboard(formatBorrowFlowText(event.raw.data));
+    if (ok) ElMessage.success("已复制借用信息");
+    else ElMessage.warning("复制失败，请手动选择文本复制");
   }
 
   return {
@@ -408,6 +461,7 @@ export function useScheduleActions(data: ScheduleData): ScheduleActions {
     reject,
     cancelBorrow,
     batchRelease,
-    copyText
+    copyText,
+    invalidateStrategyCache
   };
 }
