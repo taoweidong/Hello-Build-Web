@@ -347,7 +347,16 @@ def _resolve_target(booking, payload) -> tuple[Optional[object], Optional[object
             return None, None, None, _err(CODE_NOT_FOUND, "时段模板不存在")
 
     raw_purpose = payload.get("purpose")
-    purpose = booking.purpose if raw_purpose is None else str(raw_purpose).strip()
+    # 字段级类型守卫（R5-B9，body_str/conclusion note 同款口径）：非 str 一律
+    # 42201 拒绝——此前 str() 强转会把 {"a":1} 存成 "{'a': 1}" repr 串垃圾数据
+    # （长度恰在 2~200 内即放行）；create 路径经序列化器 CharField 会拒绝非 str，
+    # 同一资源两条写路径口径由此统一。缺省（None）沿用原值语义不变。
+    if raw_purpose is None:
+        purpose = booking.purpose
+    elif not isinstance(raw_purpose, str):
+        return None, None, None, _err(CODE_UNPROCESSABLE, "purpose 应为字符串")
+    else:
+        purpose = raw_purpose.strip()
     if not 2 <= len(purpose) <= 200:
         return None, None, None, _err(CODE_UNPROCESSABLE, "用途说明需 2~200 字")
 

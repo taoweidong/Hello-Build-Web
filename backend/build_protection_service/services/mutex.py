@@ -31,14 +31,14 @@ def check_build_mutex(version_id, build_start_time, build_min,
     ds 为基准日期（"YYYY-MM-DD"），缺省取当天；仅用于相对时间比较，不影响重叠结果。
     区间比较复用 find_overlaps（同一重叠语义，消除两份内联实现）；
     输出保持 {strategy, overlap_start, overlap_end} 契约（extra.mutex 直接回传前端）。
+
+    构建时长单源（R5-B11）：目标区间与既有策略区间统一用参数 build_min，
+    不再函数内重新 get_config——此前双来源在调用方传入非 config 值时会让
+    两侧区间用不同时长比较，校验结果悄然失真。
     """
-    from django.conf import settings
     from django.utils import timezone as dj_timezone
     from ..models import Strategy
-    from .config import get_config
     from .timeline import parse_cd, parse_hhmm
-
-    build_minutes = get_config("build_minutes", settings.BUILD_MINUTES)
 
     if ds is None:
         ds = dj_timezone.localdate().strftime("%Y-%m-%d")
@@ -65,7 +65,7 @@ def check_build_mutex(version_id, build_start_time, build_min,
         intervals.append({
             "label": f"{s.branch.name}/{s.name}",
             "start": s_start,
-            "end": s_start + timedelta(minutes=build_minutes),
+            "end": s_start + timedelta(minutes=build_min),
         })
 
     hits = []

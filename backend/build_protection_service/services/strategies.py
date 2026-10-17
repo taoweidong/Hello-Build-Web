@@ -53,8 +53,17 @@ class SimpleNamespaceTpl:
 
 
 def validate_strategy(branch, template, build_start_time, push_start_time,
-                      push_mode="normal", exclude_id=None, ds=None):
-    """互斥 + 阶段冲突校验；失败抛 StrategyValidationError（40901/40902）。"""
+                      push_mode="normal", exclude_id=None, ds=None,
+                      check_conflicts=True):
+    """互斥 + 阶段冲突校验；失败抛 StrategyValidationError（40901/40902）。
+
+    check_conflicts=False 时只跑格式校验（HH:MM/push_mode），跳过互斥与
+    阶段冲突检测——供 update_strategy 对「结果态为停用」的策略使用（R5-B1）：
+    停用策略不占时段（uniq_active_strategy_branch_time 只约束 enabled=True），
+    对其跑启用口径的冲突校验会误拦合法操作（停用策略连改名都被 40902 锁死、
+    漂移冲突策略无法经 PATCH 停用止血）。重新启用时 toggle/update 会再次
+    完整校验，故停用态放行无实害。
+    """
     from django.conf import settings
     from django.utils import timezone
 
@@ -68,6 +77,8 @@ def validate_strategy(branch, template, build_start_time, push_start_time,
         # choices 仅在 full_clean 生效，直接 save 不校验；此处兜底防止
         # "xyz" 之类值静默入库导致时间线推导行为漂移
         raise StrategyValidationError(CODE_UNPROCESSABLE, "push_mode 应为 normal 或 sync")
+    if not check_conflicts:
+        return
     build_minutes = get_config("build_minutes", settings.BUILD_MINUTES)
     push_minutes = get_config("push_minutes", settings.PUSH_MINUTES)
     sync_buffer_minutes = get_config("sync_buffer_minutes", settings.SYNC_BUFFER_MINUTES)
@@ -178,8 +189,11 @@ def update_strategy(strategy: Strategy, body: dict, operator):
     enabled = strategy.enabled if body.get("enabled") is None else body["enabled"]
     if not isinstance(enabled, bool):
         raise StrategyValidationError(CODE_UNPROCESSABLE, "enabled 应为布尔值")
+    # R5-B1：冲突校验仅在结果态为启用时执行（对齐 toggle_strategy 的
+    # 「仅启用方向校验」语义）；格式校验（HH:MM/push_mode）恒跑。
     validate_strategy(strategy.branch, strategy.template, build_start_time, push_start_time,
-                      push_mode=push_mode, exclude_id=strategy.id)
+                      push_mode=push_mode, exclude_id=strategy.id,
+                      check_conflicts=enabled)
     if body.get("name") is not None:
         strategy.name = _validate_name(body["name"])
     strategy.build_start_time = build_start_time
@@ -260,12 +274,18 @@ def delete_strategy(strategy: Strategy) -> None:
 def _raise_conflict_or_reraise(exc: IntegrityError, branch, build_start_time):
     """按唯一约束语义转 40902；非本约束的 IntegrityError 原样抛出。
 
-    注意：SQLite 的 IntegrityError 消息只含字段名（UNIQUE constraint failed:
-    ...branch_id, build_start_time），不含约束名，故按字段组合匹配。
-    Strategy 表唯一约束仅此一个，两字段组合可精确定位。
+    消息匹配双格式（R5-B2，对齐 slot_booking 版 R4-B8）：
+    - SQLite 只含字段名（UNIQUE constraint failed: ...branch_id,
+      build_start_time），按字段组合匹配（Strategy 表唯一约束仅此一个，
+      两字段组合可精确定位）；
+    - Postgres 等后端消息携带约束名（duplicate key value violates unique
+      constraint "uniq_active_strategy_branch_time"），按约束名匹配——迁 PG
+      后这层 DB 兜底是并发撞约束的唯一防线，勿再引入单格式匹配。
     """
     msg = str(exc)
-    if "strategy.branch_id" in msg and "build_start_time" in msg:
+    if "uniq_active_strategy_branch_time" in msg or (
+        "strategy.branch_id" in msg and "build_start_time" in msg
+    ):
         raise StrategyValidationError(
             CODE_DUPLICATE,
             f"该分支已存在 {build_start_time} 开始的启用策略（并发提交冲突，请刷新后重试）",

@@ -198,13 +198,18 @@ class BranchViewSet(
             return fail_resp(CODE_UNPROCESSABLE, "工程不存在")
         if BranchProject.objects.filter(branch=branch, project=project).exists():
             return fail_resp(CODE_ASSOCIATION, "该工程已关联此分支")
-        # 关联与默认启动配置两步写入，包事务保证一致性
-        with transaction.atomic():
-            bp = BranchProject.objects.create(
-                branch=branch, project=project, enabled=bool(body.get("enabled", True))
-            )
-            # 默认启动配置，保证前端 Tab② 可编辑
-            StartupConfig.objects.create(branch_project=bp)
+        # 关联与默认启动配置两步写入，包事务保证一致性；exists() 预检到 create
+        # 之间存在竞态窗口，并发双提交撞 unique_together(branch, project) 由
+        # IntegrityError 兜底转 40903（R5-B7，R4-B17 模板两入口同款范式）
+        try:
+            with transaction.atomic():
+                bp = BranchProject.objects.create(
+                    branch=branch, project=project, enabled=bool(body.get("enabled", True))
+                )
+                # 默认启动配置，保证前端 Tab② 可编辑
+                StartupConfig.objects.create(branch_project=bp)
+        except IntegrityError:
+            return fail_resp(CODE_ASSOCIATION, "该工程已关联此分支")
         return json_resp(
             ok(
                 {
@@ -238,9 +243,16 @@ class BranchViewSet(
         role = body.get("role")
         if role not in ROLE_VALID:
             return fail_resp(CODE_UNPROCESSABLE, "角色必须为 VIEWER/OPERATOR/ADMIN")
-        perm, _ = BranchPermission.objects.update_or_create(
-            branch=branch, user=target, defaults={"role": role}
-        )
+        # update_or_create 的 SELECT-then-INSERT 在并发双提交下撞
+        # unique_together(branch, user)：savepoint + IntegrityError 兜底转
+        # 40903（R5-B7，R4-B17 同款），后到者提示刷新而非裸 500
+        try:
+            with transaction.atomic():
+                perm, _ = BranchPermission.objects.update_or_create(
+                    branch=branch, user=target, defaults={"role": role}
+                )
+        except IntegrityError:
+            return fail_resp(CODE_ASSOCIATION, "该用户已授权此分支，请刷新后重试")
         return json_resp(ok(_serialize_perm(perm)))
 
     @action(detail=True, methods=["get"])

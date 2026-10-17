@@ -21,7 +21,9 @@ class VerificationReport(models.Model):
     risks = models.TextField("问题与风险", blank=True, default="")
     remark = models.TextField("备注", blank=True, default="")
     status = models.CharField("状态", max_length=20, choices=STATUS_CHOICES, default="draft", db_index=True)
-    created_by_username = models.CharField("作者账号", max_length=100, blank=True, default="")
+    # 150 与 User.username（AbstractUser 上限）对齐（R5-B3）：快照语义应无损，
+    # 此前 100 宽在 101-150 字符用户名建报告时 SQLite 静默放行、迁 PG 即 DataError
+    created_by_username = models.CharField("作者账号", max_length=150, blank=True, default="")
     published_at = models.DateTimeField("发布时间", null=True, blank=True)
     publish_count = models.PositiveIntegerField("发布次数", default=0)
     created_at = models.DateTimeField("创建时间", auto_now_add=True)
@@ -51,7 +53,7 @@ class ReportRevisionLog(models.Model):
     field_name = models.CharField("修改字段", max_length=100, blank=True, default="")
     before_value = models.TextField("修改前内容", blank=True, default="")
     after_value = models.TextField("修改后内容", blank=True, default="")
-    operator_username = models.CharField("操作人账号", max_length=100)
+    operator_username = models.CharField("操作人账号", max_length=150)  # R5-B3：与 User.username 对齐
     created_at = models.DateTimeField("操作时间", auto_now_add=True)
 
     class Meta:

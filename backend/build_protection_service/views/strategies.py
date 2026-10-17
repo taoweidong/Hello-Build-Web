@@ -63,9 +63,12 @@ def filter_strategies_qs(qs, request):
             return None, fail_resp(CODE_UNPROCESSABLE, f"{name} 应为整数")
     version_id = parse_int(raw_version_id)
     branch_id = parse_int(raw_branch_id)
-    if version_id:
+    # 0 值 fail-closed（R5-B13）：此前 `if version_id:` 把 0 当"未提供"静默
+    # 返回全量（fail-open），与 executions 的 strategy_id=0 → 空集语义相反；
+    # 统一 is not None 判定，0 按 0 过滤 → 空集，与本库 PM 可见性 fail-closed 取向一致
+    if version_id is not None:
         qs = qs.filter(branch__version_id=version_id)
-    if branch_id:
+    if branch_id is not None:
         qs = qs.filter(branch_id=branch_id)
     return qs, None
 

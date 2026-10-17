@@ -92,6 +92,12 @@ def _payload(flow: BorrowFlow) -> dict:
 
 
 def _can_approve(user, flow: BorrowFlow) -> bool:
+    # 回避规则（R5-B10 决策定案）：借用人与审批人不得为同一人，admin 亦不
+    # 例外（对照 cancel 端点「仅本人」的审计取向）——电子流的核心价值即
+    # 审批留痕的独立性，自借自批在审计报表中无法与正常审批区分；
+    # 借用人想撤回申请应走 cancel 端点。
+    if flow.borrower_id == user.id:
+        return False
     if user.role == "admin":
         return True
     return user.role == "pm" and flow.strategy.branch.version.pm_user_id == user.id
@@ -186,6 +192,9 @@ def _handle_view(request, fid, approve: bool):
     flow = _flow_qs().filter(id=fid).first()
     if not flow:
         return fail_resp(CODE_NOT_FOUND, "借用电子流不存在")
+    if flow.borrower_id == user.id:
+        # 回避规则专用文案（R5-B10）：与「无审批权限」区分，指引走撤销
+        return fail_resp(CODE_FORBIDDEN, "不可审批自己发起的借用申请，如需撤回请使用撤销")
     if not _can_approve(user, flow):
         return fail_resp(CODE_FORBIDDEN, "仅被借用策略所属版本负责人或管理员可审批")
     body = parse_body(request)

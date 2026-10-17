@@ -79,14 +79,32 @@ class ReportSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"summary": "验证内容不能为空"})
         version_name = (attrs.get("version_name") or "").strip()
         strategy_name = (attrs.get("strategy_name") or "").strip()
-        if bool(version_name) != bool(strategy_name):
-            raise serializers.ValidationError({"strategy_name": "版本与策略须同时选择或均不选择"})
-        if strategy_name:
-            strategy_exists = Strategy.objects.filter(
-                name=strategy_name, branch__version__name=version_name
-            ).exists()
-            if not strategy_exists:
-                raise serializers.ValidationError({"strategy_name": "策略不属于所选版本"})
+        instance = self.instance
+        if instance is not None:
+            # 更新路径：未提交的快照字段以库存值为准（本 ViewSet 仅 PUT，
+            # 前端全量提交；防御性兜底 required=False 字段缺省的情形）
+            stored_version = (instance.version_name or "").strip()
+            stored_strategy = (instance.strategy_name or "").strip()
+            version_name = (attrs["version_name"] if "version_name" in attrs else stored_version).strip()
+            strategy_name = (attrs["strategy_name"] if "strategy_name" in attrs else stored_strategy).strip()
+            # R5-B4：报告域契约是「版本/策略为文本快照，不建外键」——
+            # 配对/存在性活校验仅在快照字段相对库存值发生变化时执行。
+            # 此前每次 PUT 都重跑存在性校验，策略被改名/删除（常规操作）后
+            # 报告连改 remark 错别字都被 42201 拦死，且 publish 不重跑，口径分裂。
+            snapshot_changed = (
+                version_name != stored_version or strategy_name != stored_strategy
+            )
+        else:
+            snapshot_changed = True
+        if snapshot_changed:
+            if bool(version_name) != bool(strategy_name):
+                raise serializers.ValidationError({"strategy_name": "版本与策略须同时选择或均不选择"})
+            if strategy_name:
+                strategy_exists = Strategy.objects.filter(
+                    name=strategy_name, branch__version__name=version_name
+                ).exists()
+                if not strategy_exists:
+                    raise serializers.ValidationError({"strategy_name": "策略不属于所选版本"})
         return attrs
 
 

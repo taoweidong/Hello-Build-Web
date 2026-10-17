@@ -94,7 +94,9 @@ def create_version(user, body):
     try:
         v = Version.objects.create(name=name, pm_user=pm, status=status)
     except IntegrityError:
-        return fail_resp(CODE_DUPLICATE, "版本号已存在")
+        # R5-B8：撞约束可能是版本名并发重名，也可能是 pm_user OneToOne 已被
+        # 其他版本占用——文案对齐 update_version，避免误导用户改名重试仍失败
+        return fail_resp(CODE_DUPLICATE, "版本号或 PM 已占用")
     _admin_log(user, "create_version", target_type="version", target_id=v.id, detail=name)
     return json_resp(ok({"id": v.id, "name": v.name, "pm_user_id": v.pm_user_id, "status": v.status}))
 
@@ -401,6 +403,68 @@ def _get_template_or_404(tid):
     return fetch_by_id(StrategyTemplate, tid, not_found="模板不存在")
 
 
+def _template_duration_warnings(template):
+    """模板时长变更后的联动检测（R5-B12）：引用该模板的启用策略，其冒烟/分析
+    阶段可能与同分支其他启用策略出现新的重叠（创建时合法的数据变成冲突态）。
+
+    对照 SlotTemplate create/update 已返回 overlap warnings 的范式，策略模板
+    此前无任何提示。检测复用 services.conflict.detect_conflicts（与
+    validate_strategy 同一重叠语义）：candidates=引用本模板的启用策略，
+    existing=同分支其余启用策略。仅告警不拦截——冲突处置走「先停用归档」
+    逃生通道（R4-B11），plan 页 conflict 标记可作兜底展示。
+    """
+    from django.utils import timezone
+
+    from ..services.conflict import detect_conflicts
+
+    build_minutes = get_config("build_minutes", settings.BUILD_MINUTES)
+    push_minutes = get_config("push_minutes", settings.PUSH_MINUTES)
+    sync_buffer = get_config("sync_buffer_minutes", settings.SYNC_BUFFER_MINUTES)
+    ds = timezone.localdate().strftime("%Y-%m-%d")
+
+    affected = list(
+        Strategy.objects.filter(template=template, enabled=True)
+        .select_related("branch", "template")
+    )
+    if not affected:
+        return []
+    branch_ids = {s.branch_id for s in affected}
+    peers = list(
+        Strategy.objects.filter(branch_id__in=branch_ids, enabled=True)
+        .select_related("branch", "template")
+    )
+
+    def _entry(s, name_override=None):
+        return {
+            "build_start_time": s.build_start_time,
+            "template": s.template,
+            "push_mode": s.push_mode,
+            "strategy_name": name_override or s.name,
+            "push_start_time": s.push_start_time,
+        }
+
+    warnings = []
+    seen = set()
+    for cand in affected:
+        others = [_entry(p) for p in peers if p.branch_id == cand.branch_id and p.id != cand.id]
+        if not others:
+            continue
+        for hit in detect_conflicts(ds, [_entry(cand)], others,
+                                    build_minutes, push_minutes, sync_buffer):
+            key = tuple(sorted((cand.name, hit["strategy_name"]))) + (cand.branch_id,)
+            if key in seen:
+                continue
+            seen.add(key)
+            warnings.append({
+                "branch": cand.branch.name,
+                "first": key[0],
+                "second": key[1],
+                "overlap_start": hit["overlap_start"],
+                "overlap_end": hit["overlap_end"],
+            })
+    return warnings
+
+
 def update_template(request, user, tid):
     perr = require_admin(user)
     if perr:
@@ -423,6 +487,7 @@ def update_template(request, user, tid):
     parsed, verr = _parse_template_minutes(body)
     if verr:
         return verr
+    old_minutes = (t.smoke_minutes, t.analysis_minutes)
     for field, val in parsed.items():
         setattr(t, field, val)
     if body.get("description") is not None:
@@ -439,7 +504,11 @@ def update_template(request, user, tid):
         # 并发重命名撞 unique 约束兜底（StrategyTemplate.name 唯一）
         return fail_resp(CODE_DUPLICATE, "模板名已存在")
     _admin_log(user, "update_template", target_type="template", target_id=tid)
-    return json_resp(ok(_template_payload(t)))
+    payload = _template_payload(t)
+    # 时长变更时附联动告警（R5-B12）：引用该模板的启用策略可能新出现阶段重叠
+    if (t.smoke_minutes, t.analysis_minutes) != old_minutes:
+        payload["warnings"] = _template_duration_warnings(t)
+    return json_resp(ok(payload))
 
 
 def delete_template(request, user, tid):
@@ -519,6 +588,9 @@ def config_view(request):
 # ---------- 日志 ----------
 
 def logs_view(request, kind):
+    # 读端点仅 GET（R5-B6，R3-B16 约定此前唯一漏网点位）：非 GET → 42201
+    if request.method != "GET":
+        return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
     user, resp = authed_user(request)
     if resp:
         return resp

@@ -61,6 +61,7 @@ class ReportService:
             if new_conclusion and new_conclusion != report.conclusion:
                 raise ReportConclusionLockedError("报告已发布，最终结论不可修改")
         changes: List[Tuple[str, str, str]] = []
+        changed_fields: List[str] = []
         for field, label in EDITABLE_FIELDS:
             if field == "conclusion" and report.status == "published":
                 # 结论锁定：已发布态不参与 diff（值不同时上方已拦截）
@@ -74,11 +75,16 @@ class ReportService:
                 old_value = old_value.strip()
             if new_value != old_value:
                 changes.append((label, old_value, new_value))
+                changed_fields.append(field)
                 setattr(report, field, new_value)
         if changes:
-            # 正文更新与多条留痕同一事务，避免部分日志写入失败留下半套痕迹
+            # 正文更新与多条留痕同一事务，避免部分日志写入失败留下半套痕迹。
+            # update_fields 精准保存（R5-B5）：全字段 save() 会用读出实例后
+            # 窗口期内已被并发 publish 提交的陈旧内存值整体覆盖（status 打回
+            # draft、publish_count 回退、published_at 清空），精准字段保存
+            # 只写本次实际变更的字段；updated_at 为 auto_now，需显式列入。
             with transaction.atomic():
-                report.save()
+                report.save(update_fields=[*changed_fields, "updated_at"])
                 for label, before, after in changes:
                     cls.log(report, "update", label, before, after, username)
         return report
