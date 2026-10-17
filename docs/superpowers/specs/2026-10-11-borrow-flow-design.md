@@ -19,7 +19,7 @@
 | 入口 | 版本策略全景页卡片点击：有编辑权限 → 既有编辑弹窗；无权限 → 新的「策略详情与借用申请」弹窗 |
 | 借用表单 | 目标版本（排除当前版本，PM 默认选绑定版本）/ 目标分支（甘特聚合接口按版本取分支）/ 新构建时间（默认沿用原时间）/ 借用原因 |
 | 电子流页面 | 独立一级菜单「借用审批」（`/borrow-flow/index`，rank 14，全角色可见），与全景页不绑定 |
-| 审批权限 | admin 全部；pm 仅来源版本 = 自己绑定版本的电子流（前端隐藏按钮 + 服务端 `_can_approve` 双重校验） |
+| 审批权限 | admin 全部；pm 仅来源版本 = 自己绑定版本的电子流；**自借自批回避（2026-10-18 定案）：借用人不可审批（通过/驳回）自己发起的电子流，admin 亦不例外（→ 40301），撤回出口走 cancel**（前端隐藏按钮 + 服务端 `_can_approve` 双重校验） |
 | 通过的落地动作 | 在目标分支按新时间创建策略，命名 `{原策略名}({目标版本}借用)`，沿用原模板与推送配置（`push_mode`/`push_start_time` 从源策略复制，2026-10-13 修订——此前固定普通推送模式且丢弃推送时间）；经 `svc_create` 统一校验，冲突 → 40901/40902 且电子流保持待审批 |
 | 防重复 | 同一策略同一借用人存在待审批申请时再次发起 → 40903 |
 | 驳回 | 必填审批意见（前后端均校验） |
@@ -27,9 +27,9 @@
 
 ## 3. 后端
 
-- 模型 `BorrowFlow`（迁移 0011）：strategy / borrower / target_branch / new_build_time / reason / status(pending·approved·rejected) / approver / handle_comment / handled_at / created_at。
+- 模型 `BorrowFlow`（迁移 0011）：strategy / borrower / target_branch / new_build_time / reason / status(pending·approved·rejected·cancelled，cancelled 与 cancelled_at 为 2026-10-13 撤销功能新增，迁移 0013) / approver / handle_comment / handled_at / created_at。
 - API（`views/borrow_flow.py`）：
-  - `GET /api/borrow-flows?status=` 列表：`status` 值域校验（pending/approved/rejected，非法 → 42201）；**按「与我相关」过滤（2026-10-12 补）**——admin 见全部，其余角色仅 `borrower=本人`，PM 追加来源版本 `pm_user=本人` 的电子流（避免他人版本的申请理由/审批意见对任意登录用户全量可见）；relation 实时组装名称；
+  - `GET /api/borrow-flows?status=` 列表：`status` 值域校验（pending/approved/rejected/cancelled，非法 → 42201；cancelled 随 2026-10-13 撤销功能纳入）；**按「与我相关」过滤（2026-10-12 补）**——admin 见全部，其余角色仅 `borrower=本人`，PM 追加来源版本 `pm_user=本人` 的电子流（避免他人版本的申请理由/审批意见对任意登录用户全量可见）；relation 实时组装名称；
   - `POST /api/borrow-flows` 发起（目标版本 ≠ 来源版本、时间格式 HH:MM、防重复待审批；另有 DB 层部分唯一约束 `uniq_pending_borrow_flow` 兜底并发双发起，IntegrityError → 40903）；
   - `POST /api/borrow-flows/<id>/approve` 通过（权限校验 → 事务内创建借用策略 + 乐观锁 `filter(status="pending").update()` 抢占，0 行更新 → 40903 重复处理）；
   - `POST /api/borrow-flows/<id>/reject` 驳回（必填意见）。
@@ -71,3 +71,9 @@
 - **单条响应路径 select_related（R4-B14）**：`_payload` 所需关联清单抽公共 `_flow_qs()`，create/approve/reject/cancel 单条响应与列表路径复用——此前单条路径逐关联点查固定 N+1（6+ 次查询，`assertNumQueries` 锁定）；approve 原 `refresh_from_db` 改为 `_flow_qs` 重取，同时消除 approver 关联缓存陈旧问题。
 - **长度守卫（R4-B10）**：审批通过建策略拼接名 `{原策略名}({目标版本}借用)` 防御性截断到 `Strategy.name` 上限 200（源策略名 ≤200 + 版本名 + 后缀可超限，SQLite 放行、迁 Postgres 即 DataError 500）；发起 `reason` 超 500、审批意见 `comment` 超 255 截断（审计/备注类字段沿用 `body_str` max_len 截断口径）。
 - **策略删除拦截收敛（R4-B1）**：第三轮的「删除策略前拦截 pending 借用流（40903）」仅 PM 入口生效，admin 入口 `_delete_admin_strategy` 直接 `s.delete()` 会经 CASCADE 静默抹掉进行中电子流（admin 反而约束更松）。现拦截 + 删除收敛到共享 `services.strategies.delete_strategy`（同一事务），PM 与 admin 两入口行为一致；审计仍由调用方入口写 AdminOpLog（R3-B5 口径不变）。
+
+## 修订记录（2026-10-18 第五轮质量优化）
+
+- **自借自批回避（R5-B10，决策定案）**：`_can_approve` 增加 `flow.borrower_id != user.id`——**禁止审批自己发起的借用申请，admin 亦不例外**（对照 cancel 端点「仅本人」的既有审计取向；电子流的核心价值即审批留痕的独立性，自借自批在审计报表中无法与正常审批区分）。approve/reject 自己的电子流 → 40301「不可审批自己发起的借用申请」；借用人想撤回申请应走 `POST /borrow-flows/<id>/cancel`（撤销不受回避规则影响）。回归测试 `tests_quality_round5.py::BorrowSelfApprovalTests`。
+- **前端复制文案 cancelled 三态分支（R5-F2）**：`views/borrow-flow/format.ts formatBorrowFlowText` 非 pending 态由「approved/其余一律按驳回拼审批人」改为 approved/rejected/cancelled 三态分支——cancelled 拼「撤销：借用人撤销于 {cancelled_at}」，不再误拼审批人与意见（此前已撤销的申请复制出来显示为「驳回」）。
+- **正文回填**：§2 审批权限行补自借自批回避；§3 模型 status 枚举与列表 `status` 值域补 `cancelled`（该值域实际自 2026-10-13 撤销功能上线即含 cancelled，此前正文只记了三态、修订四仅记了前端筛选项）。

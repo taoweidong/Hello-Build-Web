@@ -274,10 +274,10 @@ PM 仅配置两个时间节点：
 | 方法 | 路径 | 说明 | 角色 |
 |---|---|---|---|
 | GET | /api/plan?date= | 甘特看板聚合：版本→分支→策略→各阶段时间区间+冲突标记；date 非法（非 YYYY-MM-DD）→ 42201；status 经关联子查询取当日轮次结论 | 全部 |
-| GET | /api/strategies?version_id=&branch_id= | 策略列表（含时间线计算结果）；可见性为设计决策（2026-10-13 定案）：全员可见、PM 过滤是「默认只看绑定版本」视图语义而非安全边界；无绑定版本的 PM → 空集（fail-closed，2026-10-12） | 全部 |
+| GET | /api/strategies?version_id=&branch_id= | 策略列表（含时间线计算结果）；可见性为设计决策（2026-10-13 定案）：全员可见、PM 过滤是「默认只看绑定版本」视图语义而非安全边界；无绑定版本的 PM → 空集（fail-closed，2026-10-12）；`version_id`/`branch_id` 过滤为 `is not None` 判定，**0 值真过滤 → 空集（fail-closed，2026-10-18，与 executions 的 strategy_id 语义一致）** | 全部 |
 | POST | /api/strategies/preview | 保存前预览：时间线排布+冲突检测（不落库） | PM |
 | POST | /api/strategies | 新建策略（name 必填缺失 → 42201、push_mode ∈ normal/sync、enabled 布尔，校验版本归属+冲突，冲突 40901） | PM |
-| PATCH | /api/strategies/{id} | 修改（开始时间/推送模式/名称），写变更日志，按生效规则应用 | PM |
+| PATCH | /api/strategies/{id} | 修改（开始时间/推送模式/名称），写变更日志，按生效规则应用；校验口径（2026-10-18 定案）：格式校验恒跑，**互斥/阶段冲突校验仅在结果态为启用时执行**——停用策略不占时段，改名/改时间/改推送放行，`{"enabled": false}` 可作冲突漂移策略的止血出口 | PM |
 | POST/PATCH | /api/strategies/{id}/toggle | 启用/停用（无参翻转，仅 POST/PATCH，2026-10-12 加方法守卫）；走服务层 `toggle_strategy`：启用方向重跑互斥/阶段校验（40901/40902/42201）+ 条件 UPDATE 防并发（并发已翻转 → 40902，2026-10-13）；PM 侧写 StrategyChangeLog 审计 | PM |
 | DELETE | /api/strategies/{id} | 删除策略；存在待审批借用流 → 40903 拦截（防级联抹掉电子流）；审计落 AdminOpLog（StrategyChangeLog 随策略级联删除，2026-10-13） | PM |
 
@@ -294,6 +294,8 @@ PM 仅配置两个时间节点：
 > 2026-10-12 补：写端点加请求方法守卫（update_version 仅 PUT/PATCH、add_branch 仅 POST、update_user 仅 PATCH、模板 toggle 仅 POST/PATCH），错误方法 → 42201；模板 smoke/analysis_minutes 非负整数校验（非法 → 42201），模板重名 → 40902；用户创建密码必填、is_active 严格布尔、绑定 PM 必须为 pm 角色。
 
 > 2026-10-13 补（第三轮质量优化）：密码最小长度 6 位（创建与重置同口径）；update_user 空串密码 → 42201（显式 null 视为未提供）；改角色（离开 pm）或停用仍绑定版本 PM 的用户 → 40902（防"无主版本"，需先移交）；config PUT 改 `parse_int` + 非负校验（拒 bool/float/负数，非法 → 42201）；`security_log` detail 拼接后统一截断 255；admin logs 时间字段改走 `fmt_dt`（上海墙钟，此前 DjangoJSONEncoder 输出带 `+00:00` 的 UTC 串）。
+
+> 2026-10-18 补（第五轮质量优化，并回填第四轮两项）：停用用户不可被指定为版本 PM（create/update_version → 42201「PM 用户已停用」，R4-B5 回填，与 R3-B6 守护同一不变量）；django-admin 面板 `StrategyAdmin.save_model` 保存前重跑服务层校验（仅启用策略，R4-B11 回填）；`/api/admin/logs/<kind>` 读端点仅 GET（非 GET → 42201，R5-B6，R3-B16 唯一漏网）；create_version 撞 PM OneToOne 约束文案统一「版本号或 PM 已占用」（R5-B8，此前误报「版本号已存在」）；update_template 变更 smoke/analysis_minutes 时响应附 `data.warnings`（引用该模板的启用策略按分支两两阶段重叠清单，仅告警不拦截，R5-B12，前端 TemplatesTab 以 ElMessage.warning 展示）。
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -464,3 +466,14 @@ Hello-Build-Web/
 - **请求体守卫（R3-B2）**：`parse_body` 对合法 JSON 非对象归一 `{}`；字符串字段提取统一 `body_str`（非 str 回退 `""` 走既有必填/非法分支），登录口/分支/工程创建等非字符串载荷 500 集群消除。
 - **读端点方法守卫（R3-B16）**：plan/weekly/executions/logs/me/slot_calendar/users_all 等非 GET → 42201，与写端点守卫口径一致。
 - **前端**：动作类 async 处理器补全 try/catch/finally 与保存按钮 `:loading`（防 Uncaught rejection 与双击重复提交）；推送模式文案唯一来源 `views/constants.pushModeMeta`；`catch (e: any)` 全部改 `isBizError` 类型守卫。
+
+## 修订记录（2026-10-18 第五轮质量优化）
+
+> 详见 `2026-10-18-code-quality-optimization-round5-design.md`（R5-B1/B2/B6/B8/B11/B12/B13），回归测试集中在 `tests_quality_round5.py`；admin 域条目已并入上方「2026-10-18 补」引言（含 R4-B5/B11 回填）。
+
+- **停用策略冲突校验仅在启用态执行（R5-B1，P1）**：`services/strategies.update_strategy` 改传 `validate_strategy(..., check_conflicts=结果态enabled)`——格式校验（name/push_mode/HH:MM）恒跑，互斥/阶段冲突校验仅结果态为启用时执行。此前对停用策略也按启用口径误拦：停用策略本不占时段（唯一约束 `uniq_active_strategy_branch_time` 只约束 enabled），却连改名都被 40902 锁死，且冲突漂移策略无法经 `PATCH {"enabled": false}` 停用止血；现与 toggle「仅启用方向重跑校验」语义对齐。PM（`views/strategies.py`）与 admin（`views/admin.py`）两入口共用服务层，一处修复两处生效。回归 `DisabledStrategyUpdateTests`。
+- **唯一约束兜底双格式匹配（R5-B2）**：`_raise_conflict_or_reraise` 同时匹配 SQLite 字段名式（`strategy.branch_id` + `build_start_time`）与 PG 约束名式（`uniq_active_strategy_branch_time`），非目标约束仍 re-raise——与 `slot_booking` 版（R4-B8）对齐，迁 Postgres 后这层 DB 兜底是并发撞约束的唯一防线。回归 `StrategyConflictPrecisionTests`。
+- **check_build_mutex 构建时长单源（R5-B11）**：删除函数内 `get_config("build_minutes")` 重读，目标区间与既有策略区间统一用参数 `build_min`——此前目标用调用方传参、既有策略用 config 实时值，两源不一致时互斥判定失真。回归 `MutexBuildMinSourceTests`。
+- **update_template 时长变更告警（R5-B12）**：smoke/analysis_minutes 变更时对引用该模板的**启用策略**按分支分组做两两阶段重叠检测（复用 mutex 区间逻辑），响应 `data.warnings` 返回冲突策略对清单（无冲突为空数组）；**仅告警不拦截**——冲突处置走「先停用归档」逃生通道（R5-B1 口径）。create_template 不做（尚无引用）。回归 `TemplateDurationWarningTests`。
+- **列表过滤 0 值 fail-closed（R5-B13）**：`filter_strategies_qs` 的 `version_id`/`branch_id` 由 truthy 判定改 `is not None`（`parse_int` 失败返回 None 即「未提供」，0 则真过滤 → 空集），与 executions 的 `strategy_id` 语义统一。回归 `FilterZeroSemanticsTests`。
+- **R5-B6/B8 与第四轮 R4-B5/B11 回填**：见上方 admin 段「2026-10-18 补」引言；admin 删除策略入口收敛共享 `delete_strategy`（R4-B1）记于 borrow-flow spec 修订四。

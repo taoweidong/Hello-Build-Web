@@ -59,6 +59,8 @@ ReportPublishRecord（发布暨推送记录）
 ├── created_at
 ```
 
+> **注（2026-10-18 校对）**：上述模型概览为初稿 FK 设计，**已被 2026-08-17 分层重构（37fe006）取代，以 `models/report.py` 为准**——两表均不与其他表建外键：`VerificationReport` 的版本/策略/作者为文本快照（`version_name`/`strategy_name`/`created_by_username`），`ReportPublishRecord` 已删除，留痕改由 `ReportRevisionLog`（`report_id` 纯整数 + 字段级 before/after，action ∈ create/update/publish）承担；发布截图仅校验 ≤2MB 并打印模拟推送日志、不落库。
+
 ## 4. API 契约
 
 挂载 `/api`，沿用统一响应 `{code, message, data}`；错误码沿用现有体系：`40101`/`40301`/`40401`/`42201`。
@@ -155,3 +157,9 @@ ReportPublishRecord（发布暨推送记录）
 - **列表分页实现收敛（R3-B11）**：内联分页改用 `views/__init__.paginate_qs` 共享助手（与 slot 记录列表合一），响应结构与非法参数回退语义不变。
 - **前端历史报告下拉改分页拉取（R3-F8）**：`loadHistory` 用 `page=1&page_size=100` 单页（`ReportQuery` 补分页参数、`getReports` 增加分页重载签名），不再全量拉整表。
 - **截图纯函数抽取（R3-F8）**：`base64Bytes`/`dataUrlToBlob` 自 `report/detail.vue` 抽到 `utils/screenshot.ts` 并单测锁定（无逗号 dataURL、空主体、mime 兜底 image/png 边界）——第二轮阶段六唯一未完成项本轮落地；发布前等待卡片重渲染由 `setTimeout(100)` 魔法等待改双 `nextTick`。
+
+## 修订记录（2026-10-18 第五轮质量优化）
+
+- **配对校验时机收敛（R5-B4）**：`ReportSerializer.validate` 的「版本与策略须同时选择 + 策略属于所选版本」**活校验仅在新建、或 update 时 `version_name`/`strategy_name` 相对库存值发生变化时执行**——报告域契约是文本快照（不建外键），快照落库后源策略被改名/删除属常规操作，不应阻塞报告编辑其他字段。此前每次 PUT 无条件重跑活校验：策略一旦改名，存量报告永久 42201 不可编辑，而 publish 路径又不重跑，同一数据两套口径。remark/summary/conclusion 等字段自身校验不变。回归 `tests_quality_round5.py::ReportSnapshotEditTests`。
+- **更新精准保存（R5-B5）**：`ReportService.update` 改 `report.save(update_fields=[...实际变更字段, "updated_at"])`——此前全字段 save 会用读出实例后的陈旧内存值回滚并发 publish 已提交的 `status`/`publish_count`/`published_at`。结论锁检查保留（低概率窗口锁绕过属记录在案的残余风险）。回归 `ReportUpdateFieldsTests`。
+- **username 快照宽度对齐（R5-B3）**：`VerificationReport.created_by_username` 与 `ReportRevisionLog.operator_username` max_length 100→150，与 `User.username`（AbstractUser 上限）无损对齐（migration 0014）——此前 101~150 字符用户名建报告/留痕 SQLite 静默放行、迁 Postgres 即 DataError 整行丢失。回归 `LongUsernameReportTests`。

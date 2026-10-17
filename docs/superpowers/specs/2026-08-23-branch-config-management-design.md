@@ -233,3 +233,7 @@ stop ──► STOPPED ◄── stop
 - **permissions 非 dict 载荷归一（R4-B3）**：`POST /branches/<id>/permissions` 此前 `request.data or {}` 直传，JSON 数组/字符串载荷 `body.get` 冒 AttributeError 变 500；改 `isinstance(request.data, dict)` 归一为 `{}` 走既有缺参分支（42201）。
 - **长度守卫（R4-B10）**：分支名/工程名 ≤100、仓库地址 ≤255，超长 → 42201 拒绝（`views/__init__.check_str_len`，max_len 取模型真实 max_length，拒绝优于静默截断）；description 为 TextField 无 DB 上限，不设限。
 - **stop_instance 条件 UPDATE（R4-B16）**：实例停止由读改写无条件 save 改为 `filter(id, status__in=("STARTING","RUNNING")).update(status="STOPPED", ...)`——此前并发双 stop 均成功且后者覆盖首次的 stopped_at/log_tail；rowcount=0 视为并发窗口内已被他人停止，重读当前状态幂等返回（对齐 R3-B9 release_booking 范式）。状态机语义不变：stop → STOPPED 且带 stopped_at/exit_code；重复 stop 幂等。
+
+## 修订记录（2026-10-18 第五轮质量优化）
+
+- **permissions/projects 并发重复兜底（R5-B7）**：`POST /branches/<id>/permissions` 的 `update_or_create` 与 `POST /branches/<id>/projects` 的 `exists()`+`create` 均包 `transaction.atomic()`（savepoint）+ 捕获 IntegrityError → 40903——两处 check-then-create 在并发双发下有竞态窗口，撞 `unique_together (branch, user)` / 工程关联唯一约束时此前走 500 破坏契约；现与 R4-B17 模板两入口同款范式，视图层预检查保留作友好路径。回归 `tests_quality_round5.py::BranchConfigRaceTests`。

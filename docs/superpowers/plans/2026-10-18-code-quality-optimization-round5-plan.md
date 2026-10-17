@@ -45,4 +45,5 @@
 - [x] AGENTS.md：第五轮报告/spec 索引、自借自批回避、seqGuard、update_strategy 口径、测试基线数
 - [x] README：测试例数快照回改
 - [x] 全景设计文档补第五轮修订记录（涉及 useScheduleData/S2/S5/S4/S1 行为变化）
-- [ ] 提交：后端修复、前端修复、文档三个 commit（简体中文 conventional commits）
+- [x] 五份功能 spec 补第五轮修订记录并修正过时正文：build-strategy-web（R5-B1/B2/B6/B8/B11/B12/B13 + 回填 R4-B5/B11）、verification-report（R5-B3/B4/B5 + §3 FK 模型概览勘误为文本快照）、borrow-flow（R5-B10 自借自批回避 + 正文 status 值域/模型补 cancelled）、slot-booking（R5-B9）、branch-config（R5-B7）
+- [x] 提交：后端修复、前端修复、文档三个 commit（简体中文 conventional commits）

@@ -318,3 +318,7 @@ el-tabs 两 Tab：
 - **模板创建并发重名兜底（R4-B17）**：`SlotTemplateViewSet.create` 与 admin `create_template` 包 savepoint 捕获 IntegrityError → 40902（「时段名称已存在」/「模板名已存在」）——validate_name 的 check-then-create 有竞态窗口，此前未捕获走 DRF 兜底 50000 破坏契约。
 - **全角数字拒绝（R4-B12）**：`validate_weekdays` 前置 `isascii`（`"２".isdigit()` 为 True 且 `int("２")==2`，此前全角数字放行后 `isoweekday()` 匹配错位）；`services/timeline.valid_hhmm` 同款前置（正则 `\d` 匹配全角，全角时间串入库后 Strategy 按字符串排序错位），与 `parse_int` 硬化口径对齐。
 - **seed master 分支守卫（R4-B15）**：`_seed_extra_strategies` 对 27A master 分支补「缺失即重建」守卫（对齐 tr527a/tr627a 既有写法）——此前 master 被删后以 None 分支 get_or_create → IntegrityError 中断整个 seed。
+
+## 修订记录（2026-10-18 第五轮质量优化）
+
+- **改期 purpose 字段级类型守卫（R5-B9）**：`services/slot_booking._resolve_target` 对 `raw_purpose` 非 None 且非 str → 42201「purpose 应为字符串」——此前 `str(payload.get("purpose") or "")` 会把数字/布尔 repr 化入库（拒绝优于静默转换，R4-B10 取向的字段级延伸）；None/缺省 → 沿用原值语义不变，str → 原 strip + 2~200 长度校验不变。回归 `tests_quality_round5.py::ReschedulePurposeGuardTests`。
