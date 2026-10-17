@@ -125,6 +125,9 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: "update:modelValue", value: boolean): void;
+  /** 借用申请提交成功即通知父级（R5-F14）：全景 ScheduleDialogs 据此 data.refresh()，
+   *  否则新借用事件最长延迟一个轮询周期才上画布；weekly-new 侧不监听，零破坏 */
+  (e: "created"): void;
 }>();
 
 const router = useRouter();
@@ -194,6 +197,7 @@ async function onSubmit() {
       new_build_time: form.new_build_time,
       reason: form.reason
     });
+    emit("created");
     emit("update:modelValue", false);
     ElMessageBox.confirm(
       "借用电子流已提交，等待来源版本负责人审批。可在「借用审批」页查看进度。",

@@ -5,6 +5,7 @@ import { ref, reactive, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import { getReportRevisions, getReports, type ReportQuery } from "@/api/report";
+import { isBizError } from "@/api/http";
 import type { ReportItem, ReportRevisionItem } from "@/api/types";
 import { getCurrentUser, formatTime } from "@/utils/business";
 import { copyText } from "@/utils/clipboard";
@@ -96,8 +97,10 @@ async function viewRevisions(row: ReportItem) {
   revisionsList.value = [];
   try {
     revisionsList.value = await getReportRevisions(row.id);
-  } catch {
-    ElMessage.error("修改记录加载失败");
+  } catch (e) {
+    // R5-F10 双 toast 收敛：BizError 已由 http 拦截器弹出真实错误文案，
+    // 不再补弹笼统提示；仅网络层/未知异常兜底提示
+    if (!isBizError(e)) ElMessage.error("修改记录加载失败");
   } finally {
     revisionsLoading.value = false;
   }

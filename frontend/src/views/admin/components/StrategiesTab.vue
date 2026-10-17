@@ -3,6 +3,7 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { adminApi } from "@/api/admin";
+import { isBizError } from "@/api/http";
 import type { StrategyItem, TemplateItem, VersionItem } from "@/api/types";
 import type { StrategyForm } from "@/api/strategy";
 // 推送模式文案唯一来源（views/constants，页面内禁止复制措辞）
@@ -68,8 +69,10 @@ async function loadAdminStrategies() {
       version_id: adminVersionId.value,
       branch_id: adminBranchId.value
     });
-  } catch {
-    ElMessage.error("策略列表加载失败");
+  } catch (e) {
+    // R5-F10 双 toast 收敛：BizError 已由 http 拦截器弹出真实错误文案，
+    // 不再补弹笼统提示；仅网络层/未知异常兜底提示
+    if (!isBizError(e)) ElMessage.error("策略列表加载失败");
   } finally {
     loading.value = false;
   }

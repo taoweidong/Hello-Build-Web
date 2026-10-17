@@ -89,7 +89,15 @@
         <template #header>
           <div class="biz-card-head">
             <span class="biz-card-title">本周负载热力（时刻 × 周一~周日）</span>
-            <span class="biz-sub">占用率 {{ kpi.occupancyRate }}%</span>
+            <span class="biz-sub">
+              占用率 {{ kpi.occupancyRate }}%
+              <!-- 截断必须外化提示（R5-F7，对齐 slotTruncated 范式）：此前第 13 个
+                   时刻起整行静默消失，会被误读为「该时刻无负载」 -->
+              <template v-if="heatOverflow">
+                · 仅展示前 {{ HEAT_MAX_ROWS }} 个时刻（共
+                {{ heatPoints.length }} 个）
+              </template>
+            </span>
           </div>
         </template>
         <div class="biz-scroll-x">
@@ -124,14 +132,21 @@
             </div>
           </template>
           <p v-if="!conflicts.length" class="biz-tip">暂无跨源冲突。</p>
-          <ul v-else class="alert-list">
-            <li v-for="c in conflicts.slice(0, 8)" :key="c.id">
-              <el-icon><WarningFilled /></el-icon>
-              <span
-                >{{ c.date }} {{ c.time }} {{ c.title }} 与已抢占时段重合</span
-              >
-            </li>
-          </ul>
+          <template v-else>
+            <ul class="alert-list">
+              <li v-for="c in conflicts.slice(0, ALERT_MAX_ROWS)" :key="c.id">
+                <el-icon><WarningFilled /></el-icon>
+                <span
+                  >{{ c.date }} {{ c.time }} {{ c.title }} 与已抢占时段重合</span
+                >
+              </li>
+            </ul>
+            <!-- KPI 卡冲突总数与列表条数不一致时必须说明去向（R5-F7） -->
+            <p v-if="conflicts.length > ALERT_MAX_ROWS" class="biz-tip">
+              另有 {{ conflicts.length - ALERT_MAX_ROWS }}
+              条冲突未展示，可在「时间轴流水」用仅看冲突查看全部。
+            </p>
+          </template>
         </el-card>
 
         <el-card shadow="never" class="panel">
@@ -251,11 +266,18 @@ const myReservedSlots = computed(
   () => todos.value?.my_reserved_slots ?? kpi.value.mySlots
 );
 
-/** 时刻 × 星期 热力：仅取范围内真实出现过的时刻，避免 24 行空行 */
-const heatRows = computed(() => {
-  const points = collectTimePoints(events.value);
-  return buildHeatmap(events.value, days.value, points.slice(0, 12));
-});
+/** 时刻 × 星期 热力：仅取范围内真实出现过的时刻，避免 24 行空行；
+ *  行数上限截断时经 heatOverflow 外化提示（R5-F7，静默截断会误读为无负载） */
+const HEAT_MAX_ROWS = 12;
+/** 告警列表展示上限（超出部分给「另有 N 条」提示） */
+const ALERT_MAX_ROWS = 8;
+const heatPoints = computed(() => collectTimePoints(events.value));
+const heatRows = computed(() =>
+  buildHeatmap(events.value, days.value, heatPoints.value.slice(0, HEAT_MAX_ROWS))
+);
+const heatOverflow = computed(() =>
+  Math.max(heatPoints.value.length - HEAT_MAX_ROWS, 0)
+);
 
 /** 热力格下钻：跳到当日时间轴流水（S5），保持同一数据中枢 */
 function goTimeline(date: string | undefined) {

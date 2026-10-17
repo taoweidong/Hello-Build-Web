@@ -158,6 +158,7 @@ import {
 import { bookingStatusMeta } from "@/views/constants";
 // 后端秒级时间戳统一展示（R4-F7：不再裸展示含 "T" 分隔符的原始串）
 import { formatDateTime } from "@/utils/business";
+import { createSeqGuard } from "@/utils/seqGuard";
 
 defineOptions({ name: "SlotRecordsPanel" });
 
@@ -183,7 +184,11 @@ const branchOptions = computed(
       ?.branches ?? []
 );
 
+// 过期响应守卫（R5-F4）：快速切换筛选/翻页时作废在途请求，
+// 防旧条件的记录列表晚归覆盖当前筛选视图
+const loadGuard = createSeqGuard();
 async function load() {
+  const token = loadGuard.next();
   loading.value = true;
   try {
     const data = await getSlotBookings({
@@ -196,12 +201,14 @@ async function load() {
       user_id: userId.value ?? undefined,
       status: status.value || undefined
     });
+    if (!loadGuard.isCurrent(token)) return; // 迟到响应直接丢弃
     rows.value = data.items;
     total.value = data.total;
   } catch {
-    // 拦截器已提示
+    // 拦截器已提示；迟到失败同样不写状态
   } finally {
-    loading.value = false;
+    // 仅最新请求可复位 loading（更晚请求在途时保持置位）
+    if (loadGuard.isCurrent(token)) loading.value = false;
   }
 }
 

@@ -25,12 +25,16 @@ export function formatBorrowFlowText(
     `借用原因：${flow.reason || "（未填写）"}`,
     `申请时间：${formatFlowTime(flow.created_at)}`
   ];
-  if (flow.status !== "pending") {
+  // 非待审批态按三态分支（R5-F2）：approved/rejected 拼审批人与意见，
+  // cancelled 为借用人自行撤销、不存在审批动作，不拼审批人/意见
+  if (flow.status === "approved" || flow.status === "rejected") {
     lines.push(
       `审批：${flow.approver_name || "-"} ${flow.status === "approved" ? "通过" : "驳回"}${
         flow.handle_comment ? `（${flow.handle_comment}）` : ""
       } ${formatFlowTime(flow.handled_at)}`
     );
+  } else if (flow.status === "cancelled") {
+    lines.push(`撤销：借用人撤销于 ${formatFlowTime(flow.cancelled_at)}`);
   }
   if (detailUrl) lines.push(`审批详情链接：${detailUrl}`);
   return lines.join("\n");

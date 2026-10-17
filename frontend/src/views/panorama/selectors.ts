@@ -1,11 +1,6 @@
 // 布局无关的纯投影：所有布局共用，禁止页面自行聚合
 // 依据：docs/superpowers/specs/2026-10-12-scheduling-panorama-design.md §5.1（selectors 纯投影）
-import type {
-  AgendaItem,
-  ScheduleDay,
-  ScheduleEvent,
-  ScheduleKpi
-} from "./types";
+import type { ScheduleDay, ScheduleEvent, ScheduleKpi } from "./types";
 import { durationOf } from "./sources/strategySource";
 
 /** 按「日期 + 起止」升序排序（同日按 start，start 相同按 duration 降序） */
@@ -26,28 +21,6 @@ export function groupByDay(
     (out[e.date] ||= []).push(e);
   }
   return out;
-}
-
-/** 流水推进器（S4 分组看板 / S5 时间轴流水消费） */
-export function buildAgenda(events: ScheduleEvent[]): AgendaItem[] {
-  return sortEvents(events).map(e => ({
-    id: e.id,
-    source: e.source,
-    kind: e.kind,
-    date: e.date,
-    time: e.time,
-    endTime: e.endTime,
-    durationMin: e.durationMin,
-    title: e.title,
-    subtitle: e.subtitle,
-    branchName: e.branchName,
-    versionName: e.versionName,
-    color: e.color,
-    statusText: e.statusText,
-    past: e.past,
-    mine: e.mine,
-    permissions: e.permissions
-  }));
 }
 
 /** 区间是否重叠（分钟口径；起止相等的点事件按 1 分钟处理） */

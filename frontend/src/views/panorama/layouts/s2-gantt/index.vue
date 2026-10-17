@@ -148,6 +148,10 @@ import type { ScheduleEvent } from "../../types";
 
 defineOptions({ name: "PanoramaGanttLayout" });
 
+// 单日视图首屏锚今天（R5-F6）：此前吃 defaultWeekQuery 的周一~周日，锚点
+// （query.dateFrom）落在本周一——周中打开看到的是历史日，需手点「今天」才能归位
+const initialDay = dayjs().format("YYYY-MM-DD");
+
 const {
   query,
   actions,
@@ -169,7 +173,7 @@ const {
   setScope,
   shiftBy,
   goToday
-} = usePanoramaPage();
+} = usePanoramaPage({ dateFrom: initialDay, dateTo: initialDay });
 
 const STAGE_LEGEND = [
   { key: "build", label: "构建" },

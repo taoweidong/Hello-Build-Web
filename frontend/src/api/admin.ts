@@ -12,6 +12,29 @@ import type {
   StrategyItem
 } from "@/api/types";
 
+/**
+ * 模板时长变更联动告警条目（R5-B12）：update_template 在 smoke/analysis 时长
+ * 变化时附带，标识引用该模板的启用策略与同分支其他启用策略新出现的阶段重叠对。
+ * 仅告警不拦截（冲突处置走「先停用归档」逃生通道）。
+ */
+export interface TemplateDurationWarning {
+  /** 重叠发生的分支名 */
+  branch: string;
+  /** 重叠策略对之一（按名称排序去重后的前者） */
+  first: string;
+  /** 重叠策略对之二 */
+  second: string;
+  /** 重叠区间起点 HH:MM */
+  overlap_start: string;
+  /** 重叠区间终点 HH:MM */
+  overlap_end: string;
+}
+
+/** update_template 响应：模板本体 + 可选时长变更告警（未改时长时无 warnings 字段） */
+export type TemplateUpdateResponse = TemplateItem & {
+  warnings?: TemplateDurationWarning[];
+};
+
 export const adminApi = {
   // ---- 版本与分支 ----
   getVersions: (): Promise<VersionItem[]> => http.get("/admin/versions"),
@@ -60,7 +83,8 @@ export const adminApi = {
       analysis_minutes?: number;
       description?: string;
     }
-  ): Promise<TemplateItem> => http.patch(`/admin/templates/${id}`, d),
+  ): Promise<TemplateUpdateResponse> =>
+    http.patch(`/admin/templates/${id}`, d),
   deleteTemplate: (id: number): Promise<void> =>
     http.delete(`/admin/templates/${id}`),
 

@@ -123,6 +123,17 @@ import type { ScheduleEvent } from "../../types";
 defineOptions({ name: "PanoramaTimelineLayout" });
 
 const route = useRoute();
+
+/** 深链 ?date=YYYY-MM-DD（由 S1 热力格下钻带入）；无深链时锚今天（R5-F6：
+ * 此前吃 defaultWeekQuery 的周一，周中打开看到历史日；且 immediate watch 在
+ * setup 内改 query 触发中枢 watcher + onMounted 各拉一次，入场整链双拉）。
+ * 深链日直接作为 overrides 传入，首屏只发一轮请求。 */
+const deepDate = (() => {
+  const v = route.query.date;
+  return typeof v === "string" && dayjs(v).isValid() ? v : undefined;
+})();
+const initialDay = deepDate ?? dayjs().format("YYYY-MM-DD");
+
 const {
   query,
   actions,
@@ -145,7 +156,7 @@ const {
   setDateRange,
   shiftBy,
   goToday
-} = usePanoramaPage();
+} = usePanoramaPage({ dateFrom: initialDay, dateTo: initialDay });
 
 const filter = ref<"all" | "mine" | "conflict" | "borrow">("all");
 /** 折叠空闲时段：隐藏「空闲可抢占」的时段行，把注意力收敷到已占用/待办上 */
@@ -187,15 +198,15 @@ function rowActions(e: ScheduleEvent) {
   return withCopyAction(buildEventActions(e, actions), e, actions);
 }
 
-/** 深链 ?date=YYYY-MM-DD（由 S1 热力格下钻带入） */
+/** 深链 ?date= 的后续变化（组件复用时路由查询改变）仍要跟随；
+ *  首屏取值已在 setup 一次性读入 overrides，不再 immediate（R5-F6 去双拉） */
 watch(
   () => route.query.date,
   value => {
     if (typeof value === "string" && dayjs(value).isValid()) {
       setDateRange(value, value);
     }
-  },
-  { immediate: true }
+  }
 );
 </script>
 

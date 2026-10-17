@@ -93,13 +93,13 @@
               size="small"
               text
               type="primary"
-              @click="group.collapsed = !group.collapsed"
+              @click="toggleCollapse(group.key)"
             >
-              {{ group.collapsed ? "展开" : "收起" }}
+              {{ isCollapsed(group.key) ? "展开" : "收起" }}
             </el-button>
           </div>
         </template>
-        <div v-show="!group.collapsed" class="row-list">
+        <div v-show="!isCollapsed(group.key)" class="row-list">
           <div v-for="e in group.events.slice(0, 50)" :key="e.id" class="row">
             <el-checkbox
               v-if="batchMode"
@@ -184,6 +184,22 @@ const selectedEvents = computed(() =>
   events.value.filter(e => selectedIds.value.has(e.id))
 );
 
+// 折叠态外置（R5-F5）：此前挂在 computed 输出上（collapsed: false 内联 +
+// 直接 mutate computed 结果），任何 events 更新（30s 轮询/刷新/筛选）都重建
+// 数组导致用户收起的组全部弹开。与 selectedIds 同款按 group.key 记录。
+const collapsedKeys = ref<Set<string>>(new Set());
+
+function isCollapsed(key: string) {
+  return collapsedKeys.value.has(key);
+}
+
+function toggleCollapse(key: string) {
+  const next = new Set(collapsedKeys.value);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  collapsedKeys.value = next;
+}
+
 const rangeText = computed(
   () =>
     `${dayjs(query.value.dateFrom).format("M月D日")} - ${dayjs(
@@ -207,8 +223,7 @@ const groups = computed(() => {
   return [...map.entries()].map(([key, list]) => ({
     key,
     name: key.split("|")[1] ?? key,
-    events: list,
-    collapsed: false
+    events: list
   }));
 });
 

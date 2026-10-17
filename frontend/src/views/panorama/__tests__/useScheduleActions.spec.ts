@@ -87,7 +87,6 @@ function makeFakeData(): ScheduleData {
     days: ref([]),
     events: ref<ScheduleEvent[]>([]),
     byDay: computed(() => ({})),
-    agenda: computed(() => []),
     kpi: computed(() => ({
       todayBuild: 0,
       weekSlotOccupied: 0,

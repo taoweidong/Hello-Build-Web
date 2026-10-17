@@ -1,7 +1,7 @@
 // selectors 纯投影单测：5 个布局共用的排序/分组/冲突/指标/分列/热力
+//（buildAgenda/agenda 死导出已随 R5-F17 删除：五布局无一消费，S4/S5 直接用 events/byDay）
 import { describe, expect, it } from "vitest";
 import {
-  buildAgenda,
   buildHeatmap,
   buildKpi,
   collectTimePoints,
@@ -66,39 +66,6 @@ describe("groupByDay", () => {
     ]);
     expect(Object.keys(grouped)).toEqual(["2026-10-13", "2026-10-14"]);
     expect(grouped["2026-10-13"].map(e => e.id)).toEqual(["c", "b"]);
-  });
-});
-
-describe("buildAgenda", () => {
-  it("投影字段完整且不含 raw / date 之外多余字段", () => {
-    const agenda = buildAgenda([makeEvent()]);
-    expect(agenda).toHaveLength(1);
-    expect(agenda[0]).toEqual({
-      id: "strategy:1#build",
-      source: "strategy",
-      kind: "build",
-      date: "2026-10-13",
-      time: "08:00",
-      endTime: "08:30",
-      durationMin: 30,
-      title: "构建 · 主链路策略",
-      subtitle: "main · 标准模板 · 正常流程",
-      branchName: "main",
-      versionName: "v3.2",
-      color: "#3b82f6",
-      statusText: "构建",
-      past: false,
-      mine: false,
-      permissions: agenda[0].permissions
-    });
-  });
-
-  it("顺序与 sortEvents 一致", () => {
-    const list = [
-      makeEvent({ id: "late", date: "2026-10-14", time: "08:00" }),
-      makeEvent({ id: "early", date: "2026-10-13", time: "09:00" })
-    ];
-    expect(buildAgenda(list).map(i => i.id)).toEqual(["early", "late"]);
   });
 });
 

@@ -251,4 +251,41 @@ describe("S4 分组看板", () => {
     expect(batchBarText()).toContain("已选 1 项");
     expect(mySlotRow().find(".el-checkbox").classes()).toContain("is-checked");
   });
+
+  it("分组折叠态在数据刷新后保持（R5-F5：折叠态外置按 key 记录）", async () => {
+    ({ wrapper } = await mountLayout(PanoramaBoard, "/panorama/board"));
+    const findV4Card = () =>
+      wrapper
+        .findAll(".group-card")
+        .find(c => c.find(".biz-card-title").text().startsWith("v4.0"))!;
+    // 初始展开：行可见，按钮为「收起」
+    expect(findV4Card().findAll(".row").length).toBeGreaterThan(0);
+    expect(
+      findV4Card().find(".row-list").attributes("style") ?? ""
+    ).not.toContain("display: none");
+    await findV4Card()
+      .findAll("button")
+      .find(b => b.text() === "收起")!
+      .trigger("click");
+    // v-show 折叠（jsdom 无布局引擎，isVisible 不可靠，断言内联样式）
+    expect(findV4Card().find(".row-list").attributes("style")).toContain(
+      "display: none"
+    );
+    // 整表刷新：events 换新对象、groups computed 重建——
+    // 修复前折叠态挂在 computed 输出上（collapsed:false 内联），刷新即全部弹开
+    calendarMock.mockResolvedValue(makeWeekCalendar());
+    await wrapper
+      .findAll("button")
+      .find(b => b.text() === "刷新")!
+      .trigger("click");
+    for (let i = 0; i < 3; i++) await flushPromises();
+    expect(findV4Card().find(".row-list").attributes("style")).toContain(
+      "display: none"
+    );
+    expect(
+      findV4Card()
+        .findAll("button")
+        .some(b => b.text() === "展开")
+    ).toBe(true);
+  });
 });

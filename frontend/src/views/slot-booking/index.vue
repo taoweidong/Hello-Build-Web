@@ -145,6 +145,7 @@ import DayDetailDialog from "./components/DayDetailDialog.vue";
 import MyBookingsDrawer from "./components/MyBookingsDrawer.vue";
 import { getCurrentUser } from "@/utils/business";
 import { buildMonthCells, summarizeCalendar } from "@/utils/slotCalendar";
+import { createSeqGuard } from "@/utils/seqGuard";
 // 默认可抢窗口唯一来源（R4-F13/F-L4：删除本地副本，与 useScheduleData 同源）
 import { DEFAULT_HORIZON_DAYS } from "@/views/constants";
 
@@ -186,16 +187,24 @@ const cells = computed(() => buildMonthCells(month.value));
 
 const stats = computed(() => summarizeCalendar(calendar.value?.days ?? {}));
 
+// 过期响应守卫（R5-F4）：快速翻月/前进后退时作废在途请求，
+// 防旧月份的日历数据晚归覆盖当前月份视图
+const loadGuard = createSeqGuard();
 async function load() {
+  const token = loadGuard.next();
   loading.value = true;
   loadError.value = "";
   try {
-    calendar.value = await getSlotCalendar(month.value);
+    const data = await getSlotCalendar(month.value);
+    if (!loadGuard.isCurrent(token)) return; // 迟到响应直接丢弃
+    calendar.value = data;
   } catch (e) {
+    if (!loadGuard.isCurrent(token)) return;
     // isBizError 类型守卫收窄 unknown，替代 catch (e: any)（R3-F9）
     loadError.value = (isBizError(e) && e.message) || "请求失败";
   } finally {
-    loading.value = false;
+    // 仅最新请求可复位 loading（更晚请求在途时保持置位）
+    if (loadGuard.isCurrent(token)) loading.value = false;
   }
 }
 

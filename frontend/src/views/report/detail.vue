@@ -311,7 +311,9 @@ async function onPublish() {
   } catch (e) {
     // 发布失败保留编辑态，允许重试；新建的草稿已落库，跳转编辑态继续
     console.error("[report-publish] 发布失败：", e);
-    ElMessage.error("发布失败，请重试");
+    // R5-F10 双 toast 收敛：BizError 已由 http 拦截器弹出真实错误文案，
+    // 不再补弹笼统提示；仅网络层/未知异常兜底提示
+    if (!isBizError(e)) ElMessage.error("发布失败，请重试");
     if (isNew.value && savedReportId) {
       await router.replace(`/report/detail/${savedReportId}?edit=1`);
     }
@@ -369,16 +371,10 @@ async function loadHistory() {
 }
 async function openHistory(id: number | string) {
   if (String(id) === routeId.value) return;
-  try {
-    const data = await getReport(Number(id));
-    report.value = data;
-    fillForm(data);
-    editing.value = false;
-    await router.replace(`/report/detail/${data.id}`);
-  } catch (e) {
-    // isBizError 类型守卫收窄 unknown，替代 catch (e: any)（R3-F9）
-    ElMessage.error((isBizError(e) && e.message) || "报告加载失败");
-  }
+  // R5-F9 去双拉：只做路由切换，报告加载与历史列表刷新全部交给
+  // watch(route.params.id)（旧实现先手动 getReport 写 report/fillForm，
+  // 路由切换后 watch 分支再拉一次，同一报告被双拉且两处写值可能乱序）
+  await router.replace(`/report/detail/${id}`);
 }
 
 // ---- 路由切换重置：详情/新建间跳转组件实例复用，需重置页面状态 ----

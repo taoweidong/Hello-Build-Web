@@ -11,6 +11,7 @@ import type {
   SecurityLogItem
 } from "@/api/types";
 import { getCurrentUser, dayjs, formatTime } from "@/utils/business";
+import { createSeqGuard } from "@/utils/seqGuard";
 
 defineOptions({ name: "LogsIndex" });
 
@@ -66,56 +67,86 @@ function onVersionChange() {
   branchOptions.value = v ? v.branches : [];
 }
 
+// 过期响应守卫（R5-F15）：四个 Tab 各自独立实例（写入的响应式状态不同，
+// 独立守卫互不干扰；同 Tab 内快速改筛选连点查询时防乱序覆盖）
+const execGuard = createSeqGuard();
+const changesGuard = createSeqGuard();
+const opsGuard = createSeqGuard();
+const securityGuard = createSeqGuard();
+
 async function loadExec() {
+  const token = execGuard.next();
   loading.value = true;
   try {
-    execLogs.value = await logsApi.execution({
+    const data = await logsApi.execution({
       date: execFilter.date,
       version_id: execFilter.version_id,
       branch_id: execFilter.branch_id
     });
+    if (!execGuard.isCurrent(token)) return; // 迟到响应直接丢弃
+    execLogs.value = data;
   } catch {
+    if (!execGuard.isCurrent(token)) return;
     execLogs.value = []; // 失败已由拦截器提示，清空避免旧数据误导
   } finally {
-    loading.value = false;
+    // 仅最新请求可复位 loading（更晚请求在途时保持置位）
+    if (execGuard.isCurrent(token)) loading.value = false;
   }
 }
 
 async function loadChanges() {
+  const token = changesGuard.next();
   loading.value = true;
   try {
-    changeLogs.value = await logsApi.changes({
+    const data = await logsApi.changes({
       from: range.value[0],
       to: range.value[1]
     });
+    if (!changesGuard.isCurrent(token)) return;
+    changeLogs.value = data;
   } catch {
+    if (!changesGuard.isCurrent(token)) return;
     changeLogs.value = [];
   } finally {
-    loading.value = false;
+    if (changesGuard.isCurrent(token)) loading.value = false;
   }
 }
 
 async function loadOps() {
   if (!isAdmin) return;
+  const token = opsGuard.next();
+  loading.value = true; // R5-F15：补齐共享 loading 置位（与 loadExec 同款）
   try {
-    opLogs.value = await logsApi.operations({
+    const data = await logsApi.operations({
       from: range.value[0],
       to: range.value[1]
     });
+    if (!opsGuard.isCurrent(token)) return;
+    opLogs.value = data;
   } catch {
+    if (!opsGuard.isCurrent(token)) return;
     opLogs.value = []; // 失败已由拦截器提示
+  } finally {
+    if (opsGuard.isCurrent(token)) loading.value = false;
   }
 }
 
 async function loadSecurity() {
   if (!isAdmin) return;
+  const token = securityGuard.next();
+  loading.value = true; // R5-F15：补齐共享 loading 置位（与 loadExec 同款）
   try {
-    securityLogs.value = await logsApi.security({
+    const data = await logsApi.security({
       from: range.value[0],
       to: range.value[1]
     });
+    if (!securityGuard.isCurrent(token)) return;
+    securityLogs.value = data;
   } catch {
+    if (!securityGuard.isCurrent(token)) return;
     securityLogs.value = [];
+  } finally {
+    if (securityGuard.isCurrent(token)) loading.value = false;
   }
 }
 
@@ -236,9 +267,11 @@ onMounted(async () => {
             end-placeholder="结束"
             style="width: 260px"
           />
-          <el-button type="primary" @click="loadOps">查询</el-button>
+          <el-button type="primary" :loading="loading" @click="loadOps"
+            >查询</el-button
+          >
         </div>
-        <el-table :data="opLogs" style="width: 100%">
+        <el-table v-loading="loading" :data="opLogs" style="width: 100%">
           <el-table-column prop="operator" label="操作人" width="120" />
           <el-table-column prop="action" label="操作" width="140" />
           <el-table-column prop="target_type" label="目标类型" width="120" />
@@ -263,9 +296,11 @@ onMounted(async () => {
             end-placeholder="结束"
             style="width: 260px"
           />
-          <el-button type="primary" @click="loadSecurity">查询</el-button>
+          <el-button type="primary" :loading="loading" @click="loadSecurity"
+            >查询</el-button
+          >
         </div>
-        <el-table :data="securityLogs" style="width: 100%">
+        <el-table v-loading="loading" :data="securityLogs" style="width: 100%">
           <el-table-column prop="username" label="用户" width="140" />
           <el-table-column prop="event" label="事件" min-width="140" />
           <el-table-column prop="ip" label="IP" width="140" />

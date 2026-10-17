@@ -14,6 +14,7 @@
       v-model="ui.borrowVisible"
       :strategy="ui.borrowStrategy"
       :current-version-id="ui.borrowVersionId"
+      @created="onBorrowCreated"
     />
     <SlotBookingDialog
       v-if="ui.occupyVisible"
@@ -119,6 +120,12 @@ async function onSaved() {
 }
 
 async function onBooked() {
+  await data.refresh();
+}
+
+/** 借用申请提交成功即刷新（R5-F14）：此前借用弹窗是共用弹窗组里唯一没有
+ *  回接的（Booking/SlotDetail/MyBookings 都有），新事件最长延迟一个轮询周期 */
+async function onBorrowCreated() {
   await data.refresh();
 }
 

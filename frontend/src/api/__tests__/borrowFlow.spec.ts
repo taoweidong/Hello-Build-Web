@@ -139,6 +139,30 @@ describe("formatBorrowFlowText 借用电子流复制文案", () => {
     expect(text).toContain("审批：27A负责人 驳回（时段冲突） ");
     expect(text).not.toContain("Invalid Date");
   });
+
+  it("已撤销流程：撤销行拼借用人撤销时刻，不拼审批人/意见（R5-F2 三态分支）", () => {
+    const text = formatBorrowFlowText(
+      makeFlow({
+        status: "cancelled",
+        approver_name: null,
+        handle_comment: "",
+        handled_at: null,
+        cancelled_at: "2026-10-11T17:20:00"
+      })
+    );
+    expect(text).toContain("【借用电子流】#7 已撤销");
+    expect(text).toContain("撤销：借用人撤销于 2026-10-11 17:20:00");
+    expect(text).not.toContain("审批：");
+  });
+
+  it("已撤销流程：cancelled_at 为 null 时时间位保持空串不抛异常", () => {
+    const text = formatBorrowFlowText(
+      makeFlow({ status: "cancelled", cancelled_at: null })
+    );
+    expect(text).toContain("撤销：借用人撤销于 ");
+    expect(text).not.toContain("Invalid Date");
+    expect(text).not.toContain("审批：");
+  });
 });
 
 describe("formatFlowTime 电子流时间格式化（替代手写 replace，输出逐字节等价）", () => {

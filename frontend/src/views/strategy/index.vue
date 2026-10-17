@@ -156,8 +156,10 @@ function startNew() {
   schedulePreview();
 }
 
-// ---- 保存 ----
+// ---- 保存（R5-F3：在途守卫防双击重复提交，按钮同步挂 :loading）----
+const saving = ref(false);
 async function onSave() {
+  if (saving.value) return; // 已有保存在途，忽略重复点击
   if (preview.value?.conflict) {
     ElMessageBox.alert(
       preview.value.conflict.message || "存在时间冲突，请调整后重试",
@@ -179,6 +181,7 @@ async function onSave() {
     ...form,
     push_start_time: form.push_start_time || null
   };
+  saving.value = true;
   try {
     if (isEditing.value) {
       await updateStrategy(editingId.value as number, { ...payload });
@@ -189,6 +192,8 @@ async function onSave() {
     }
   } catch {
     return; // 失败已由拦截器提示，保留表单便于修改重试
+  } finally {
+    saving.value = false;
   }
   await load();
   startNew();
@@ -419,6 +424,7 @@ onMounted(async () => {
       <div class="form-actions">
         <el-button
           type="primary"
+          :loading="saving"
           :disabled="!!preview?.conflict"
           @click="onSave"
         >

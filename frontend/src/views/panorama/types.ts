@@ -117,26 +117,6 @@ export interface ScheduleKpi {
   occupancyRate: number;
 }
 
-/** 流水推进器（S4/S5 消费的有序列表项） */
-export interface AgendaItem {
-  id: string;
-  source: ScheduleSource;
-  kind: ScheduleKind;
-  date: string;
-  time: string;
-  endTime: string;
-  durationMin: number;
-  title: string;
-  subtitle: string;
-  branchName: string;
-  versionName: string;
-  color: string;
-  statusText: string;
-  past: boolean;
-  mine: boolean;
-  permissions: SchedulePermissions;
-}
-
 /** 中枢输出（响应式引用，布局层在模板中自动解包） */
 export interface ScheduleData {
   loading: Ref<boolean>;
@@ -144,7 +124,6 @@ export interface ScheduleData {
   days: Ref<ScheduleDay[]>;
   events: Ref<ScheduleEvent[]>;
   byDay: ComputedRef<Record<string, ScheduleEvent[]>>;
-  agenda: ComputedRef<AgendaItem[]>;
   kpi: ComputedRef<ScheduleKpi>;
   versionOptions: ComputedRef<
     Array<{ version_id: number; version_name: string }>

@@ -200,6 +200,7 @@ import { formatBorrowFlowText, formatFlowTime } from "./format";
 import { borrowStatusMeta } from "@/views/constants";
 import { canApproveBorrowFlow, getCurrentUser } from "@/utils/business";
 import { copyText } from "@/utils/clipboard";
+import { createSeqGuard } from "@/utils/seqGuard";
 
 defineOptions({ name: "BorrowFlowIndex" });
 
@@ -227,14 +228,22 @@ const filteredFlows = computed(() =>
   onlyMine.value ? flows.value.filter(f => canApprove(f)) : flows.value
 );
 
+// 过期响应守卫（R5-F4）：快速切换状态筛选时作废在途请求，
+// 防旧筛选的电子流列表晚归覆盖当前筛选视图
+const loadGuard = createSeqGuard();
 async function load() {
+  const token = loadGuard.next();
   loading.value = true;
   try {
-    flows.value = await listBorrowFlows(statusFilter.value);
+    const data = await listBorrowFlows(statusFilter.value);
+    if (!loadGuard.isCurrent(token)) return; // 迟到响应直接丢弃
+    flows.value = data;
   } catch {
+    if (!loadGuard.isCurrent(token)) return;
     flows.value = []; // 失败已由拦截器提示，清空避免旧数据误导
   } finally {
-    loading.value = false;
+    // 仅最新请求可复位 loading（更晚请求在途时保持置位）
+    if (loadGuard.isCurrent(token)) loading.value = false;
   }
 }
 

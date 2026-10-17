@@ -191,6 +191,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import dayjs from "dayjs";
 import { getPlan } from "@/api/plan";
 import { pollDelay } from "@/utils/polling";
+import { createSeqGuard } from "@/utils/seqGuard";
 import {
   addBranchPermission,
   addBranchProject,
@@ -255,17 +256,25 @@ async function selectBranch(id: number) {
   await loadConfig();
 }
 
+// 过期响应守卫（R5-F4）：快速切换分支时作废在途请求，防旧分支配置晚归
+// 覆盖新分支视图（与下方实例轮询 pollSeq 同款语义，工具化实现）
+const configGuard = createSeqGuard();
 async function loadConfig() {
   if (!selectedId.value) return;
+  const token = configGuard.next();
   loadingConfig.value = true;
   try {
-    config.value = await getBranchConfig(selectedId.value);
-    editingBp.value = config.value.branch_projects[0] ?? null;
+    const cfg = await getBranchConfig(selectedId.value);
+    if (!configGuard.isCurrent(token)) return; // 迟到响应直接丢弃
+    config.value = cfg;
+    editingBp.value = cfg.branch_projects[0] ?? null;
     activeTab.value = "projects";
   } catch {
+    if (!configGuard.isCurrent(token)) return;
     config.value = undefined; // 失败已由拦截器提示，清空避免展示旧分支配置
   } finally {
-    loadingConfig.value = false;
+    // 仅最新请求可复位 loading（更晚请求在途时保持置位）
+    if (configGuard.isCurrent(token)) loadingConfig.value = false;
   }
 }
 

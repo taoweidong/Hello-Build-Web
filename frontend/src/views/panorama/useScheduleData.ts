@@ -5,7 +5,11 @@
 // 原 useWeeklyPanorama 保留不动（/weekly-new 回归基线 + 回滚兜底）。
 //
 // 纪律：
-// - 自增序号守卫：快速切换范围/版本时丢弃过期响应；
+// - 自增序号守卫：快速切换范围/版本时丢弃过期响应；**最终 events 写入同样
+//   受守卫保护**（R5-F1：此前各段读取有守卫而终写没有，旧请求在 await 期间
+//   被取代后仍会用旧数据覆盖新请求结果，要等下一轮轮询才自愈）；
+// - weekly 先行 + 其余四路并发（R5-F12：此前 5 路全串行，30s 轮询把串行
+//   RTT 放大 3~4 倍，且与注释宣称的「四路并发」不符）；
 // - 版本兜底：weekly 未传 version_id 时返回空策略，自动回填首个版本后二次拉取；
 // - 轮询退避 / document.hidden 暂停 / silent 请求 / 卸载守卫：
 //   设计文档原计划「由展示层各自接入」，实测那会让 5 个布局各复制一份
@@ -37,7 +41,7 @@ import { useBranchColors } from "@/composables/useBranchColors";
 import { mapStrategyEvents } from "./sources/strategySource";
 import { mapSlotEvents } from "./sources/slotSource";
 import { mapBorrowEvents } from "./sources/borrowSource";
-import { buildAgenda, buildKpi, groupByDay, sortEvents } from "./selectors";
+import { buildKpi, groupByDay, sortEvents } from "./selectors";
 import type {
   ScheduleData,
   ScheduleDay,
@@ -147,11 +151,21 @@ export function useScheduleData(query: Ref<ScheduleQuery>): ScheduleData {
         return true; // 版本变化触发 watcher 二次拉取
       }
 
-      // 2) 时段抢占矩阵（按自然月聚合；超 3 个月截断并外化提示标记）
+      // 2~5) 四路并发（R5-F12）：抢占矩阵（按自然月聚合，超 3 个月截断并
+      // 外化提示标记）/ 待审批借用（后端已按「与我相关」过滤）/ 待办聚合 /
+      // 锚点日阶段区间互不依赖。todos/plan 失败静默降级（catch → null：
+      // todos 保留旧值由页面回退前端聚合，plan 空 Map 降级为点事件），
+      // calendars/flows 失败仍走整体 catch（核心数据缺失时返回 false 计退避）。
       const { months: monthList, truncated } = monthsOf(q.dateFrom, q.dateTo);
-      const calendarList = await Promise.all(
-        monthList.map(m => getSlotCalendar(m, cfg))
-      );
+      const [calendarList, flows, todoData, planList] = await Promise.all([
+        Promise.all(monthList.map(m => getSlotCalendar(m, cfg))),
+        listBorrowFlows("pending", cfg),
+        getPanoramaTodos(cfg).catch(() => null),
+        getPlan({ date: q.dateFrom }, cfg).catch(
+          (): PlanVersion[] | null => null
+        )
+      ]);
+      // 汇合后统一守卫：此后到最终 events 写入之间无 await，迟到响应不会覆盖新数据
       if (current !== seq) return true;
       slotTruncated.value = truncated;
       const calendarMap: Record<string, SlotCalendarResponse> = {};
@@ -160,35 +174,12 @@ export function useScheduleData(query: Ref<ScheduleQuery>): ScheduleData {
         if (c.horizon_days) horizonDays.value = c.horizon_days;
       }
       calendars.value = calendarMap;
-
-      // 3) 待审批借用（后端已按「与我相关」过滤）
-      const flows = await listBorrowFlows("pending", cfg);
-      if (current !== seq) return true;
-
-      // 4) 待办聚合（跨筛选口径；失败静默降级——保留上次值，页面自行回退前端聚合）
-      try {
-        const todoData = await getPanoramaTodos(cfg);
-        if (current === seq) todos.value = todoData;
-      } catch {
-        /* 降级：todos 维持旧值 */
-      }
-
-      // 5) 锚点日阶段区间（仅供策略事件补精确时长；失败静默降级为点事件）
-      let planMap = new Map<number, Timeline>();
-      try {
-        const planList: PlanVersion[] = await getPlan(
-          { date: q.dateFrom },
-          cfg
-        );
-        if (current === seq) {
-          for (const v of planList) {
-            for (const b of v.branches) {
-              for (const s of b.strategies) planMap.set(s.id, s.timeline);
-            }
-          }
+      if (todoData) todos.value = todoData;
+      const planMap = new Map<number, Timeline>();
+      for (const v of planList ?? []) {
+        for (const b of v.branches) {
+          for (const s of b.strategies) planMap.set(s.id, s.timeline);
         }
-      } catch {
-        planMap = new Map();
       }
 
       const horizonEnd = dayjs(today)
@@ -220,6 +211,9 @@ export function useScheduleData(query: Ref<ScheduleQuery>): ScheduleData {
       // 仅看我的
       if (q.scope === "mine") all = all.filter(e => e.mine);
 
+      // 终写守卫（R5-F1）：并发汇合后到此处虽无 await，仍显式守卫——
+      // 防止后续维护在本段插入异步调用时静默重新打开「迟到覆盖」窗口
+      if (current !== seq) return true;
       events.value = all;
       lastLoadedAt.value = new Date();
       return true;
@@ -327,7 +321,6 @@ export function useScheduleData(query: Ref<ScheduleQuery>): ScheduleData {
     days,
     events,
     byDay: computed(() => groupByDay(events.value)),
-    agenda: computed(() => buildAgenda(events.value)),
     kpi: computed(() => buildKpi(events.value, dayjs().format("YYYY-MM-DD"))),
     versionOptions,
     branchOptions,

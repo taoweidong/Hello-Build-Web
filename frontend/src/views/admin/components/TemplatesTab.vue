@@ -3,6 +3,7 @@
 import { reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { adminApi } from "@/api/admin";
+import type { TemplateDurationWarning } from "@/api/admin";
 import type { TemplateItem } from "@/api/types";
 
 defineOptions({ name: "AdminTemplatesTab" });
@@ -42,6 +43,21 @@ function openTemplateDialog(t?: TemplateItem) {
 /** 模板弹窗保存请求进行中（按钮 :loading 防双击重复提交，对齐 VersionsTab 范式，R4-F3） */
 const savingTemplate = ref(false);
 
+/**
+ * 时长变更联动告警（R5-B12）：编辑保存响应携带非空 warnings 时汇总提示
+ * 引用该模板的启用策略新出现的阶段重叠对；无 warnings 字段（未改时长）
+ * 或空数组（无重叠）不提示。文案较长，展示时长放宽到 6s。
+ */
+function notifyDurationWarnings(warnings?: TemplateDurationWarning[]) {
+  if (!warnings?.length) return;
+  ElMessage.warning({
+    message: `模板时长变更导致 ${warnings.length} 组启用策略阶段重叠：${warnings
+      .map(w => `${w.branch} ${w.first}×${w.second}`)
+      .join("；")}`,
+    duration: 6000
+  });
+}
+
 async function saveTemplate() {
   if (!templateForm.name) {
     ElMessage.warning("请输入模板名称");
@@ -52,13 +68,14 @@ async function saveTemplate() {
   savingTemplate.value = true;
   try {
     if (templateForm.id) {
-      await adminApi.updateTemplate(templateForm.id, {
+      const resp = await adminApi.updateTemplate(templateForm.id, {
         name: templateForm.name,
         smoke_minutes: templateForm.smoke_minutes,
         analysis_minutes: templateForm.analysis_minutes,
         description: templateForm.description
       });
       ElMessage.success("模板已更新");
+      notifyDurationWarnings(resp?.warnings);
     } else {
       await adminApi.createTemplate({
         name: templateForm.name,

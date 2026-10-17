@@ -76,7 +76,15 @@ function phaseEvents(
   now: Date
 ): ScheduleEvent[] {
   const color = STAGE_COLORS.build;
-  const permissions = permissionsOf(strategy, false, opts.user, opts.versionId);
+  // 锚点日过期口径与非锚点日一致（R5-F8）：此前硬传 past=false，今天为锚点日时
+  // 构建已开始/已结束的策略行仍带 canEdit/canBorrow，与点事件的 pastBuild 判定
+  // 同日不同口径（后端仍会兜底校验，属展示层失真）
+  const permissions = permissionsOf(
+    strategy,
+    isPastSlot(date, strategy.build_start_time, now),
+    opts.user,
+    opts.versionId
+  );
   return PHASES.flatMap(p => {
     const range = timeline[p.key];
     if (!range) return [];

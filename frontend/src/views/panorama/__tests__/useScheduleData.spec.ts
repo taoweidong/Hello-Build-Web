@@ -358,3 +358,72 @@ describe("useScheduleData 待办聚合（P2-R3）", () => {
     wrapper.unmount();
   });
 });
+
+describe("数据中枢四路并发与乱序守卫（R5-F1/F12）", () => {
+  it("weekly 先行，calendars/flows/todos/plan 四路并发（任一未归即整体挂起）", async () => {
+    // 挂起借用一路：并发实现下其余三路已全部发出；串行实现会停在借用之前
+    let resolveBorrow!: (v: ReturnType<typeof makeBorrowFlow>[]) => void;
+    borrowMock.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveBorrow = resolve;
+        })
+    );
+    const { wrapper, api } = mountData();
+    await flushPromises();
+    expect(weeklyMock).toHaveBeenCalledTimes(1);
+    expect(calendarMock).toHaveBeenCalledTimes(1);
+    expect(todosMock).toHaveBeenCalledTimes(1);
+    expect(planMock).toHaveBeenCalledTimes(1);
+    expect(borrowMock).toHaveBeenCalledTimes(1);
+    // 四路未汇合：events 尚未写入
+    expect(api.events.value).toHaveLength(0);
+    resolveBorrow([makeBorrowFlow()]);
+    await flushPromises();
+    // 汇合后与串行版同一归约口径（24 条，同「三源编排」首用例）
+    expect(api.events.value).toHaveLength(24);
+    wrapper.unmount();
+  });
+
+  it("迟到响应不写回：旧 refresh 被新请求取代后，晚归的并发结果被 seq 守卫拦截", async () => {
+    // 第一次 refresh 挂起在 plan 一路（旧实现正是 todos/plan 段之后终写无守卫）
+    let resolvePlan!: (v: ReturnType<typeof makePlanVersions>) => void;
+    planMock.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolvePlan = resolve;
+        })
+    );
+    const { wrapper, api, query } = mountData();
+    await flushPromises();
+    expect(api.events.value).toHaveLength(0);
+    // 查询变更触发第二次 refresh（默认 mock 立即落定，seq=2）
+    query.value = { ...query.value, scope: "mine" };
+    await flushPromises();
+    expect(api.events.value.map(e => e.id).sort()).toEqual([
+      "borrow:500",
+      "slot:2026-10-13:1"
+    ]);
+    // 第一次的 plan 晚归：不得用旧数据（scope=all 的 24 条）覆盖第二次结果
+    resolvePlan(makePlanVersions());
+    await flushPromises();
+    expect(api.events.value.map(e => e.id).sort()).toEqual([
+      "borrow:500",
+      "slot:2026-10-13:1"
+    ]);
+    wrapper.unmount();
+  });
+
+  it("plan 失败静默降级为点事件：events 照常就绪，锚点日不再展开四阶段", async () => {
+    planMock.mockRejectedValueOnce(new Error("plan unavailable"));
+    const { wrapper, api } = mountData();
+    await flushPromises();
+    // 策略 7 天 × (build+push) 点事件 = 14，时段 7、借用 1 → 22（无四阶段展开）
+    expect(api.events.value).toHaveLength(22);
+    const strategy = api.events.value.filter(e => e.source === "strategy");
+    expect(strategy.every(e => e.durationMin === 0)).toBe(true);
+    expect(api.loading.value).toBe(false);
+    expect(api.lastLoadedAt.value).toBeInstanceOf(Date);
+    wrapper.unmount();
+  });
+});

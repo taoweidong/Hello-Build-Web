@@ -16,12 +16,14 @@ vi.mock("@/api/admin", () => ({
   }
 }));
 
+import { ElMessage } from "element-plus";
 import { adminApi } from "@/api/admin";
 import UsersTab from "../UsersTab.vue";
 import TemplatesTab from "../TemplatesTab.vue";
 
 const createUserMock = vi.mocked(adminApi.createUser);
 const createTemplateMock = vi.mocked(adminApi.createTemplate);
+const updateTemplateMock = vi.mocked(adminApi.updateTemplate);
 
 let wrapper: VueWrapper;
 
@@ -120,6 +122,88 @@ describe("R4-F3 UsersTab 保存在途守卫", () => {
     // 失败不 emit refresh（弹窗保留由 userDialog 状态承载，未被关闭）
     expect(wrapper.emitted("refresh")).toBeFalsy();
     expect(wrapper.find(".el-dialog").exists()).toBe(true);
+  });
+});
+
+describe("R5-B12 TemplatesTab 时长变更联动告警", () => {
+  const tpl = {
+    id: 2,
+    name: "晚间全量冒烟",
+    smoke_minutes: 60,
+    analysis_minutes: 30,
+    description: ""
+  };
+
+  /** 打开编辑弹窗并点保存，返回 footer 保存按钮 */
+  async function openEditAndSave() {
+    // el-table 行渲染是异步的：mount 后先 flush 一拍再找行内「编辑」按钮
+    await flushPromises();
+    await wrapper
+      .findAll("button")
+      .find(b => b.text().includes("编辑"))!
+      .trigger("click");
+    await flushPromises();
+    const save = saveButton(wrapper);
+    save.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await flushPromises();
+    return save;
+  }
+
+  it("编辑保存响应带非空 warnings：ElMessage.warning 汇总重叠策略对", async () => {
+    const warningSpy = vi
+      .spyOn(ElMessage, "warning")
+      .mockImplementation(() => ({}) as never);
+    updateTemplateMock.mockResolvedValue({
+      warnings: [
+        {
+          branch: "TR5",
+          first: "27A-TR5-晚间全量",
+          second: "27A-TR5-晨间构建",
+          overlap_start: "22:00",
+          overlap_end: "23:30"
+        },
+        {
+          branch: "TR6",
+          first: "27A-TR6-甲",
+          second: "27A-TR6-乙",
+          overlap_start: "01:00",
+          overlap_end: "02:00"
+        }
+      ]
+    } as never);
+    wrapper = mount(TemplatesTab, { props: { templates: [tpl] } });
+    await openEditAndSave();
+
+    expect(updateTemplateMock).toHaveBeenCalledTimes(1);
+    expect(warningSpy).toHaveBeenCalledTimes(1);
+    const arg = warningSpy.mock.calls[0][0] as { message: string };
+    expect(arg.message).toContain("模板时长变更导致 2 组启用策略阶段重叠：");
+    expect(arg.message).toContain("TR5 27A-TR5-晚间全量×27A-TR5-晨间构建");
+    expect(arg.message).toContain("TR6 27A-TR6-甲×27A-TR6-乙");
+  });
+
+  it("响应无 warnings 字段（未改时长）：不弹告警", async () => {
+    const warningSpy = vi
+      .spyOn(ElMessage, "warning")
+      .mockImplementation(() => ({}) as never);
+    updateTemplateMock.mockResolvedValue({} as never);
+    wrapper = mount(TemplatesTab, { props: { templates: [tpl] } });
+    await openEditAndSave();
+
+    expect(updateTemplateMock).toHaveBeenCalledTimes(1);
+    expect(warningSpy).not.toHaveBeenCalled();
+    expect(wrapper.emitted("refresh")).toBeTruthy();
+  });
+
+  it("warnings 为空数组（无重叠）：不弹告警", async () => {
+    const warningSpy = vi
+      .spyOn(ElMessage, "warning")
+      .mockImplementation(() => ({}) as never);
+    updateTemplateMock.mockResolvedValue({ warnings: [] } as never);
+    wrapper = mount(TemplatesTab, { props: { templates: [tpl] } });
+    await openEditAndSave();
+
+    expect(warningSpy).not.toHaveBeenCalled();
   });
 });
 

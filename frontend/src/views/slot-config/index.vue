@@ -174,13 +174,16 @@ function onSaved(payload: { warnings: string[] }) {
 async function toggleEnabled(row: SlotTemplateItem) {
   togglingId.value = row.id;
   try {
-    await updateSlotTemplate(row.id, { enabled: !row.enabled });
-    row.enabled = !row.enabled;
-    ElMessage.success(row.enabled ? "已启用" : "已停用");
+    // R5-F16：提示以服务端返回的新状态为准（对齐 strategy 页 onToggle 范式），
+    // 不再本地改写 row.enabled——本地乐观改写一旦与服务端不一致（拦截/校验回退）
+    // 会造成开关视图与库值脱节，统一由 finally 重载列表回真实状态
+    const resp = await updateSlotTemplate(row.id, { enabled: !row.enabled });
+    ElMessage.success(resp.template.enabled ? "已启用" : "已停用");
   } catch {
-    // 拦截器已提示
+    // 拦截器已提示；load() 刷新回真实状态
   } finally {
     togglingId.value = null;
+    await load();
   }
 }
 

@@ -62,18 +62,20 @@ function stylePct(style: string | undefined, prop: string): number {
 }
 
 describe("S2 时空甘特", () => {
-  it("锚点日四阶段区间渲染为甘特条（区间来自 /plan，推送为虚线描边）", async () => {
+  it("首屏锚今天：四阶段区间渲染为甘特条（区间来自 /plan，推送为虚线描边）", async () => {
     ({ wrapper } = await mountLayout(PanoramaGantt, "/panorama/gantt"));
-    // 锚点日 = query.dateFrom = 2026-10-12
-    expect(wrapper.find(".biz-range-title").text()).toContain("2026年10月12日");
+    // 首屏锚点 = 今天 = FIXED_NOW 的 2026-10-13（R5-F6：此前吃 defaultWeekQuery
+    // 的周一 10-12，周中打开看到的是历史日，需手点「今天」才能归位）
+    expect(wrapper.find(".biz-range-title").text()).toContain("2026年10月13日");
     // R4-F6：星期文案走 utils/week 中文唯一来源（dayjs `ddd` 未加载 zh-cn 会输出 "Mon"）
-    expect(wrapper.find(".biz-range-title").text()).toContain("周一");
+    expect(wrapper.find(".biz-range-title").text()).toContain("周二");
     expect(wrapper.find(".biz-range-title").text()).not.toMatch(
       /Mon|Tue|Wed|Thu|Fri|Sat|Sun/
     );
     const lanes = wrapper.findAll(".lane");
-    // 分支泳道：main（4 阶段）+ 未关联分支（1 空闲时段），仅看有任务分支默认开
-    expect(lanes).toHaveLength(2);
+    // 10-13 为锚点日：main 展开四阶段区间；该日本人抢占落在 release 分支；
+    // 借用流锚定在「发起日」created_at=2026-10-13 → 共 3 个分支泳道
+    expect(lanes).toHaveLength(3);
     const mainLane = lanes.find(l =>
       l.find(".lane-label").text().includes("main")
     )!;
@@ -91,26 +93,32 @@ describe("S2 时空甘特", () => {
     const pushStyle = bars[3].attributes("style") ?? "";
     expect(pushStyle).toContain("border-style: dashed");
     expect(pushStyle).toContain("background: transparent");
+    // 该日本人抢占（release/早间窗口）与借用条（feature-x）同画布
+    const releaseLane = lanes.find(l =>
+      l.find(".lane-label").text().includes("release")
+    )!;
+    expect(releaseLane.findAll(".bar").map(b => b.text())).toEqual([
+      "早间窗口"
+    ]);
+    expect(wrapper.findAll(".bar-borrow")).toHaveLength(1);
   });
 
-  it("翻到后一天后只渲染当日（10-13）事件：main 四阶段 + release 抢占 + 借用 共 3 泳道", async () => {
+  it("翻到后一天（10-14）：main 仍按 /plan 展开四阶段，借用不再落在当日", async () => {
     ({ wrapper } = await mountLayout(PanoramaGantt, "/panorama/gantt"));
     await wrapper
       .findAll("button")
       .find(b => b.attributes("aria-label") === "后一天")!
       .trigger("click");
     // shiftDay 改写 query → 中枢签名 watcher 触发异步重拉，需等待数据更新
-    // （多段 await：getWeekly / getSlotCalendar / listBorrowFlows / getPlan，
-    // 单次 flush 不足以让借用流 settle，故循环多次确保整表刷新写完）
+    //（四路并发汇合后统一写入，循环多段 flush 确保整表刷新写完）
     for (let i = 0; i < 3; i++) await flushPromises();
-    expect(wrapper.find(".biz-range-title").text()).toContain("2026年10月13日");
-    // 翻日后星期文案同步（2026-10-13 为周二）
-    expect(wrapper.find(".biz-range-title").text()).toContain("周二");
-    // 10-13 成为锚点日：main 展开为四阶段区间；该日本人抢占落在 release 分支；
-    // 借用流锚定在「发起日」created_at=2026-10-13（非新构建时间 10-14，新构建时间
-    // 只出现在副标题），故当日也有一条借用 → 共 3 个分支泳道
+    expect(wrapper.find(".biz-range-title").text()).toContain("2026年10月14日");
+    // 翻日后星期文案同步（2026-10-14 为周三）
+    expect(wrapper.find(".biz-range-title").text()).toContain("周三");
+    // 10-14 成为新锚点日（days[0]）：main 展开四阶段区间；该日无本人抢占
+    //（reserved 在 10-13）、借用锚定发起日 10-13 → 泳道为 main + 未关联分支（空闲时段）
     const lanes = wrapper.findAll(".lane");
-    expect(lanes).toHaveLength(3);
+    expect(lanes).toHaveLength(2);
     const mainLane = lanes.find(l =>
       l.find(".lane-label").text().includes("main")
     )!;
@@ -120,20 +128,7 @@ describe("S2 时空甘特", () => {
       "分析 · 主链路策略",
       "推送 · 主链路策略"
     ]);
-    const releaseLane = lanes.find(l =>
-      l.find(".lane-label").text().includes("release")
-    )!;
-    expect(releaseLane.findAll(".bar").map(b => b.text())).toEqual([
-      "早间窗口"
-    ]);
-    // 借用流落在目标分支 feature-x，渲染为独立泳道与借用条（区别于抢占时段区间）
-    const borrowLane = lanes.find(l =>
-      l.find(".lane-label").text().includes("feature-x")
-    )!;
-    expect(borrowLane.findAll(".bar").map(b => b.text())).toEqual([
-      "李四 借用 主链路策略"
-    ]);
-    expect(wrapper.findAll(".bar-borrow")).toHaveLength(1);
+    expect(wrapper.findAll(".bar-borrow")).toHaveLength(0);
   });
 
   it("空数据时展示 el-empty 占位", async () => {
