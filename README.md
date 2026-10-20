@@ -1,6 +1,8 @@
 # 构建策略配置系统 · Hello-Build-Web
 
-> 面向软件构建团队的**每日构建策略**可视化配置与调度全景系统：管理版本 / 分支的「构建 → 冒烟 → 人工分析 → 推送」全流程时间编排，提供调度全景、时段借用审批、验证报告与执行/变更日志留痕。
+> 面向软件构建团队的**每日构建策略**可视化配置与调度全景系统：管理版本 / 分支的「构建 → 冒烟 → 人工分析 → 推送」全流程时间编排。
+>
+> **2026-10-20 页面精简**：全站业务页面收敛为 2 个典型页面——**调度全景**（复杂展示型）与**策略配置**（标准 CRUD 写路径型），其余页面（策略周报 / 版本策略全景 / 借用电子流独立页 / 验证报告 / 分支配置 / 时段配置 / 日志中心 / 系统管理 / 示例菜单）及其前后端代码已整体删除；登录 / 403 / 404 / 500 / 欢迎页等基座页不计入业务页面。
 
 前后端分离 · 简体中文界面 · 当前为可运行的演示实现（外部 Git / 调度系统以模拟数据接入）。
 
@@ -10,15 +12,10 @@
 
 | 模块 | 说明 |
 |---|---|
-| **策略周报** | 与版本策略全景同源数据的看板重塑版：KPI 指标、时间点 × 周历网格、24h 时段趋势、分支负载与热点标签可视化 |
-| **版本策略全景(New)** | 「时间点 × 周一~周日」调度矩阵；对外只读查看、对内维护修改；已过期的历史任务自动置灰、仅可查看详情 |
-| **借用审批** | 非本版本人员借用某时段发起电子流，由来源版本负责人审批，通过即在目标分支按新时间建策略；支持一键复制转发与借用人自行撤销 |
-| **调度全景** | 态势大屏 / 时空甘特 / 月历矩阵 / 分组看板 / 时间轴流水 5 个独立页面共用一套接口与数据中枢；支持批量释放、抢占改期与跨源冲突提示 |
-| **策略配置** | 版本负责人维护本版本分支的构建策略（时间 / 模板 / 推送模式），实时时间线预览与时间冲突拦截 |
-| **时段抢占** | 冒烟测试时段的预约、释放、改期与月历视图 |
-| **示例菜单** | 5 个占位演示页（概览卡片 / 数据表格 / 表单录入 / 时间轴 / 空态引导），不接后端，可作新页面骨架样板 |
-| **验证报告** | 冒烟验证结论记录与发布留痕 |
-| **分支配置 / 日志中心 / 系统管理** | 分支与工程关联配置、执行与变更日志、用户与运行参数管理 |
+| **调度全景** | 态势大屏 / 时空甘特 / 月历矩阵 / 分组看板 / 时间轴流水 5 个布局共用一套数据中枢与动作总线；待我审批、我的抢占、我发起的借用一屏总览，支持批量释放、抢占改期与跨源冲突提示 |
+| **策略配置** | 版本负责人维护本版本分支的构建策略（时间 / 模板 / 推送模式），实时时间线预览与时间冲突拦截；策略借用经电子流由来源版本负责人审批 |
+| **时段抢占** | 冒烟测试时段的预约、释放、改期与月历视图（入口收敛在全景页与「我的抢占」抽屉） |
+| **借用审批** | 非本版本人员借用某时段发起电子流，由来源版本负责人审批，通过即在目标分支按新时间建策略；支持借用人自行撤销 |
 
 角色体系：`admin` / `pm` / `builder` / `tester` / `integrator`，菜单可达性与接口写权限均按角色过滤。
 
@@ -27,9 +24,9 @@
 | 层 | 选型 |
 |---|---|
 | 前端 | Vue 3 · Vite · TypeScript · Element Plus（基于 pure-admin-thin v6.2.0）· Pinia · Vue Router |
-| 后端 | Django 5 · Django REST Framework · SimpleJWT · django-filter · django-cors-headers |
+| 后端 | Django 5 · Django REST Framework · SimpleJWT · django-cors-headers |
 | 数据库 | SQLite（开发 / 演示），可平滑迁移 PostgreSQL |
-| 测试 | 后端 Django TestCase（≥516 例）· 前端 Vitest（≥354 例） |
+| 测试 | 后端 Django TestCase（294 例）· 前端 Vitest（257 例） |
 
 统一响应契约 `{ code, message, data }`；时区 `Asia/Shanghai`；策略写路径经服务层统一校验（时间冲突 / 资源互斥）。
 
@@ -72,7 +69,7 @@ npm run dev                               # http://localhost:8848
 Hello-Build-Web/
 ├── backend/                     # Django 后端（唯一业务 app：build_protection_service）
 │   ├── build_protection_service/
-│   │   ├── models/              # 按领域拆分（版本/分支/策略/报告/时段/借用…）
+│   │   ├── models/              # 按领域拆分（others.py 用户/版本/分支/策略/借用/抢占/日志；slot_booking.py 时段抢占）
 │   │   ├── views/  services/    # 接口层 / 业务校验层
 │   │   └── management/commands/ # seed 等管理命令
 │   └── scripts/                 # prestart.ps1 · test.ps1
@@ -91,13 +88,11 @@ Hello-Build-Web/
 | 原始需求与背景 | [原始需求分析](./docs/原始需求分析-2026-10-11.md) · [业务原始背景](./业务原始背景.md) |
 | 构建策略 Web 初版 | [设计](./docs/superpowers/specs/2026-08-08-build-strategy-web-design.md) |
 | Django 迁移与周视图 | [设计](./docs/superpowers/specs/2026-08-10-django-migration-and-weekly-view-design.md) |
-| 版本策略全景(New) | [设计](./docs/superpowers/specs/2026-10-11-weekly-new-design.md) |
-| 策略周报看板 | [设计](./docs/superpowers/specs/2026-10-12-weekly-report-page-design.md) |
+| 调度全景 | [设计](./docs/superpowers/specs/2026-10-12-scheduling-panorama-design.md) · [PRD](./docs/superpowers/specs/2026-10-12-scheduling-panorama-prd.md) |
 | 借用电子流 | [设计](./docs/superpowers/specs/2026-10-11-borrow-flow-design.md) |
 | 时段抢占 | [设计](./docs/superpowers/specs/2026-10-10-slot-booking-design.md) |
-| 验证报告 | [设计](./docs/superpowers/specs/2026-08-15-verification-report-design.md) |
-| 分支配置管理 | [设计](./docs/superpowers/specs/2026-08-23-branch-config-management-design.md) |
-| 策略并发防护 / 日志分页 / 界面一致性 | [并发](./docs/superpowers/specs/2026-10-11-strategy-concurrency-guard-design.md) · [日志](./docs/superpowers/specs/2026-10-11-log-pagination-design.md) · [界面](./docs/superpowers/specs/2026-10-11-ui-visual-consistency-optimization.md) |
+| 策略并发防护 / 界面一致性 | [并发](./docs/superpowers/specs/2026-10-11-strategy-concurrency-guard-design.md) · [界面](./docs/superpowers/specs/2026-10-11-ui-visual-consistency-optimization.md) |
+| 代码质量优化（第一~五轮） | [R1](./docs/superpowers/specs/2026-10-11-code-quality-optimization-design.md) · [R2](./docs/superpowers/specs/2026-10-12-code-quality-optimization-round2-design.md) · [R3](./docs/superpowers/specs/2026-10-13-code-quality-optimization-round3-design.md) · [R4](./docs/superpowers/specs/2026-10-15-code-quality-optimization-round4-design.md) · [R5](./docs/superpowers/specs/2026-10-18-code-quality-optimization-round5-design.md) |
 
 开发约定、目录规范与易踩坑点见仓库根目录 [`AGENTS.md`](./AGENTS.md)。
 

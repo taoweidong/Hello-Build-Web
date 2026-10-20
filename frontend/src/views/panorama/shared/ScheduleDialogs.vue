@@ -96,11 +96,11 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import dayjs from "dayjs";
-import StrategyEditDialog from "@/views/weekly-new/components/StrategyEditDialog.vue";
-import StrategyBorrowDialog from "@/views/weekly-new/components/StrategyBorrowDialog.vue";
-import BookingDialog from "@/views/slot-booking/components/BookingDialog.vue";
-import SlotDetailDialog from "@/views/slot-booking/components/SlotDetailDialog.vue";
-import MyBookingsDrawer from "@/views/slot-booking/components/MyBookingsDrawer.vue";
+import StrategyEditDialog from "./StrategyEditDialog.vue";
+import StrategyBorrowDialog from "./StrategyBorrowDialog.vue";
+import BookingDialog from "./BookingDialog.vue";
+import SlotDetailDialog from "./SlotDetailDialog.vue";
+import MyBookingsDrawer from "./MyBookingsDrawer.vue";
 import BorrowApprovalDrawer from "./BorrowApprovalDrawer.vue";
 import { usePanorama } from "../context";
 

@@ -1,8 +1,10 @@
 """第三轮全库质量优化（2026-10-13）回归测试。
 
-对应 docs/code-quality-assessment-2026-10-13.md 与
-docs/superpowers/specs/2026-10-13-code-quality-optimization-round3-design.md：
 每个修复项（R3-B1 ~ R3-B18）一组锁定测试，防止同类问题复发。
+
+2026-10-20 页面精简：验证报告 / 分支配置 / 执行轮次 / 日志中心 / 系统管理
+（用户·版本·运行期配置）随页面下线，对应测试类与用例已删；停用 token 与
+异常信封两例改用仍存活的抢占端点锁定同一契约。
 
 口径提示：
 - 时间断言基准：已知 UTC 时刻 2026-10-13T02:00:00Z → 上海墙钟 2026-10-13T10:00:00；
@@ -29,11 +31,6 @@ from .models import (
     AdminOpLog,
     BorrowFlow,
     Branch,
-    BranchProject,
-    ExecutionRound,
-    Instance,
-    Project,
-    ReportRevisionLog,
     RevokedToken,
     SecurityLog,
     SlotBooking,
@@ -43,9 +40,7 @@ from .models import (
     StrategyTemplate,
     Version,
 )
-from .services.branch_config import start_instance as svc_start
 from .services.mutex import check_build_mutex
-from .services.report_service import ReportService
 from .services.slot_booking import (
     build_slot_calendar,
     release_booking,
@@ -130,7 +125,7 @@ class DisabledUserTokenTests(Round3Fixture):
         self.builder.is_active = False
         self.builder.save()
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
-        resp = self.client.get("/api/reports")
+        resp = self.client.get("/api/slot-bookings/mine")
         self.assertEqual(resp.status_code, 401)
         self.assertEqual(resp.json()["code"], 40100)
 
@@ -250,61 +245,6 @@ class NonStringBodyGuardTests(Round3Fixture):
         self.assertEqual(resp.status_code, 422)
         self.assertEqual(resp.json()["code"], 42201)
 
-    def test_branch_create_non_string_fields(self):
-        self._auth("admin1")
-        resp = self.client.post("/api/branches", {
-            "version_id": self.v27a.id, "name": 123,
-        }, format="json")
-        self.assertEqual(resp.status_code, 422)
-        self.assertEqual(resp.json()["code"], 42201)
-        # repository_url/description 非字符串 → 归一 ""，创建成功
-        resp = self.client.post("/api/branches", {
-            "version_id": self.v27a.id, "name": "TR9",
-            "repository_url": ["x"], "description": {"a": 1},
-        }, format="json")
-        self.assertEqual(resp.status_code, 200, msg=resp.content)
-        self.assertEqual(resp.json()["data"]["repository_url"], "")
-        self.assertEqual(resp.json()["data"]["description"], "")
-
-    def test_branch_create_non_dict_body_422(self):
-        self._auth("admin1")
-        resp = self.client.post("/api/branches", data="[1,2]", content_type="application/json")
-        self.assertEqual(resp.status_code, 422)
-        self.assertEqual(resp.json()["code"], 42201)
-
-    def test_projects_create_non_string_fields(self):
-        self._auth("builder1")
-        resp = self.client.post("/api/projects", {"name": 123}, format="json")
-        self.assertEqual(resp.status_code, 422)
-        self.assertEqual(resp.json()["code"], 42201)
-        resp = self.client.post("/api/projects", {
-            "name": "工程X", "repository_url": 123, "description": ["d"],
-        }, format="json")
-        self.assertEqual(resp.status_code, 200, msg=resp.content)
-        self.assertEqual(resp.json()["data"]["repository_url"], "")
-        self.assertEqual(resp.json()["data"]["description"], "")
-
-    def test_branch_projects_action_non_dict_body_422(self):
-        self._auth("admin1")
-        resp = self.client.post(
-            f"/api/branches/{self.b27a.id}/projects", data="[1]", content_type="application/json"
-        )
-        self.assertEqual(resp.status_code, 422)
-        self.assertEqual(resp.json()["code"], 42201)
-
-    def test_report_publish_non_string_screenshot_422(self):
-        report = ReportService.create(self.tester.username, {
-            "title": "报告A", "conclusion": "pass", "summary": "内容",
-        })
-        self._auth("tester1")
-        for bad in ({"a": 1}, ["data"], 12345):
-            resp = self.client.post(
-                f"/api/reports/{report.id}/publish", {"screenshot": bad}, format="json"
-            )
-            self.assertEqual(resp.status_code, 422, msg=repr(bad))
-            self.assertEqual(resp.json()["code"], 42201, msg=repr(bad))
-
-
 # ---------- R3-B3 时间序列化统一 Asia/Shanghai 墙钟 ----------
 
 class ShanghaiTimeSerializationTests(Round3Fixture):
@@ -315,16 +255,6 @@ class ShanghaiTimeSerializationTests(Round3Fixture):
         self.assertIsNone(fmt_dt(None))
         # naive 值防御性按墙钟直出（不抛 ValueError）
         self.assertEqual(fmt_dt(datetime(2026, 10, 13, 10, 0, 0)), "2026-10-13T10:00:00")
-
-    def test_executions_returns_shanghai_wall_clock(self):
-        s = self._make_strategy()
-        r = ExecutionRound.objects.create(
-            strategy=s, exec_date=date(2026, 10, 13), build_start_at=KNOWN_UTC,
-        )
-        self._auth("admin1")
-        resp = self.client.get("/api/executions")
-        row = next(item for item in resp.json()["data"] if item["id"] == r.id)
-        self.assertEqual(row["build_start_at"], KNOWN_SHANGHAI)
 
     def test_borrow_flow_returns_shanghai_wall_clock(self):
         s = self._make_strategy()
@@ -357,41 +287,6 @@ class ShanghaiTimeSerializationTests(Round3Fixture):
         row = resp.json()["data"]["items"][0]
         self.assertEqual(row["created_at"], KNOWN_SHANGHAI)
         self.assertEqual(row["released_at"], KNOWN_SHANGHAI)
-
-    def test_admin_logs_return_shanghai_wall_clock(self):
-        log = SecurityLog.objects.create(username="u1", action="login_success", detail="d")
-        SecurityLog.objects.filter(id=log.id).update(created_at=KNOWN_UTC)
-        op = AdminOpLog.objects.create(operator=self.admin, action="update_config", detail="d")
-        AdminOpLog.objects.filter(id=op.id).update(created_at=KNOWN_UTC)
-        self._auth("admin1")
-        resp = self.client.get("/api/admin/logs/security")
-        row = next(item for item in resp.json()["data"] if item["id"] == log.id)
-        self.assertEqual(row["created_at"], KNOWN_SHANGHAI)
-        resp = self.client.get("/api/admin/logs/operations")
-        row = next(item for item in resp.json()["data"] if item["id"] == op.id)
-        self.assertEqual(row["created_at"], KNOWN_SHANGHAI)
-
-    def test_branch_instance_returns_shanghai_wall_clock(self):
-        project = Project.objects.create(name="工程X")
-        bp = BranchProject.objects.create(branch=self.b27a, project=project)
-        inst = svc_start(bp, "admin1")
-        Instance.objects.filter(id=inst.id).update(
-            started_at=KNOWN_UTC, last_heartbeat_at=KNOWN_UTC,
-        )
-        self._auth("admin1")
-        resp = self.client.get(f"/api/branches/{self.b27a.id}/instances")
-        row = resp.json()["data"][0]
-        self.assertEqual(row["instance"]["started_at"], KNOWN_SHANGHAI)
-        # 心跳字段会被读端点的惰性推进（advance：STARTING 超阈值 → RUNNING 并刷新
-        # 心跳）合法改写为当前时刻——断言固定值属时间偶发（仅在运行时刻与
-        # KNOWN_SHANGHAI 同分那分钟能过，2026-10-13 下午首跑即失败）。
-        # started_at 不在 update_fields 内、仍是定值，由上一行断言口径转换；
-        # 这里断言 last_heartbeat_at 的格式口径（上海墙钟、无 offset）。
-        self.assertRegex(
-            row["instance"]["last_heartbeat_at"],
-            r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$",
-        )
-
 
 # ---------- R3-B4 toggle 条件 UPDATE + 启用方向跑校验 ----------
 
@@ -510,74 +405,6 @@ class PmStrategyAuditTests(Round3Fixture):
             action="delete_strategy", target_type="strategy",
             target_id=str(sid), operator=self.pm27a,
         ).exists())
-
-
-# ---------- R3-B6 update_user 角色/停用守卫绑定版本 ----------
-
-class UpdateUserVersionGuardTests(Round3Fixture):
-    """B-P2-3：绑定版本的 PM 不可被降级/停用（防"无主版本"），移交后放行。"""
-
-    def test_demote_bound_pm_40902(self):
-        self._auth("admin1")
-        resp = self.client.patch(
-            f"/api/admin/users/{self.pm27a.id}", {"role": "builder"}, format="json")
-        self.assertEqual(resp.status_code, 409)
-        self.assertEqual(resp.json()["code"], 40902)
-        self.pm27a.refresh_from_db()
-        self.assertEqual(self.pm27a.role, "pm")
-
-    def test_disable_bound_pm_40902(self):
-        self._auth("admin1")
-        resp = self.client.patch(
-            f"/api/admin/users/{self.pm27a.id}", {"is_active": False}, format="json")
-        self.assertEqual(resp.status_code, 409)
-        self.assertEqual(resp.json()["code"], 40902)
-        self.pm27a.refresh_from_db()
-        self.assertTrue(self.pm27a.is_active)
-
-    def test_demote_ok_after_version_transferred(self):
-        pm3 = User.objects.create_user(username="pm3", password="123456", role="pm")
-        self._auth("admin1")
-        resp = self.client.put(
-            f"/api/admin/versions/{self.v27a.id}", {"pm_user_id": pm3.id}, format="json")
-        self.assertEqual(resp.status_code, 200, msg=resp.content)
-        resp = self.client.patch(
-            f"/api/admin/users/{self.pm27a.id}", {"role": "builder"}, format="json")
-        self.assertEqual(resp.status_code, 200, msg=resp.content)
-
-    def test_unbound_pm_demote_ok(self):
-        pm4 = User.objects.create_user(username="pm4", password="123456", role="pm")
-        self._auth("admin1")
-        resp = self.client.patch(
-            f"/api/admin/users/{pm4.id}", {"role": "tester"}, format="json")
-        self.assertEqual(resp.status_code, 200, msg=resp.content)
-
-
-# ---------- R3-B7 config PUT 值域校验 ----------
-
-class ConfigValueDomainTests(Round3Fixture):
-    """B-P2-4：build_minutes 等仅接受非负整数；true/45.7/-1/"abc" → 42201。"""
-
-    def test_invalid_values_422(self):
-        self._auth("admin1")
-        # 先记录当前值（settings 默认或 .env 覆盖），非法 PUT 后必须保持不变
-        before = self.client.get("/api/admin/config").json()["data"]["build_minutes"]
-        for bad in (True, 45.7, "45.7", -1, "abc", ["1"]):
-            resp = self.client.put("/api/admin/config", {"build_minutes": bad}, format="json")
-            self.assertEqual(resp.status_code, 422, msg=repr(bad))
-            self.assertEqual(resp.json()["code"], 42201, msg=repr(bad))
-        # 非法值不得落库/入缓存
-        resp = self.client.get("/api/admin/config")
-        self.assertEqual(resp.json()["data"]["build_minutes"], before)
-
-    def test_valid_values_ok(self):
-        self._auth("admin1")
-        resp = self.client.put("/api/admin/config", {"build_minutes": 0}, format="json")
-        self.assertEqual(resp.status_code, 200, msg=resp.content)
-        self.assertEqual(resp.json()["data"]["build_minutes"], 0)
-        resp = self.client.put("/api/admin/config", {"push_minutes": "45"}, format="json")
-        self.assertEqual(resp.status_code, 200, msg=resp.content)
-        self.assertEqual(resp.json()["data"]["push_minutes"], 45)
 
 
 # ---------- R3-B9 release_booking 条件 UPDATE ----------
@@ -700,33 +527,6 @@ class CleanupAndPaginationTests(Round3Fixture):
         self.assertEqual(data["page"], 1)
         self.assertEqual(data["page_size"], 100)  # 上限 100
 
-    def test_reports_pagination_full_params(self):
-        for i in range(5):
-            ReportService.create(self.tester.username, {
-                "title": f"报告{i}", "conclusion": "pass", "summary": "内容",
-            })
-        self._auth("tester1")
-        resp = self.client.get("/api/reports?page=2&page_size=2")
-        data = resp.json()["data"]
-        self.assertEqual(data["total"], 5)
-        self.assertEqual(data["page"], 2)
-        self.assertEqual(data["page_size"], 2)
-        self.assertEqual(len(data["items"]), 2)
-        # 非法 page 回退第 1 页
-        resp = self.client.get("/api/reports?page=abc&page_size=2")
-        data = resp.json()["data"]
-        self.assertEqual(data["page"], 1)
-        self.assertEqual(len(data["items"]), 2)
-        # page_size 上限 100
-        resp = self.client.get("/api/reports?page=1&page_size=1000")
-        self.assertEqual(resp.json()["data"]["page_size"], 100)
-        # 不带 page：全量数组（向后兼容）
-        resp = self.client.get("/api/reports")
-        data = resp.json()["data"]
-        self.assertIsInstance(data, list)
-        self.assertEqual(len(data), 5)
-
-
 # ---------- R3-B12 security_log detail 截断 ----------
 
 class SecurityLogTruncateTests(ConfigAwareTestCase):
@@ -738,62 +538,6 @@ class SecurityLogTruncateTests(ConfigAwareTestCase):
         log = SecurityLog.objects.latest("id")
         self.assertLessEqual(len(log.detail), 255)
         self.assertTrue(log.detail.startswith("详"))
-
-
-# ---------- R3-B13/B18 密码策略与空串口径 ----------
-
-class PasswordPolicyTests(Round3Fixture):
-    """B-P2-7（最小长度）+ B-P3-6（空串不再静默忽略）。"""
-
-    def test_create_user_short_password_422(self):
-        self._auth("admin1")
-        for bad in ("1", "12345"):
-            resp = self.client.post("/api/admin/users", {
-                "username": f"u_{len(bad)}", "role": "builder", "password": bad,
-            }, format="json")
-            self.assertEqual(resp.status_code, 422, msg=repr(bad))
-            self.assertEqual(resp.json()["code"], 42201, msg=repr(bad))
-        # 恰 6 位合规（seed 的 123456 同口径）
-        resp = self.client.post("/api/admin/users", {
-            "username": "u6", "role": "builder", "password": "123456",
-        }, format="json")
-        self.assertEqual(resp.status_code, 200, msg=resp.content)
-
-    def test_update_user_short_password_422(self):
-        self._auth("admin1")
-        resp = self.client.patch(
-            f"/api/admin/users/{self.builder.id}", {"password": "12345"}, format="json")
-        self.assertEqual(resp.status_code, 422)
-        self.assertEqual(resp.json()["code"], 42201)
-        self.builder.refresh_from_db()
-        self.assertTrue(self.builder.check_password("123456"))
-
-    def test_update_user_empty_password_422(self):
-        self._auth("admin1")
-        resp = self.client.patch(
-            f"/api/admin/users/{self.builder.id}", {"password": ""}, format="json")
-        self.assertEqual(resp.status_code, 422)
-        self.assertEqual(resp.json()["code"], 42201)
-
-    def test_update_user_missing_or_null_password_keeps_old(self):
-        self._auth("admin1")
-        resp = self.client.patch(
-            f"/api/admin/users/{self.builder.id}", {"display_name": "新显示名"}, format="json")
-        self.assertEqual(resp.status_code, 200)
-        resp = self.client.patch(
-            f"/api/admin/users/{self.builder.id}", {"password": None}, format="json")
-        self.assertEqual(resp.status_code, 200)
-        self.builder.refresh_from_db()
-        self.assertTrue(self.builder.check_password("123456"))
-        self.assertEqual(self.builder.display_name, "新显示名")
-
-    def test_update_user_valid_password_ok(self):
-        self._auth("admin1")
-        resp = self.client.patch(
-            f"/api/admin/users/{self.builder.id}", {"password": "newpass1"}, format="json")
-        self.assertEqual(resp.status_code, 200)
-        self.builder.refresh_from_db()
-        self.assertTrue(self.builder.check_password("newpass1"))
 
 
 # ---------- R3-B15 借用审批保留推送配置 ----------
@@ -846,13 +590,8 @@ class ReadEndpointMethodGuardTests(Round3Fixture):
         self._auth("builder1")
         self._assert_guard("PUT", "/api/plan")
         self._assert_guard("POST", "/api/weekly")
-        self._assert_guard("DELETE", "/api/executions")
-        self._assert_guard("PUT", "/api/executions/rounds/1")
-        self._assert_guard("PUT", "/api/logs/execution")
-        self._assert_guard("POST", "/api/logs/changes")
         self._assert_guard("POST", "/api/auth/me")
         self._assert_guard("PUT", "/api/slot-calendar")
-        self._assert_guard("DELETE", "/api/users/all")
         self._assert_guard("DELETE", "/api/borrow-flows")
         self._assert_guard("PUT", "/api/borrow-flows")
 
@@ -871,9 +610,8 @@ class ReadEndpointMethodGuardTests(Round3Fixture):
 
     def test_get_still_works(self):
         self._auth("builder1")
-        for path in ("/api/plan", "/api/weekly", "/api/executions",
-                     "/api/logs/execution", "/api/logs/changes", "/api/auth/me",
-                     "/api/slot-calendar", "/api/users/all", "/api/borrow-flows"):
+        for path in ("/api/plan", "/api/weekly", "/api/auth/me",
+                     "/api/slot-calendar", "/api/borrow-flows"):
             resp = self.client.get(path)
             self.assertEqual(resp.status_code, 200, msg=path)
 
@@ -901,43 +639,15 @@ class ExceptionHandlerMappingTests(ConfigAwareTestCase):
         self.assertEqual(json.loads(resp.content)["code"], 50000)
 
     def test_viewset_delete_end_to_end_42201(self):
-        """端到端：DELETE /api/reports/<pk>（ViewSet 未开放 delete）→ 42201 信封。"""
+        """端到端：DELETE /api/slot-bookings/<pk>（ViewSet 未开放 delete）→ 42201 信封。"""
         client = APIClient()
         User.objects.create_user(username="tester1", password="123456", role="tester")
         resp = client.post(
             "/api/auth/login", {"username": "tester1", "password": "123456"}, format="json")
         client.credentials(HTTP_AUTHORIZATION=f"Bearer {resp.json()['data']['token']}")
-        resp = client.delete("/api/reports/1")
+        resp = client.delete("/api/slot-bookings/1")
         self.assertEqual(resp.status_code, 422)
         self.assertEqual(resp.json()["code"], 42201)
-
-
-class ExecutionsListPmIsolationTests(Round3Fixture):
-    """executions 列表 PM 隔离：他版轮次不可见（round2 只锁了详情隔离）。"""
-
-    def setUp(self):
-        super().setUp()
-        s_a = self._make_strategy(branch=self.b27a, name="A策略", build="22:00")
-        s_b = self._make_strategy(branch=self.b27b, name="B策略", build="22:00")
-        self.round_a = ExecutionRound.objects.create(
-            strategy=s_a, exec_date=date(2026, 10, 12))
-        self.round_b = ExecutionRound.objects.create(
-            strategy=s_b, exec_date=date(2026, 10, 12))
-
-    def _ids(self, username):
-        self._auth(username)
-        resp = self.client.get("/api/executions")
-        self.assertEqual(resp.status_code, 200)
-        return {item["id"] for item in resp.json()["data"]}
-
-    def test_pm_sees_only_own_version_rounds(self):
-        self.assertEqual(self._ids("pm27a"), {self.round_a.id})
-        self.assertEqual(self._ids("pm27b"), {self.round_b.id})
-
-    def test_admin_and_builder_see_all(self):
-        expected = {self.round_a.id, self.round_b.id}
-        self.assertEqual(self._ids("admin1"), expected)
-        self.assertEqual(self._ids("builder1"), expected)
 
 
 class SlotCalendarDecemberTests(Round3Fixture):
@@ -984,46 +694,6 @@ class TimelineSyncPushWindowTests(ConfigAwareTestCase):
                             push_start_time="20:00")
         self.assertEqual(tl["push"]["start"], "2026-10-13T20:00:00")
         self.assertEqual(tl["push"]["end"], "2026-10-13T20:20:00")
-
-
-class ConclusionElseBranchTests(Round3Fixture):
-    """conclusion fail/sync → push_status="" else 分支；operator=None → ""。"""
-
-    def _round(self, push_mode="normal", build="22:00"):
-        s = self._make_strategy(name=f"S-{push_mode}", build=build, push_mode=push_mode)
-        return ExecutionRound.objects.create(
-            strategy=s, exec_date=date(2026, 10, 12), conclusion=None)
-
-    def test_fail_conclusion_clears_push(self):
-        r = self._round("normal")
-        self._auth("tester1")
-        resp = self.client.post(
-            f"/api/executions/rounds/{r.id}/conclusion",
-            {"conclusion": "fail", "note": "冒烟不过"}, format="json")
-        self.assertEqual(resp.status_code, 200, msg=resp.content)
-        self.assertEqual(resp.json()["data"]["push_status"], "")
-        r.refresh_from_db()
-        self.assertIsNone(r.push_start_at)
-        self.assertIsNone(r.push_end_at)
-
-    def test_pass_on_sync_strategy_clears_push(self):
-        r = self._round("sync", build="21:00")
-        self._auth("tester1")
-        resp = self.client.post(
-            f"/api/executions/rounds/{r.id}/conclusion",
-            {"conclusion": "pass"}, format="json")
-        self.assertEqual(resp.status_code, 200, msg=resp.content)
-        # sync 模式的推送窗口在构建前，结论阶段不再补推送 → else 分支
-        self.assertEqual(resp.json()["data"]["push_status"], "")
-
-    def test_change_log_operator_none_serialized_empty(self):
-        s = self._make_strategy()
-        StrategyChangeLog.objects.create(
-            strategy=s, operator=None, change_desc="系统自动记录")
-        self._auth("builder1")
-        resp = self.client.get("/api/logs/changes")
-        row = next(item for item in resp.json()["data"] if item["change_desc"] == "系统自动记录")
-        self.assertEqual(row["operator"], "")
 
 
 class BorrowFlowEdgeTests(Round3Fixture):
@@ -1093,63 +763,6 @@ class TemplateAppliesBoundaryTests(ConfigAwareTestCase):
         self.assertFalse(template_applies_on(self.tpl, date(2026, 10, 21)))
 
 
-class AdminSlotListDateGuardTests(Round3Fixture):
-    """admin slot 记录列表 date_from/date_to 非法 → 42201。"""
-
-    def test_invalid_dates_422(self):
-        self._auth("admin1")
-        resp = self.client.get("/api/slot-bookings?date_from=abc")
-        self.assertEqual(resp.status_code, 422)
-        self.assertEqual(resp.json()["code"], 42201)
-        resp = self.client.get("/api/slot-bookings?date_to=xyz")
-        self.assertEqual(resp.status_code, 422)
-        self.assertEqual(resp.json()["code"], 42201)
-
-    def test_valid_dates_ok(self):
-        self._auth("admin1")
-        resp = self.client.get("/api/slot-bookings?date_from=2026-10-01&date_to=2026-10-31")
-        self.assertEqual(resp.status_code, 200)
-
-
-class AdminBranchAndVersionRaceTests(Round3Fixture):
-    """add_branch 重名 40902；update_version 并发重命名 IntegrityError 兜底。"""
-
-    def test_add_branch_duplicate_name_40902(self):
-        self._auth("admin1")
-        resp = self.client.post(
-            f"/api/admin/versions/{self.v27a.id}/branches", {"name": "master"}, format="json")
-        self.assertEqual(resp.status_code, 409)
-        self.assertEqual(resp.json()["code"], 40902)
-
-    def test_update_version_concurrent_rename_integrity_fallback(self):
-        """模拟并发窗口：重名预检通过后、save 前另一事务抢先占用名字。"""
-        self._auth("admin1")
-        with mock.patch.object(
-            Version, "save",
-            side_effect=IntegrityError(
-                "UNIQUE constraint failed: build_protection_service_version.name"),
-        ):
-            resp = self.client.put(
-                f"/api/admin/versions/{self.v27a.id}", {"name": "27C"}, format="json")
-        self.assertEqual(resp.status_code, 409)
-        self.assertEqual(resp.json()["code"], 40902)
-
-
-class ReportFilterNumericKeywordTests(Round3Fixture):
-    """ReportFilter 纯数字 keyword → 同时按 pk 精确匹配。"""
-
-    def test_numeric_keyword_matches_pk(self):
-        r1 = ReportService.create(self.tester.username, {
-            "title": "Alpha报告", "conclusion": "pass", "summary": "s"})
-        r2 = ReportService.create(self.tester.username, {
-            "title": "Beta报告", "conclusion": "pass", "summary": "s"})
-        self._auth("tester1")
-        resp = self.client.get(f"/api/reports?keyword={r2.id}")
-        ids = [item["id"] for item in resp.json()["data"]]
-        self.assertEqual(ids, [r2.id])
-        self.assertNotIn(r1.id, ids)
-
-
 class StrategyServiceIntegrityTests(Round3Fixture):
     """update_strategy save 撞唯一约束 → 40902；非目标约束 IntegrityError 原样抛。"""
 
@@ -1187,28 +800,6 @@ class MutexInvalidTimeTests(Round3Fixture):
             hits = check_build_mutex(self.v27a.id, "22:00", 30)
         self.assertEqual(hits, [])
         self.assertTrue(any("构建时间非法" in line for line in cm.output))
-
-
-class ReportServiceNoChangeTests(Round3Fixture):
-    """report_service.update：字段无变化时不落库、不留痕。"""
-
-    _DATA = {
-        "title": "标题A", "version_name": "27A", "strategy_name": "",
-        "conclusion": "pass", "environment": "", "summary": "内容",
-        "risks": "", "remark": "",
-    }
-
-    def test_update_without_changes_leaves_no_log(self):
-        report = ReportService.create(self.tester.username, dict(self._DATA))
-        self.assertEqual(
-            ReportRevisionLog.objects.filter(report_id=report.id).count(), 1)  # create 留痕
-        updated_at_before = report.updated_at
-        ReportService.update(self.tester.username, report, dict(self._DATA))
-        # 无变化：不新增留痕、不 save（updated_at 不变）
-        self.assertEqual(
-            ReportRevisionLog.objects.filter(report_id=report.id).count(), 1)
-        report.refresh_from_db()
-        self.assertEqual(report.updated_at, updated_at_before)
 
 
 class StrategiesUnsupportedMethodTests(Round3Fixture):

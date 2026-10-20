@@ -1,4 +1,8 @@
-"""时段抢占模块测试：模型约束 / 服务层 / API 三层。"""
+"""时段抢占模块测试：模型约束 / 服务层 / API 三层。
+
+2026-10-20 页面精简：时段模板 CRUD 与 admin 全量记录列表随时段配置页下线，
+模板改经 seed / django-admin 写入，相应用例已删；未授权契约改经 mine 端点锁定。
+"""
 from datetime import time, timedelta
 
 from django.contrib.auth import get_user_model
@@ -351,25 +355,6 @@ class SlotBookingServiceTests(SlotBookingFixture):
         _, err = release_booking(booking, self.pm, "")
         self.assertEqual(err["code"], 42201)
 
-    def test_detect_template_overlap(self):
-        from .services.slot_booking import detect_template_overlap
-
-        overlap = SlotTemplate.objects.create(
-            name="上午二段", start_time=time(10, 0), end_time=time(11, 0),
-            weekdays="1,2,3,4,5", sort_order=3,
-        )
-        warnings = detect_template_overlap(self.morning)
-        self.assertTrue(any("上午二段" in w for w in warnings))
-        self.assertFalse(any("夜间回归" in w for w in warnings))  # 时间不重叠
-        # 星期不相交：仅周末模板 vs 工作日上午
-        weekend_only = SlotTemplate.objects.create(
-            name="周末窗口", start_time=time(9, 0), end_time=time(10, 0),
-            weekdays="6,7", sort_order=4,
-        )
-        self.assertFalse(any("周末窗口" in w for w in detect_template_overlap(self.morning)))
-        self.assertFalse(any("上午窗口" in w for w in detect_template_overlap(weekend_only)))
-
-
 class SlotBookingApiTests(SlotBookingFixture):
     """全接口集成：认证、权限矩阵、校验链、并发冲突、分页筛选。"""
 
@@ -383,84 +368,10 @@ class SlotBookingApiTests(SlotBookingFixture):
         }
 
     def test_unauthorized_returns_40100(self):
-        resp = self.client.get("/api/slot-templates")
+        """无 token 访问 mine → 40100（模板列表端点随时段配置页下线，改锁 mine）。"""
+        resp = self.client.get("/api/slot-bookings/mine")
         self.assertEqual(resp.status_code, 401)
         self.assertEqual(resp.json()["code"], 40100)
-
-    def test_template_list_visible_to_all_roles(self):
-        _auth(self.client, self.builder)
-        resp = self.client.get("/api/slot-templates")
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(len(resp.json()["data"]), 2)
-
-    def test_template_crud_admin_only(self):
-        _auth(self.client, self.builder)
-        resp = self.client.post(
-            "/api/slot-templates",
-            {"name": "普通窗口", "start_time": "08:00", "end_time": "09:00"},
-            format="json",
-        )
-        self.assertEqual(resp.status_code, 403)
-        self.assertEqual(resp.json()["code"], 40301)
-
-        _auth(self.client, self.admin)
-        resp = self.client.post(
-            "/api/slot-templates",
-            {"name": "新窗口", "start_time": "05:00", "end_time": "06:00",
-             "weekdays": "1", "sort_order": 5},
-            format="json",
-        )
-        self.assertEqual(resp.status_code, 200)
-        body = resp.json()["data"]
-        self.assertEqual(body["template"]["name"], "新窗口")
-        self.assertEqual(body["warnings"], [])
-        tid = body["template"]["id"]
-
-        # 重名 → 42201
-        resp = self.client.post(
-            "/api/slot-templates",
-            {"name": "新窗口", "start_time": "05:00", "end_time": "06:00"},
-            format="json",
-        )
-        self.assertEqual(resp.status_code, 422)
-        self.assertEqual(resp.json()["code"], 42201)
-        # 跨天 → 42201（不支持）
-        resp = self.client.post(
-            "/api/slot-templates",
-            {"name": "跨天窗口", "start_time": "23:00", "end_time": "01:00"},
-            format="json",
-        )
-        self.assertEqual(resp.json()["code"], 42201)
-        self.assertIn("跨天", resp.json()["message"])
-        # 部分更新
-        resp = self.client.put(f"/api/slot-templates/{tid}", {"sort_order": 9}, format="json")
-        self.assertEqual(resp.json()["data"]["template"]["sort_order"], 9)
-        # 删除（无记录）
-        resp = self.client.delete(f"/api/slot-templates/{tid}")
-        self.assertEqual(resp.status_code, 200)
-
-    def test_template_overlap_warnings(self):
-        _auth(self.client, self.admin)
-        resp = self.client.post(
-            "/api/slot-templates",
-            {"name": "重叠窗口", "start_time": "08:30", "end_time": "08:50",
-             "weekdays": "1,2,3,4,5"},
-            format="json",
-        )
-        warnings = resp.json()["data"]["warnings"]
-        self.assertTrue(any("上午窗口" in w for w in warnings))
-
-    def test_template_delete_blocked_with_bookings(self):
-        SlotBooking.objects.create(
-            date=self.today, template=self.evening,
-            start_snapshot=self.evening.start_time, end_snapshot=self.evening.end_time,
-            user=self.pm, purpose="历史记录", version=self.version, branch=self.branch,
-        )
-        _auth(self.client, self.admin)
-        resp = self.client.delete(f"/api/slot-templates/{self.evening.id}")
-        self.assertEqual(resp.status_code, 409)
-        self.assertEqual(resp.json()["code"], 40902)
-        self.assertIn("停用", resp.json()["message"])
 
     def test_booking_create_and_conflict_40904(self):
         _auth(self.client, self.pm)
@@ -536,24 +447,6 @@ class SlotBookingApiTests(SlotBookingFixture):
         self.assertEqual(body["total"], 3)
         self.assertEqual(len(body["items"]), 2)
         self.assertEqual(body["page_size"], 2)
-
-    def test_admin_list_filters_and_permission(self):
-        _auth(self.client, self.pm)
-        self.client.post("/api/slot-bookings", self._booking_payload(template=self.evening), format="json")
-        _auth(self.client, self.builder)
-        resp = self.client.get("/api/slot-bookings")
-        self.assertEqual(resp.status_code, 403)
-        self.assertEqual(resp.json()["code"], 40301)
-
-        _auth(self.client, self.admin)
-        resp = self.client.get("/api/slot-bookings")
-        self.assertEqual(resp.json()["data"]["total"], 1)
-        resp = self.client.get("/api/slot-bookings?status=released")
-        self.assertEqual(resp.json()["data"]["total"], 0)
-        resp = self.client.get(f"/api/slot-bookings?user_id={self.pm.id}")
-        self.assertEqual(resp.json()["data"]["total"], 1)
-        resp = self.client.get("/api/slot-bookings?date_from=garbage")
-        self.assertEqual(resp.json()["code"], 42201)
 
     def test_calendar_endpoint(self):
         _auth(self.client, self.pm)

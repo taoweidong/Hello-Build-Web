@@ -1,11 +1,11 @@
 """运行期配置覆盖层：持久化到 RuntimeConfig 表 + 进程内缓存。
 
-admin 经 /admin/config 写入后落库（重启不丢、多进程一致视角以落库为准）；
-读取走进程内缓存，写入时同步刷新缓存。缓存无法感知其他进程的写入，
-单机部署场景（SQLite + runserver）足够；跨进程强一致需求出现时再引入共享缓存。
-"""
-from django.db import IntegrityError
+读取走进程内缓存。缓存无法感知其他进程的写入，单机部署场景
+（SQLite + runserver）足够；跨进程强一致需求出现时再引入共享缓存。
 
+2026-10-20 页面精简：写入入口（admin /admin/config）随系统管理页下线删除，
+set_config 一并移除；配置初始值由 seed / 迁移保证，运行期只读。
+"""
 from ..models import RuntimeConfig
 
 _CACHE = {}
@@ -18,18 +18,6 @@ def get_config(key, default=None):
     value = row.value if row else default
     _CACHE[key] = value
     return value
-
-
-def set_config(key, value):
-    value = int(value)
-    try:
-        RuntimeConfig.objects.update_or_create(key=key, defaults={"value": value})
-    except IntegrityError:
-        # 并发 get_or_create 竞态撞 key unique 约束兜底（R4-B9/B4-09）：
-        # update_or_create 内部自带 savepoint，捕获后按 UPDATE 重试一次即可
-        # 安全恢复；仍失败则任异常上抛（由调用方事务整体回滚）。
-        RuntimeConfig.objects.filter(key=key).update(value=value)
-    _CACHE[key] = value
 
 
 def reset_config():

@@ -1,8 +1,10 @@
 """第四轮全库质量优化（2026-10-15）回归测试。
 
-对应 docs/code-quality-assessment-2026-10-15.md 与
-docs/superpowers/specs/2026-10-15-code-quality-optimization-round4-design.md：
 每个修复项（R4-B1 ~ R4-B19）一组锁定测试，防止同类问题复发。
+
+2026-10-20 页面精简：验证报告 / 分支配置（分支·工程·实例·权限）/ 执行轮次 /
+系统管理（版本·用户·配置·模板 CRUD）随页面下线，对应测试类已删；保留的
+max_length 与全角数字用例收敛到仍存活的写入路径（策略创建 / 借用审批）。
 
 口径提示：
 - 并发用例沿用 tests_strategy_concurrency / round3 的技巧：用 ORM 直改终态 /
@@ -30,15 +32,9 @@ from rest_framework.test import APIClient
 from .admin import StrategyAdmin
 from .errors import CODE_ASSOCIATION, CODE_SLOT_CONFLICT
 from .models import (
-    AdminOpLog,
     BorrowFlow,
     Branch,
-    BranchProject,
-    ExecutionRound,
-    Instance,
-    Project,
     RevokedToken,
-    RuntimeConfig,
     SecurityLog,
     SlotBooking,
     SlotTemplate,
@@ -46,10 +42,6 @@ from .models import (
     StrategyTemplate,
     Version,
 )
-from .serializers.slot_booking import SlotTemplateSerializer
-from .services.branch_config import start_instance as svc_start
-from .services.branch_config import stop_instance as svc_stop
-from .services.config import get_config, set_config
 from .services.slot_booking import (
     _raise_slot_conflict_or_reraise,
     create_booking,
@@ -140,32 +132,14 @@ class Round4Fixture(ConfigAwareTestCase):
         )
 
 
-# ---------- R4-B1 admin 删除策略补 pending 借用流拦截 ----------
+# ---------- R4-B1 PM 删除策略 pending 借用流拦截（服务层口径） ----------
 
 class AdminStrategyDeleteGuardTests(Round4Fixture):
-    """B4-01：admin 删除策略与 PM 入口共用服务层 pending 借用流拦截（40903）。"""
+    """B4-01 回归保留：PM 删除策略走共用服务层，pending 借用流拦截（40903）。
 
-    def test_admin_delete_blocked_by_pending_flow(self):
-        s = self._make_strategy()
-        flow = self._make_flow(strategy=s)
-        self._auth("admin1")
-        resp = self.client.delete(f"/api/admin/strategies/{s.id}")
-        self.assertEqual(resp.status_code, 409)
-        self.assertEqual(resp.json()["code"], CODE_ASSOCIATION)
-        self.assertTrue(Strategy.objects.filter(id=s.id).exists())
-        self.assertTrue(BorrowFlow.objects.filter(id=flow.id).exists())
-
-    def test_admin_delete_ok_after_flow_handled_and_audited(self):
-        s = self._make_strategy()
-        flow = self._make_flow(strategy=s)
-        BorrowFlow.objects.filter(id=flow.id).update(status="rejected")
-        self._auth("admin1")
-        resp = self.client.delete(f"/api/admin/strategies/{s.id}")
-        self.assertEqual(resp.status_code, 200)
-        self.assertFalse(Strategy.objects.filter(id=s.id).exists())
-        self.assertTrue(
-            AdminOpLog.objects.filter(action="delete_strategy", target_id=str(s.id)).exists()
-        )
+    2026-10-20：admin 专用删除端点（/api/admin/strategies）随系统管理页下线，
+    服务层直调口径（svc_delete_strategy）继续锁定同一拦截。
+    """
 
     def test_pm_delete_blocked_by_pending_flow_regression(self):
         """PM 路径回归：收敛到共享服务函数后行为不变（R3-B5 语义保留）。"""
@@ -185,41 +159,10 @@ class AdminStrategyDeleteGuardTests(Round4Fixture):
         self.assertEqual(ctx.exception.code, CODE_ASSOCIATION)
 
 
-# ---------- R4-B2 分支删除 ProtectedError 兜底 ----------
-
-class BranchDeleteProtectTests(Round4Fixture):
-    """B4-02：SlotBooking.branch / BorrowFlow.target_branch 均 PROTECT，
-    删除被引用分支须转契约 40903，不得裸 500。"""
-
-    def test_delete_branch_with_slot_booking_40903(self):
-        self._make_booking(branch=self.b27a, version=self.v27a)
-        self._auth("admin1")
-        resp = self.client.delete(f"/api/branches/{self.b27a.id}")
-        self.assertEqual(resp.status_code, 409)
-        self.assertEqual(resp.json()["code"], CODE_ASSOCIATION)
-        self.assertTrue(Branch.objects.filter(id=self.b27a.id).exists())
-
-    def test_delete_branch_referenced_by_borrow_flow_40903(self):
-        s = self._make_strategy()
-        self._make_flow(strategy=s, target_branch=self.b26b)
-        self._auth("admin1")
-        resp = self.client.delete(f"/api/branches/{self.b26b.id}")
-        self.assertEqual(resp.status_code, 409)
-        self.assertEqual(resp.json()["code"], CODE_ASSOCIATION)
-        self.assertTrue(Branch.objects.filter(id=self.b26b.id).exists())
-
-    def test_delete_unreferenced_branch_ok(self):
-        b = Branch.objects.create(version=self.v27a, name="TR5")
-        self._auth("admin1")
-        resp = self.client.delete(f"/api/branches/{b.id}")
-        self.assertEqual(resp.status_code, 200)
-        self.assertFalse(Branch.objects.filter(id=b.id).exists())
-
-
 # ---------- R4-B3 非 dict body 归一补齐两处漏网 ----------
 
 class NonDictBodyGuardRound4Tests(Round4Fixture):
-    """B4-03：改期端点与 permissions 端点的非 dict JSON 载荷不得 500。"""
+    """B4-03：改期端点的非 dict JSON 载荷不得 500（permissions 端点已下线）。"""
 
     def test_reschedule_non_dict_body_never_500(self):
         booking = self._make_booking(user=self.builder)
@@ -234,106 +177,6 @@ class NonDictBodyGuardRound4Tests(Round4Fixture):
             self.assertEqual(resp.json()["code"], 0, msg=body)
         booking.refresh_from_db()
         self.assertEqual(booking.status, "reserved")
-
-    def test_permissions_non_dict_body_42201(self):
-        self._auth("admin1")
-        for body in ("[1]", '"str"', "null"):
-            resp = self.client.post(
-                f"/api/branches/{self.b27a.id}/permissions",
-                data=body, content_type="application/json",
-            )
-            self.assertEqual(resp.status_code, 422, msg=body)
-            self.assertEqual(resp.json()["code"], 42201, msg=body)
-
-
-# ---------- R4-B4 conclusion note 走 body_str ----------
-
-class ConclusionNoteGuardTests(Round4Fixture):
-    """B4-04：note 非 str 回退原值、超长截断 255（审计备注类字段口径）。"""
-
-    def setUp(self):
-        super().setUp()
-        self.strategy = self._make_strategy()
-        self.round = ExecutionRound.objects.create(
-            strategy=self.strategy, exec_date=timezone.localdate(), note="初始备注"
-        )
-
-    def _submit(self, payload):
-        self._auth("tester1")
-        return self.client.post(
-            f"/api/executions/rounds/{self.round.id}/conclusion", payload, format="json"
-        )
-
-    def _note_after(self, payload):
-        resp = self._submit(payload)
-        self.assertEqual(resp.status_code, 200)
-        self.round.refresh_from_db()
-        return self.round.note
-
-    def test_note_object_keeps_original(self):
-        self.assertEqual(self._note_after({"conclusion": "pass", "note": {"a": 1}}), "初始备注")
-
-    def test_note_number_keeps_original(self):
-        self.assertEqual(self._note_after({"conclusion": "pass", "note": 123}), "初始备注")
-
-    def test_note_null_keeps_original(self):
-        self.assertEqual(self._note_after({"conclusion": "pass", "note": None}), "初始备注")
-
-    def test_note_missing_keeps_original(self):
-        self.assertEqual(self._note_after({"conclusion": "pass"}), "初始备注")
-
-    def test_note_over_255_truncated(self):
-        note = self._note_after({"conclusion": "fail", "note": "x" * 300})
-        self.assertEqual(len(note), 255)
-
-    def test_note_normal_str_saved(self):
-        self.assertEqual(self._note_after({"conclusion": "pass", "note": "冒烟全部通过"}), "冒烟全部通过")
-
-
-# ---------- R4-B5 版本 PM 必须为启用用户 ----------
-
-class VersionPmActiveGuardTests(Round4Fixture):
-    """B4-05：停用用户不可被设为版本 PM（与 R3-B6「无主版本」不变量对齐）。"""
-
-    def setUp(self):
-        super().setUp()
-        self.dead_pm = User.objects.create_user(
-            username="dead_pm", password="123456", role="pm", is_active=False
-        )
-
-    def test_create_version_inactive_pm_42201(self):
-        self._auth("admin1")
-        resp = self.client.post(
-            "/api/admin/versions",
-            {"name": "99A", "pm_user_id": self.dead_pm.id, "status": "active"},
-            format="json",
-        )
-        self.assertEqual(resp.status_code, 422)
-        self.assertEqual(resp.json()["code"], 42201)
-        self.assertFalse(Version.objects.filter(name="99A").exists())
-
-    def test_update_version_inactive_pm_42201(self):
-        self._auth("admin1")
-        resp = self.client.put(
-            f"/api/admin/versions/{self.v27a.id}",
-            {"pm_user_id": self.dead_pm.id}, format="json",
-        )
-        self.assertEqual(resp.status_code, 422)
-        self.assertEqual(resp.json()["code"], 42201)
-        self.v27a.refresh_from_db()
-        self.assertEqual(self.v27a.pm_user_id, self.pm27a.id)
-
-    def test_create_version_active_pm_ok(self):
-        live_pm = User.objects.create_user(username="pm99", password="123456", role="pm")
-        self._auth("admin1")
-        resp = self.client.post(
-            "/api/admin/versions",
-            {"name": "99A", "pm_user_id": live_pm.id, "status": "active"},
-            format="json",
-        )
-        self.assertEqual(resp.status_code, 200)
-        self.assertTrue(Version.objects.filter(name="99A").exists())
-
 
 # ---------- R4-B6 login/logout 方法守卫 ----------
 
@@ -444,48 +287,6 @@ class SlotConflictPrecisionTests(Round4Fixture):
         self.assertIn("已被", error["message"])
 
 
-# ---------- R4-B9 config PUT 先全量校验后原子写入 ----------
-
-class ConfigAtomicPutTests(Round4Fixture):
-    """B4-09：多键部分非法时不得留下半套中间态；set_config 并发竞态兜底。"""
-
-    def test_partial_invalid_leaves_config_untouched(self):
-        self._auth("admin1")
-        resp = self.client.put(
-            "/api/admin/config", {"build_minutes": 40, "push_minutes": "abc"}, format="json"
-        )
-        self.assertEqual(resp.status_code, 422)
-        self.assertEqual(resp.json()["code"], 42201)
-        # 原子性断言：第一键不得已生效
-        self.assertFalse(RuntimeConfig.objects.filter(key="build_minutes").exists())
-        get_resp = self.client.get("/api/admin/config")
-        self.assertEqual(get_resp.json()["data"]["build_minutes"], settings.BUILD_MINUTES)
-
-    def test_all_valid_persisted(self):
-        self._auth("admin1")
-        resp = self.client.put(
-            "/api/admin/config",
-            {"build_minutes": 40, "push_minutes": 25, "sync_buffer_minutes": 15},
-            format="json",
-        )
-        self.assertEqual(resp.status_code, 200)
-        data = resp.json()["data"]
-        self.assertEqual((data["build_minutes"], data["push_minutes"], data["sync_buffer_minutes"]),
-                         (40, 25, 15))
-        self.assertEqual(RuntimeConfig.objects.get(key="build_minutes").value, 40)
-
-    def test_set_config_integrity_retry(self):
-        """并发 get_or_create 竞态撞 key unique → 兜底按 UPDATE 重试一次。"""
-        RuntimeConfig.objects.create(key="build_minutes", value=1)
-        with mock.patch.object(
-            RuntimeConfig.objects, "update_or_create",
-            side_effect=IntegrityError("UNIQUE constraint failed: key"),
-        ):
-            set_config("build_minutes", 77)
-        self.assertEqual(RuntimeConfig.objects.get(key="build_minutes").value, 77)
-        self.assertEqual(get_config("build_minutes"), 77)
-
-
 # ---------- R4-B10 字符串字段 max_length 校验补全 ----------
 
 class CheckStrLenHelperTests(ConfigAwareTestCase):
@@ -508,104 +309,11 @@ class CheckStrLenHelperTests(ConfigAwareTestCase):
 
 
 class MaxLengthGuardTests(Round4Fixture):
-    """B4-10：写端点字符串字段超模型 max_length → 42201 拒绝（优于静默截断）。"""
+    """B4-10 存活口径：策略创建/借用审批的字符串字段超模型 max_length → 42201 拒绝。
 
-    def test_create_version_name_over_100(self):
-        self._auth("admin1")
-        resp = self.client.post(
-            "/api/admin/versions", {"name": "V" * 101, "pm_user_id": self.pm26b.id}, format="json"
-        )
-        self.assertEqual(resp.json()["code"], 42201)
-
-    def test_create_version_name_boundary_100_ok(self):
-        live_pm = User.objects.create_user(username="pm98", password="123456", role="pm")
-        self._auth("admin1")
-        resp = self.client.post(
-            "/api/admin/versions", {"name": "V" * 100, "pm_user_id": live_pm.id}, format="json"
-        )
-        self.assertEqual(resp.status_code, 200)
-
-    def test_update_version_name_over_100(self):
-        self._auth("admin1")
-        resp = self.client.put(
-            f"/api/admin/versions/{self.v27a.id}", {"name": "V" * 101}, format="json"
-        )
-        self.assertEqual(resp.json()["code"], 42201)
-
-    def test_add_branch_name_over_100(self):
-        self._auth("admin1")
-        resp = self.client.post(
-            f"/api/admin/versions/{self.v27a.id}/branches", {"name": "B" * 101}, format="json"
-        )
-        self.assertEqual(resp.json()["code"], 42201)
-
-    def test_create_user_username_over_150(self):
-        self._auth("admin1")
-        resp = self.client.post(
-            "/api/admin/users",
-            {"username": "u" * 151, "password": "123456", "role": "builder"},
-            format="json",
-        )
-        self.assertEqual(resp.json()["code"], 42201)
-
-    def test_create_user_display_name_over_100(self):
-        self._auth("admin1")
-        resp = self.client.post(
-            "/api/admin/users",
-            {"username": "ok_user", "password": "123456", "role": "builder",
-             "display_name": "d" * 101},
-            format="json",
-        )
-        self.assertEqual(resp.json()["code"], 42201)
-
-    def test_update_user_display_name_over_100(self):
-        self._auth("admin1")
-        resp = self.client.patch(
-            f"/api/admin/users/{self.builder.id}", {"display_name": "d" * 101}, format="json"
-        )
-        self.assertEqual(resp.json()["code"], 42201)
-
-    def test_create_template_name_over_100_and_description_over_255(self):
-        self._auth("admin1")
-        resp = self.client.post("/api/admin/templates", {"name": "T" * 101}, format="json")
-        self.assertEqual(resp.json()["code"], 42201)
-        resp = self.client.post(
-            "/api/admin/templates", {"name": "新模板", "description": "D" * 256}, format="json"
-        )
-        self.assertEqual(resp.json()["code"], 42201)
-
-    def test_update_template_name_over_100(self):
-        self._auth("admin1")
-        resp = self.client.patch(
-            f"/api/admin/templates/{self.tmpl.id}", {"name": "T" * 101}, format="json"
-        )
-        self.assertEqual(resp.json()["code"], 42201)
-        resp = self.client.patch(
-            f"/api/admin/templates/{self.tmpl.id}", {"description": "D" * 256}, format="json"
-        )
-        self.assertEqual(resp.json()["code"], 42201)
-
-    def test_branch_create_name_over_100_and_url_over_255(self):
-        self._auth("admin1")
-        resp = self.client.post(
-            "/api/branches", {"version_id": self.v27a.id, "name": "N" * 101}, format="json"
-        )
-        self.assertEqual(resp.json()["code"], 42201)
-        resp = self.client.post(
-            "/api/branches",
-            {"version_id": self.v27a.id, "name": "合规名", "repository_url": "r" * 256},
-            format="json",
-        )
-        self.assertEqual(resp.json()["code"], 42201)
-
-    def test_project_create_name_over_100_and_url_over_255(self):
-        self._auth("admin1")
-        resp = self.client.post("/api/projects", {"name": "P" * 101}, format="json")
-        self.assertEqual(resp.json()["code"], 42201)
-        resp = self.client.post(
-            "/api/projects", {"name": "合规工程", "repository_url": "r" * 256}, format="json"
-        )
-        self.assertEqual(resp.json()["code"], 42201)
+    2026-10-20：admin 写端点（版本/用户/模板/分支/工程）随系统管理与分支配置页
+    下线，仅保留策略创建与借用审批两条仍存活的写入路径。
+    """
 
     def test_strategy_name_over_200_rejected_by_service(self):
         self._auth("pm27a")
@@ -683,7 +391,7 @@ class StrategyAdminSaveModelTests(Round4Fixture):
 # ---------- R4-B12 全角数字拒绝 ----------
 
 class FullWidthDigitGuardTests(Round4Fixture):
-    """B4-12：valid_hhmm / validate_weekdays 拒绝 Unicode 全角数字。"""
+    """B4-12：valid_hhmm 拒绝 Unicode 全角数字（模板写端点已随时段配置页下线）。"""
 
     def test_valid_hhmm_rejects_fullwidth(self):
         self.assertFalse(valid_hhmm("２２:００"))
@@ -712,21 +420,6 @@ class FullWidthDigitGuardTests(Round4Fixture):
         )
         self.assertEqual(resp.status_code, 422)
         self.assertEqual(resp.json()["code"], 42201)
-
-    def test_template_weekdays_fullwidth_rejected(self):
-        serializer = SlotTemplateSerializer(data={
-            "name": "全角星期", "start_time": "08:00", "end_time": "09:00", "weekdays": "１,２",
-        })
-        self.assertFalse(serializer.is_valid())
-        self._auth("admin1")
-        resp = self.client.post(
-            "/api/slot-templates",
-            {"name": "全角星期", "start_time": "08:00", "end_time": "09:00", "weekdays": "１"},
-            format="json",
-        )
-        self.assertEqual(resp.status_code, 422)
-        self.assertEqual(resp.json()["code"], 42201)
-
 
 # ---------- R4-B13 借用流列表可选分页 ----------
 
@@ -872,97 +565,6 @@ class SeedMasterBranchGuardTests(TestCase):
         call_command("seed")
         self.assertTrue(Branch.objects.filter(version=v27a, name="master").exists())
         self.assertTrue(Strategy.objects.filter(name="27A-master-早间回归").exists())
-
-
-# ---------- R4-B16 stop_instance 条件 UPDATE ----------
-
-class StopInstanceAtomicTests(Round4Fixture):
-    """B4-16：停止实例走「条件 UPDATE + rowcount」范式，不覆盖首次停止留痕。"""
-
-    def setUp(self):
-        super().setUp()
-        self.project = Project.objects.create(name="工程A")
-        self.bp = BranchProject.objects.create(branch=self.b27a, project=self.project)
-
-    def test_stop_running_sets_stopped(self):
-        inst = svc_start(self.bp, "actor1")
-        result = svc_stop(self.bp, "actor1")
-        self.assertEqual(result.id, inst.id)
-        self.assertEqual(result.status, "STOPPED")
-        self.assertIsNotNone(result.stopped_at)
-        self.assertEqual(result.exit_code, 0)
-        self.assertIn("actor1] 发起停止", result.log_tail)
-
-    def test_double_stop_idempotent_no_overwrite(self):
-        svc_start(self.bp, "actor1")
-        first = svc_stop(self.bp, "actor1")
-        second = svc_stop(self.bp, "actor2")
-        self.assertEqual(second.id, first.id)
-        self.assertEqual(second.status, "STOPPED")
-        db = Instance.objects.get(pk=first.pk)
-        self.assertEqual(db.stopped_at, first.stopped_at)
-        self.assertNotIn("actor2", db.log_tail)
-
-    def test_stale_window_stop_does_not_overwrite(self):
-        """模拟并发窗口：本方持有旧快照期间他人已停止 → 不覆盖 stopped_at。"""
-        inst = svc_start(self.bp, "actor1")
-        first_stop = timezone.now()
-        # 他人抢先停止（ORM 直改终态模拟窗口内提交）
-        Instance.objects.filter(id=inst.id).update(
-            status="STOPPED", stopped_at=first_stop, exit_code=0
-        )
-        result = svc_stop(self.bp, "actor2")
-        self.assertEqual(result.status, "STOPPED")
-        db = Instance.objects.get(pk=inst.pk)
-        self.assertEqual(db.stopped_at, first_stop)
-        self.assertNotIn("actor2", db.log_tail)
-
-    def test_conditional_update_matches_only_active(self):
-        """rowcount=0 语义锁定：条件 UPDATE 仅命中 STARTING/RUNNING。"""
-        inst = svc_start(self.bp, "actor1")
-        Instance.objects.filter(id=inst.id).update(status="STOPPED")
-        updated = Instance.objects.filter(
-            id=inst.id, status__in=("STARTING", "RUNNING")
-        ).update(status="STOPPED")
-        self.assertEqual(updated, 0)
-
-    def test_stop_without_instance_returns_none(self):
-        self.assertIsNone(svc_stop(self.bp, "actor1"))
-
-
-# ---------- R4-B17 模板创建并发重名兜底 ----------
-
-class TemplateCreateIntegrityTests(Round4Fixture):
-    """B4-17：并发重名撞 unique 约束 → 契约 40902 而非 500/50000。"""
-
-    def test_slot_template_concurrent_duplicate_40902(self):
-        self._auth("admin1")
-        resp = self.client.post(
-            "/api/slot-templates",
-            {"name": "窗口A", "start_time": "13:00", "end_time": "14:00"},
-            format="json",
-        )
-        self.assertEqual(resp.status_code, 200)
-        # mock 前置 exists 检查为 False，模拟 check-then-create 窗口内他人已插入同名
-        with mock.patch("django.db.models.query.QuerySet.exists", return_value=False):
-            resp = self.client.post(
-                "/api/slot-templates",
-                {"name": "窗口A", "start_time": "13:00", "end_time": "14:00"},
-                format="json",
-            )
-        self.assertEqual(resp.status_code, 409)
-        self.assertEqual(resp.json()["code"], 40902)
-        self.assertEqual(SlotTemplate.objects.filter(name="窗口A").count(), 1)
-
-    def test_admin_template_concurrent_duplicate_40902(self):
-        self._auth("admin1")
-        resp = self.client.post("/api/admin/templates", {"name": "模板X"}, format="json")
-        self.assertEqual(resp.status_code, 200)
-        with mock.patch("django.db.models.query.QuerySet.exists", return_value=False):
-            resp = self.client.post("/api/admin/templates", {"name": "模板X"}, format="json")
-        self.assertEqual(resp.status_code, 409)
-        self.assertEqual(resp.json()["code"], 40902)
-        self.assertEqual(StrategyTemplate.objects.filter(name="模板X").count(), 1)
 
 
 # ---------- R4-B18 登录失败计数原子化 ----------

@@ -20,9 +20,10 @@ import {
 } from "@/api/borrowFlow";
 import { releaseBooking, rescheduleBooking } from "@/api/slotBooking";
 import type { StrategyItem, WeeklyStrategy } from "@/api/types";
-// 复制统一走带降级与假成功防护的封装；借用文案唯一来源在 borrow-flow/format（R4-F5）
+// 复制统一走带降级与假成功防护的封装；借用文案唯一来源在 shared/borrowFormat（R4-F5，
+// 原 borrow-flow/format，2026-10-20 页面精简时随借用审批页下线迁入全景域）
 import { copyText as copyToClipboard } from "@/utils/clipboard";
-import { formatBorrowFlowText } from "@/views/borrow-flow/format";
+import { formatBorrowFlowText } from "./shared/borrowFormat";
 import type { ScheduleData } from "./types";
 import type { ScheduleEvent } from "./types";
 

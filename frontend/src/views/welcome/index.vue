@@ -1,38 +1,33 @@
 <script setup lang="ts">
-// 首页：业务功能入口卡片（替换模板占位页）
+// 首页：业务功能入口卡片（2026-10-20 页面精简后仅保留 2 个典型页面入口）
+import { computed } from "vue";
 import { useRouter } from "vue-router";
+import { getCurrentUser } from "@/utils/business";
 
 defineOptions({ name: "Welcome" });
 
 const router = useRouter();
 
-const entries = [
-  {
-    title: "策略周报",
-    desc: "周报看板：KPI / 分支负载 / 时段趋势 / 标签云",
-    path: "/weekly-report/index"
-  },
-  {
-    title: "版本策略全景(New)",
-    desc: "时间点 × 周一~周日 调度全景，对外查看 / 对内维护 / 过期置灰",
-    path: "/weekly-new/index"
-  },
-  {
-    title: "借用审批",
-    desc: "非本版本人员借用时段发起电子流，来源版本负责人审批",
-    path: "/borrow-flow/index"
-  },
-  {
-    title: "验证报告",
-    desc: "冒烟验证结论与发布留痕",
-    path: "/report/index"
-  },
-  {
-    title: "时段抢占",
-    desc: "冒烟测试时段预约与释放",
-    path: "/slot-booking/index"
+const user = getCurrentUser();
+
+/** 策略配置仅 PM 可见（与路由 meta.roles 口径一致） */
+const entries = computed(() => {
+  const list = [
+    {
+      title: "调度全景",
+      desc: "策略 / 抢占 / 借用三源合一的调度总览，五种布局任意切换",
+      path: "/panorama"
+    }
+  ];
+  if (user?.role === "pm") {
+    list.push({
+      title: "策略配置",
+      desc: "维护本版本分支的每日构建策略：构建 → 冒烟 → 分析 → 推送",
+      path: "/strategy/index"
+    });
   }
-];
+  return list;
+});
 </script>
 
 <template>

@@ -1,13 +1,17 @@
 """数据模型包：按领域拆分文件，统一从此处导出，保持既有导入方式不变。
 
-- report.py：验证报告领域（报告主表 + 修改记录表，不与其他表建立外键）
-- others.py：其余业务模型（用户/版本/分支/策略/执行/日志等）
+2026-10-20 页面精简：
+- report.py（验证报告域）与 branch_config.py（分支配置域）随页面整体下线删除；
+- others.py 内 ExecutionLog（执行日志）随日志中心下线删除，ExecutionRound 保留
+  （plan 时间线状态仍消费它）。
+
+- others.py：用户/版本/分支/策略/执行轮次/借用/抢占/日志/令牌/运行期配置
+- slot_booking.py：时段抢占域（模板 + 抢占记录）
 """
 from .others import (
     AdminOpLog,
     BorrowFlow,
     Branch,
-    ExecutionLog,
     ExecutionRound,
     RevokedToken,
     RuntimeConfig,
@@ -18,37 +22,21 @@ from .others import (
     User,
     Version,
 )
-from .report import ReportRevisionLog, VerificationReport
-from .branch_config import (
-    BranchPermission,
-    BranchProject,
-    Instance,
-    Project,
-    StartupConfig,
-)
 from .slot_booking import SlotBooking, SlotTemplate
 
 __all__ = [
     "AdminOpLog",
     "BorrowFlow",
     "Branch",
-    "BranchPermission",
-    "BranchProject",
-    "ExecutionLog",
     "ExecutionRound",
-    "Instance",
-    "Project",
-    "ReportRevisionLog",
     "RevokedToken",
     "RuntimeConfig",
     "SecurityLog",
     "SlotBooking",
     "SlotTemplate",
-    "StartupConfig",
     "Strategy",
     "StrategyChangeLog",
     "StrategyTemplate",
     "User",
-    "VerificationReport",
     "Version",
 ]

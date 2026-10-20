@@ -103,7 +103,6 @@
 // 版本策略全景页 - 无修改权限用户的策略详情 + 借用申请弹窗
 // 借用 = 发起电子流（借用至自己的版本/分支 + 新时间），由来源版本负责人在「借用审批」页审批
 import { computed, reactive, ref } from "vue";
-import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import dayjs from "dayjs";
 import { getPlan, type PlanVersion } from "@/api/plan";
@@ -130,7 +129,6 @@ const emit = defineEmits<{
   (e: "created"): void;
 }>();
 
-const router = useRouter();
 const currentUser = getCurrentUser();
 
 const form = reactive({
@@ -199,17 +197,9 @@ async function onSubmit() {
     });
     emit("created");
     emit("update:modelValue", false);
-    ElMessageBox.confirm(
-      "借用电子流已提交，等待来源版本负责人审批。可在「借用审批」页查看进度。",
-      "提交成功",
-      {
-        confirmButtonText: "前往审批页",
-        cancelButtonText: "留在本页",
-        type: "success"
-      }
-    )
-      .then(() => router.push("/borrow-flow"))
-      .catch(() => undefined);
+    // 借用审批独立页已随页面精简下线（2026-10-20）：审批入口收敛为全景
+    // 「待我审批」徽标 → 审批抽屉，成功提示不再提供跨页跳转
+    ElMessage.success("借用电子流已提交，等待来源版本负责人审批");
   } catch {
     // 失败已由拦截器提示（如同策略重复 pending 40903），保留弹窗便于修改重试
   } finally {

@@ -3,7 +3,7 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.core.exceptions import ValidationError
 
 from .models import (
-    AdminOpLog, Branch, ExecutionLog, ExecutionRound, SecurityLog,
+    AdminOpLog, Branch, ExecutionRound, SecurityLog,
     Strategy, StrategyChangeLog, StrategyTemplate, User, Version,
 )
 from .services.strategies import StrategyValidationError, validate_strategy
@@ -56,7 +56,6 @@ class StrategyAdmin(admin.ModelAdmin):
 admin.site.register(Branch)
 admin.site.register(StrategyTemplate)
 admin.site.register(ExecutionRound)
-admin.site.register(ExecutionLog)
 admin.site.register(StrategyChangeLog)
 admin.site.register(AdminOpLog)
 admin.site.register(SecurityLog)

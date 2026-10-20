@@ -1,4 +1,4 @@
-// borrowFlow API 单测：复制文案组装（纯函数，无网络；mock 掉真实 http 依赖链避免拉起 router）
+// borrowFormat 单测：复制文案组装（纯函数，无网络；mock 掉真实 http 依赖链避免拉起 router）
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/api/http", () => ({ default: { get: vi.fn(), post: vi.fn() } }));
@@ -7,7 +7,7 @@ import type { BorrowFlowItem } from "@/api/borrowFlow";
 import {
   formatBorrowFlowText,
   formatFlowTime
-} from "@/views/borrow-flow/format";
+} from "@/views/panorama/shared/borrowFormat";
 import { formatTime } from "@/utils/business";
 
 function makeFlow(overrides: Partial<BorrowFlowItem> = {}): BorrowFlowItem {

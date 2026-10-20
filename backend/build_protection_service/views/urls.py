@@ -1,10 +1,8 @@
-"""业务 API 路由。"""
+"""业务 API 路由（2026-10-20 页面精简：仅保留调度全景 + 策略配置两页消费的端点）。"""
 from django.urls import path
 from django.views.decorators.csrf import csrf_exempt
 
-from . import executions, login, logs, plan, reports, strategies, weekly
-from . import admin
-from . import borrow_flow, branch_config, panorama, slot_booking
+from . import admin, borrow_flow, login, panorama, plan, slot_booking, strategies, weekly
 
 app_name = "build_protection_service"
 
@@ -30,52 +28,12 @@ urlpatterns = [
 
     path("weekly", _api(weekly.weekly_view), name="weekly"),
 
-    path("executions", _api(executions.executions_view), name="executions"),
-    path("executions/rounds/<int:rid>", _api(executions.round_detail), name="round_detail"),
-    path("executions/rounds/<int:rid>/conclusion", _api(executions.conclusion_view), name="round_conclusion"),
-
-    path("logs/execution", _api(logs.execution_logs), name="execution_logs"),
-    path("logs/changes", _api(logs.change_logs), name="change_logs"),
-
-    path("admin/versions", _api(admin.extra_view), name="admin_versions"),
-    path("admin/versions/<int:vid>", _api(admin.update_version), name="admin_version_update"),
-    path("admin/versions/<int:vid>/branches", _api(admin.add_branch), name="admin_branch_add"),
-    path("admin/users", _api(admin.users_view), name="admin_users"),
-    path("admin/users/<int:uid>", _api(admin.update_user), name="admin_user_update"),
+    # 策略模板只读（系统管理页下线后仅存列表，供策略配置页下拉选项）
     path("admin/templates", _api(admin.templates_view), name="admin_templates"),
-    path("admin/templates/<int:tid>", _api(admin.template_detail_view), name="admin_template_detail"),
-    path("admin/strategies", _api(admin.admin_strategies_view), name="admin_strategies"),
-    path("admin/strategies/<int:sid>", _api(admin.admin_strategy_detail_view), name="admin_strategy_detail"),
-    path("admin/strategies/<int:sid>/toggle", _api(admin.admin_strategy_toggle_view), name="admin_strategy_toggle"),
-    path("admin/config", _api(admin.config_view), name="admin_config"),
-    path("admin/logs/<str:kind>", _api(admin.logs_view), name="admin_logs"),
 
-    # 验证报告：DRF ViewSet（列表/新建/详情/修改 + 发布/修改记录），废弃功能已移除
-    path("reports", reports.ReportViewSet.as_view({"get": "list", "post": "create"}), name="reports"),
-    path("reports/<int:pk>", reports.ReportViewSet.as_view({"get": "retrieve", "put": "update"}), name="report_detail"),
-    path("reports/<int:pk>/publish", reports.ReportViewSet.as_view({"post": "publish"}), name="report_publish"),
-    path("reports/<int:pk>/revisions", reports.ReportViewSet.as_view({"get": "revisions"}), name="report_revisions"),
-
-    # 分支配置：分支/工程关联/启动参数/授权/实例（DRF ViewSet + 轻量视图）
-    path("branches", branch_config.BranchViewSet.as_view({"get": "list", "post": "create"}), name="branches"),
-    path("branches/<int:pk>", branch_config.BranchViewSet.as_view({"delete": "destroy"}), name="branch_detail"),
-    path("branches/<int:pk>/config", branch_config.BranchViewSet.as_view({"get": "config"}), name="branch_config"),
-    path("branches/<int:pk>/projects", branch_config.BranchViewSet.as_view({"post": "projects"}), name="branch_projects"),
-    path("branches/<int:pk>/permissions", branch_config.BranchViewSet.as_view({"post": "permissions"}), name="branch_permissions"),
-    path("branches/<int:pk>/instances", branch_config.BranchViewSet.as_view({"get": "instances"}), name="branch_instances"),
-    path("branch-projects/<int:pk>", branch_config.BranchProjectViewSet.as_view({"delete": "destroy"}), name="branch_project"),
-    path("branch-projects/<int:pk>/config", branch_config.BranchProjectViewSet.as_view({"put": "config"}), name="branch_project_config"),
-    path("branch-projects/<int:pk>/start", branch_config.BranchProjectViewSet.as_view({"post": "start"}), name="branch_project_start"),
-    path("branch-projects/<int:pk>/stop", branch_config.BranchProjectViewSet.as_view({"post": "stop"}), name="branch_project_stop"),
-    path("branch-permissions/<int:pk>", branch_config.BranchPermissionViewSet.as_view({"delete": "destroy"}), name="branch_permission"),
-    path("users/all", _api(branch_config.users_all), name="users_all"),
-    path("projects", _api(branch_config.projects_view), name="projects"),
-
-    # 时段抢占：模板/日历聚合/抢占/释放（DRF ViewSet + 函数视图）
-    path("slot-templates", slot_booking.SlotTemplateViewSet.as_view({"get": "list", "post": "create"}), name="slot_templates"),
-    path("slot-templates/<int:pk>", slot_booking.SlotTemplateViewSet.as_view({"put": "update", "delete": "destroy"}), name="slot_template_detail"),
+    # 时段抢占：月历聚合 / 抢占 / 释放 / 改期 / 我的抢占（模板 CRUD 随时段配置页下线）
     path("slot-calendar", _api(slot_booking.slot_calendar), name="slot_calendar"),
-    path("slot-bookings", slot_booking.SlotBookingViewSet.as_view({"get": "list", "post": "create"}), name="slot_bookings"),
+    path("slot-bookings", slot_booking.SlotBookingViewSet.as_view({"post": "create"}), name="slot_bookings"),
     path("slot-bookings/mine", slot_booking.SlotBookingViewSet.as_view({"get": "mine"}), name="slot_bookings_mine"),
     path("slot-bookings/<int:pk>", slot_booking.SlotBookingViewSet.as_view({"patch": "partial_update"}), name="slot_booking_reschedule"),
     path("slot-bookings/<int:pk>/release", slot_booking.SlotBookingViewSet.as_view({"post": "release"}), name="slot_booking_release"),

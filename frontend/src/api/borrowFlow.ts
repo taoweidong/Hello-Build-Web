@@ -1,8 +1,9 @@
 // 借用电子流 API 模块
-// 契约：GET/POST /borrow-flows，POST /borrow-flows/:id/approve | reject
+// 契约：GET/POST /borrow-flows，POST /borrow-flows/:id/approve | reject | cancel
+// 2026-10-20 页面精简：借用审批独立页下线，本模块仅服务全景域行内动作
+// （发起借用弹窗 / 审批抽屉 / 复制文案），borrowFlowUrl 直达链接随之删除。
 import http from "@/api/http";
 import type { AxiosRequestConfig } from "axios";
-import { appHashUrl } from "@/utils/appUrl";
 
 /** 借用电子流条目 */
 export interface BorrowFlowItem {
@@ -78,11 +79,4 @@ export function rejectBorrowFlow(
 /** 撤销申请（P2-R1）：仅借用人本人 + 仅待审批可撤；撤销保留记录，同策略可立即重发 */
 export function cancelBorrowFlow(id: number): Promise<BorrowFlowItem> {
   return http.post(`/borrow-flows/${id}/cancel`);
-}
-
-/** 借用电子流审批页的直达链接（hash 路由，携带 focus 参数定位并打开该条）
- * URL 拼装统一走 utils/appUrl（origin + 部署子路径 + hash），此处不再手写 */
-export function borrowFlowUrl(id: number): string {
-  if (typeof window === "undefined") return `#/borrow-flow/index?focus=${id}`;
-  return appHashUrl(`/borrow-flow/index?focus=${id}`);
 }

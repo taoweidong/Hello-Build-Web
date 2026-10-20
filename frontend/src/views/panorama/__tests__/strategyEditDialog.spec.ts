@@ -16,7 +16,7 @@ vi.mock("@/api/strategy", () => ({
 }));
 
 import { adminApi } from "@/api/admin";
-import StrategyEditDialog from "../StrategyEditDialog.vue";
+import StrategyEditDialog from "../shared/StrategyEditDialog.vue";
 import type { StrategyItem, TemplateItem } from "@/api/types";
 
 const getTemplatesMock = vi.mocked(adminApi.getTemplates);

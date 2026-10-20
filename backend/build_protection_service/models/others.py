@@ -1,4 +1,7 @@
-"""其余业务模型：用户 / 版本 / 分支 / 策略 / 执行 / 日志等。"""
+"""其余业务模型：用户 / 版本 / 分支 / 策略 / 执行轮次 / 借用 / 抢占 / 日志等。
+
+2026-10-20 页面精简：ExecutionLog（执行日志，日志中心页消费）已删除。
+"""
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
@@ -115,13 +118,6 @@ class ExecutionRound(models.Model):
 
     def __str__(self) -> str:
         return f"{self.strategy.name}@{self.exec_date}"
-
-
-class ExecutionLog(models.Model):
-    round = models.ForeignKey(ExecutionRound, on_delete=models.CASCADE, related_name="logs")
-    stage = models.CharField(max_length=20)
-    message = models.CharField(max_length=255)
-    created_at = models.DateTimeField(auto_now_add=True)
 
 
 class StrategyChangeLog(models.Model):

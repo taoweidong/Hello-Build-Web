@@ -1,57 +1,10 @@
-"""时段抢占序列化器：模板与抢占入参校验（跨天拦截 / 版本分支归属校验）。"""
+"""时段抢占序列化器：抢占入参校验（跨天拦截 / 版本分支归属校验）。
+
+2026-10-20 页面精简：SlotTemplateSerializer 随时段模板 CRUD 端点（时段配置页）下线删除。
+"""
 from rest_framework import serializers
 
-from ..models import Branch, SlotTemplate, Version
-
-
-class SlotTemplateSerializer(serializers.ModelSerializer):
-    """时间段模板写入：强制同日（start < end），不支持跨天时段。"""
-
-    class Meta:
-        model = SlotTemplate
-        fields = [
-            "id", "name", "start_time", "end_time", "weekdays",
-            "effective_from", "effective_to", "color", "sort_order", "enabled",
-        ]
-        read_only_fields = ["id"]
-
-    def validate_name(self, value: str) -> str:
-        name = (value or "").strip()
-        if not name:
-            raise serializers.ValidationError("时段名称必填")
-        qs = SlotTemplate.objects.filter(name=name)
-        if self.instance:
-            qs = qs.exclude(id=self.instance.id)
-        if qs.exists():
-            raise serializers.ValidationError("时段名称已存在")
-        return name
-
-    def validate_weekdays(self, value) -> str:
-        """生效星期校验：逗号分隔的 isoweekday 1-7（1=周一…7=周日）。
-
-        口径唯一真源：与 services.slot_booking.template_applies_on 的 isoweekday()
-        匹配逻辑、模型 help_text、seed 数据及前端 TemplateDialog 选项保持一致；
-        拦截 "0,8,abc" 之类永不匹配或错位的脏数据。
-        """
-        raw = (value or "").strip()
-        if not raw:
-            return raw
-        parts = [x.strip() for x in raw.split(",")]
-        for part in parts:
-            # isascii 前置（R4-B12/B4-12）：isdigit 会放行全角数字（"２".isdigit()
-            # 为 True 且 int("２")==2），与 valid_hhmm/parse_int 的硬化口径对齐
-            if not part.isascii() or not part.isdigit() or not 1 <= int(part) <= 7:
-                raise serializers.ValidationError("生效星期应为 1-7 的逗号分隔数字（1=周一…7=周日）")
-        return ",".join(str(int(x)) for x in parts)
-
-    def validate(self, attrs: dict) -> dict:
-        start = attrs.get("start_time", getattr(self.instance, "start_time", None))
-        end = attrs.get("end_time", getattr(self.instance, "end_time", None))
-        if start is not None and end is not None and start >= end:
-            raise serializers.ValidationError(
-                "不支持跨天时段，结束时间需晚于开始时间"
-            )
-        return attrs
+from ..models import Branch, Version
 
 
 class SlotBookingCreateSerializer(serializers.Serializer):

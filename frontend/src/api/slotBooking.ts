@@ -1,5 +1,7 @@
 // 时段抢占 API 模块
 // 契约：统一响应 { code, message, data }；错误码 40904 = 时段已被抢占（拦截器 ElMessage 提示）
+// 2026-10-20 页面精简：时段抢占/时段配置独立页下线，模板 CRUD 与 admin 记录列表
+// 端点封装随之删除；保留全景域行内动作消费的日历/抢占/释放/改期/我的抢占。
 import http from "@/api/http";
 import type { AxiosRequestConfig } from "axios";
 
@@ -50,13 +52,7 @@ export interface SlotCalendarResponse {
   days: Record<string, CalendarDayCell[]>;
 }
 
-/** 模板保存响应：含同星期重叠告警 */
-export interface SlotTemplateSaveResponse {
-  template: SlotTemplateItem;
-  warnings: string[];
-}
-
-/** 抢占记录列表行（我的抢占 / admin 记录） */
+/** 抢占记录列表行（我的抢占） */
 export interface BookingRow {
   id: number;
   date: string;
@@ -83,44 +79,6 @@ export interface PageData<T> {
   total: number;
   page: number;
   page_size: number;
-}
-
-/** 抢占记录筛选参数 */
-export interface BookingQuery {
-  page?: number;
-  page_size?: number;
-  date_from?: string;
-  date_to?: string;
-  version_id?: number;
-  branch_id?: number;
-  user_id?: number;
-  status?: BookingItem["status"];
-}
-
-// ---- 模板 ----
-export function getSlotTemplates(): Promise<SlotTemplateItem[]> {
-  return http.get("/slot-templates");
-}
-
-export function createSlotTemplate(
-  data: Partial<SlotTemplateItem> & {
-    name: string;
-    start_time: string;
-    end_time: string;
-  }
-): Promise<SlotTemplateSaveResponse> {
-  return http.post("/slot-templates", data);
-}
-
-export function updateSlotTemplate(
-  id: number,
-  data: Partial<SlotTemplateItem>
-): Promise<SlotTemplateSaveResponse> {
-  return http.put(`/slot-templates/${id}`, data);
-}
-
-export function deleteSlotTemplate(id: number): Promise<void> {
-  return http.delete(`/slot-templates/${id}`);
 }
 
 // ---- 日历 ----
@@ -180,10 +138,4 @@ export function getMyBookings(
   return http.get("/slot-bookings/mine", {
     params: { page, page_size: pageSize }
   });
-}
-
-export function getSlotBookings(
-  query: BookingQuery
-): Promise<PageData<BookingRow>> {
-  return http.get("/slot-bookings", { params: query });
 }

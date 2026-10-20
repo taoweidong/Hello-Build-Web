@@ -19,14 +19,6 @@ import {
   updateStrategy
 } from "@/api/strategy";
 import { getPlan } from "@/api/plan";
-import {
-  createReport,
-  getReport,
-  getReports,
-  getReportRevisions,
-  publishReport,
-  updateReport
-} from "@/api/report";
 
 describe("api/strategy 契约", () => {
   beforeEach(() => {
@@ -82,38 +74,5 @@ describe("api/plan 契约", () => {
     expect(httpMock.get).toHaveBeenCalledWith("/plan", {
       params: { date: "2026-10-11", version_id: 5 }
     });
-  });
-});
-
-describe("api/report 契约", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("列表/详情/新建/更新", async () => {
-    await getReports({ status: "draft", keyword: "27A" });
-    expect(httpMock.get).toHaveBeenCalledWith("/reports", {
-      params: { status: "draft", keyword: "27A" }
-    });
-    await getReport(7);
-    expect(httpMock.get).toHaveBeenCalledWith("/reports/7");
-    const form = {
-      title: "t",
-      conclusion: "pass" as const,
-      summary: "s"
-    };
-    await createReport(form);
-    expect(httpMock.post).toHaveBeenCalledWith("/reports", form);
-    await updateReport(7, form);
-    expect(httpMock.put).toHaveBeenCalledWith("/reports/7", form);
-  });
-
-  it("发布携带截图、修改记录路径", async () => {
-    await publishReport(7, "data:image/png;base64,AAA");
-    expect(httpMock.post).toHaveBeenCalledWith("/reports/7/publish", {
-      screenshot: "data:image/png;base64,AAA"
-    });
-    await getReportRevisions(7);
-    expect(httpMock.get).toHaveBeenCalledWith("/reports/7/revisions");
   });
 });

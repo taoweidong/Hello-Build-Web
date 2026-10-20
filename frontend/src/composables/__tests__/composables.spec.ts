@@ -1,22 +1,5 @@
-// composables 与共享常量单测
+// composables 单测（views/constants 展示映射单测在 views/__tests__/constants.spec.ts）
 import { describe, expect, it, vi } from "vitest";
-import { reportConclusionMeta } from "@/views/constants";
-
-describe("views/constants 展示映射", () => {
-  it("报告结论含 risk（有风险）", () => {
-    expect(reportConclusionMeta("risk")).toEqual({
-      text: "有风险",
-      type: "warning"
-    });
-  });
-
-  it("报告结论未命中时兜底 info", () => {
-    expect(reportConclusionMeta("weird")).toEqual({
-      text: "weird",
-      type: "info"
-    });
-  });
-});
 
 describe("useStrategyPreview 守卫逻辑", () => {
   it("分支/模板未选齐时不调度预览", async () => {

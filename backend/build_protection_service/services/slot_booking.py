@@ -428,22 +428,3 @@ def reschedule_booking(booking: SlotBooking, actor, payload: dict) -> tuple[Opti
         booking.id, actor.username, target_date, template.id,
     )
     return _booking_dict(booking, actor.id), None
-
-
-# ---------- 模板重叠检测 ----------
-
-def detect_template_overlap(template: SlotTemplate) -> list[str]:
-    """同星期下与其他启用模板的时间区间重叠告警（允许保存，仅提示）。"""
-    warnings: list[str] = []
-    my_wd = _weekdays_set(template.weekdays)
-    others = SlotTemplate.objects.filter(enabled=True).exclude(id=template.id)
-    for other in others:
-        other_wd = _weekdays_set(other.weekdays)
-        if my_wd is not None and other_wd is not None and not (my_wd & other_wd):
-            continue
-        if template.start_time < other.end_time and other.start_time < template.end_time:
-            warnings.append(
-                f"与「{other.name}」"
-                f"（{other.start_time:%H:%M}-{other.end_time:%H:%M}）时间重叠"
-            )
-    return warnings

@@ -1,7 +1,7 @@
 // 调度全景动作总线单测（R4-F1/F2/F5/F11）：
 // - 策略详情缓存按版本键控 + invalidateStrategyCache 失效（weekly 页同款范式）
 // - 批量释放含「他人抢占」时收集统一原因（后端非 owner 释放必填），汇总按成败分级
-// - 复制走 utils/clipboard 封装 + borrow-flow/format 文案唯一来源
+// - 复制走 utils/clipboard 封装 + shared/borrowFormat 文案唯一来源
 // - 改期提交在途守卫（双击仅一次 PATCH）
 // 测试纪律：mock 全部业务 API 与 element-plus 弹层，不引入网络与真实后端。
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -43,7 +43,7 @@ import { releaseBooking, rescheduleBooking } from "@/api/slotBooking";
 import type { BookingItem } from "@/api/slotBooking";
 import type { StrategyItem } from "@/api/types";
 import { copyText as clipboardCopy } from "@/utils/clipboard";
-import { formatBorrowFlowText } from "@/views/borrow-flow/format";
+import { formatBorrowFlowText } from "@/views/panorama/shared/borrowFormat";
 import { useScheduleActions } from "../useScheduleActions";
 import type { ScheduleData, ScheduleEvent } from "../types";
 import {
