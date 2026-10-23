@@ -58,6 +58,8 @@ export interface ScheduleActions {
     rescheduleHorizonEnd: string;
     /** 改期提交在途（按钮 :loading 防双击并发 PATCH，R4-F11） */
     rescheduling: boolean;
+    /** 批量释放在途（S4 按钮 :loading 防串行循环期间二次开出第二批，R6-F6） */
+    batchReleasing: boolean;
   };
   openEdit(event: ScheduleEvent): Promise<void>;
   openBorrow(event: ScheduleEvent): Promise<void>;
@@ -130,7 +132,8 @@ export function useScheduleActions(data: ScheduleData): ScheduleActions {
     rescheduleTemplateId: null as number | null,
     rescheduleTemplates: [] as SlotTemplateItem[],
     rescheduleHorizonEnd: "",
-    rescheduling: false
+    rescheduling: false,
+    batchReleasing: false
   });
 
   async function openEdit(event: ScheduleEvent) {
@@ -234,7 +237,7 @@ export function useScheduleActions(data: ScheduleData): ScheduleActions {
     }
   }
 
-  /** 可抢窗口截止日（口径与 slot-booking 页一致：today + horizon_days；
+  /** 可抢窗口截止日（口径同后端：today + horizon_days；
    * dayjs 本地时间实现，默认窗口取 DEFAULT_HORIZON_DAYS 唯一来源，R4-F13/F-L5） */
   function horizonEndOf(): string {
     return dayjs()
@@ -369,6 +372,9 @@ export function useScheduleActions(data: ScheduleData): ScheduleActions {
    * 汇总消息按成败分级：全部成功走 success，存在失败走 warning。
    */
   async function batchRelease(events: ScheduleEvent[]) {
+    // 在途守卫（R6-F6）：串行逐条释放期间按钮可再次点击开出第二批，
+    // 与单条接口竞态放大——:loading + 入口短路（对齐 confirmReschedule 范式）
+    if (ui.batchReleasing) return;
     const releasable = events.filter(
       e => e.permissions.canRelease || e.permissions.canReleaseOthers
     );
@@ -412,31 +418,36 @@ export function useScheduleActions(data: ScheduleData): ScheduleActions {
         return; // 用户取消：整批中止，不做部分释放
       }
     }
-    let ok = 0;
-    let fail = 0;
-    for (const e of releasable) {
-      try {
-        const booking = e.raw.type === "slot" ? e.raw.data.booking : null;
-        if (!booking) {
+    ui.batchReleasing = true;
+    try {
+      let ok = 0;
+      let fail = 0;
+      for (const e of releasable) {
+        try {
+          const booking = e.raw.type === "slot" ? e.raw.data.booking : null;
+          if (!booking) {
+            fail += 1;
+            continue;
+          }
+          await releaseBooking(booking.id, e.mine ? "" : othersReason);
+          ok += 1;
+        } catch {
           fail += 1;
-          continue;
         }
-        await releaseBooking(booking.id, e.mine ? "" : othersReason);
-        ok += 1;
-      } catch {
-        fail += 1;
       }
+      const summary = `批量释放完成：成功 ${ok} 条，失败 ${fail} 条`;
+      if (fail === 0) ElMessage.success(summary);
+      else ElMessage.warning(summary);
+      await data.refresh();
+    } finally {
+      ui.batchReleasing = false;
     }
-    const summary = `批量释放完成：成功 ${ok} 条，失败 ${fail} 条`;
-    if (fail === 0) ElMessage.success(summary);
-    else ElMessage.warning(summary);
-    await data.refresh();
   }
 
   /**
    * 复制电子流文本（仅借用事件）。
-   * 文案组装唯一来源 borrow-flow/format.formatBorrowFlowText（与借用审批页同一实现，
-   * 不再手写副本）；剪贴板走 utils/clipboard（textarea 降级 + 假成功防护，
+   * 文案组装唯一来源 shared/borrowFormat.formatBorrowFlowText（复制文案/时间格式化
+   * 均不落入 API 层）；剪贴板走 utils/clipboard（textarea 降级 + 假成功防护，
    * 非 HTTPS/权限被拒时 navigator.clipboard 为 undefined 也不再直接抛错，R4-F5/F-M2）。
    */
   async function copyText(event: ScheduleEvent) {

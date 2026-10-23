@@ -157,6 +157,32 @@ describe("buildEventActions 权限位 → 操作清单", () => {
     expect(fns.cancelBorrow).toHaveBeenCalledWith(event);
     expect(fns.openDetail).toHaveBeenCalledWith(event);
   });
+
+  it("R6-F1：admin 释他人位（canReleaseOthers）给出「释放」入口并接线 release", async () => {
+    const { fns, actions } = makeFakeActions();
+    const event = eventWith(
+      { canReleaseOthers: true },
+      { source: "slot", kind: "slot", mine: false }
+    );
+    const list = buildEventActions(event, actions);
+    // slot 事件兜底「详情」恒在末位；释放项排在其前
+    expect(keysOf(list)).toEqual(["release", "detail"]);
+    expect(list[0]).toMatchObject({ label: "释放", type: "danger" });
+    await list[0].run();
+    expect(fns.release).toHaveBeenCalledWith(event);
+  });
+
+  it("canRelease 与 canReleaseOthers 互斥：全开权限也不产生重复「释放」项", () => {
+    const { actions } = makeFakeActions();
+    const list = buildEventActions(
+      eventWith(
+        { canRelease: true, canReleaseOthers: true },
+        { source: "slot", kind: "slot" }
+      ),
+      actions
+    );
+    expect(keysOf(list).filter(k => k === "release")).toHaveLength(1);
+  });
 });
 
 describe("withCopyAction（S5 时间轴专属补充）", () => {

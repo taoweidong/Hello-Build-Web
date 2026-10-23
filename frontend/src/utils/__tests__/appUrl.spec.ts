@@ -5,14 +5,14 @@ import { appHashUrl } from "@/utils/appUrl";
 describe("appHashUrl", () => {
   it("拼接 origin + pathname + hash 路径", () => {
     const { origin, pathname } = window.location;
-    expect(appHashUrl("/report/detail/5")).toBe(
-      `${origin}${pathname}#/report/detail/5`
+    expect(appHashUrl("/panorama/gantt")).toBe(
+      `${origin}${pathname}#/panorama/gantt`
     );
   });
 
   it("自动补前导斜杠", () => {
-    expect(appHashUrl("borrow-flow/index?focus=3")).toContain(
-      "#/borrow-flow/index?focus=3"
+    expect(appHashUrl("panorama/month?date=2026-10-24")).toContain(
+      "#/panorama/month?date=2026-10-24"
     );
   });
 });

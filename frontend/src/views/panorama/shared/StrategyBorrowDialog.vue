@@ -102,7 +102,7 @@
 <script setup lang="ts">
 // 版本策略全景页 - 无修改权限用户的策略详情 + 借用申请弹窗
 // 借用 = 发起电子流（借用至自己的版本/分支 + 新时间），由来源版本负责人在「借用审批」页审批
-import { computed, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import dayjs from "dayjs";
 import { getPlan, type PlanVersion } from "@/api/plan";
@@ -125,7 +125,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "update:modelValue", value: boolean): void;
   /** 借用申请提交成功即通知父级（R5-F14）：全景 ScheduleDialogs 据此 data.refresh()，
-   *  否则新借用事件最长延迟一个轮询周期才上画布；weekly-new 侧不监听，零破坏 */
+   *  否则新借用事件最长延迟一个轮询周期才上画布 */
   (e: "created"): void;
 }>();
 
@@ -180,6 +180,13 @@ function reset() {
   form.target_branch_id = undefined;
   form.reason = "";
 }
+
+// 挂载即开兜底（R6-F16）：ScheduleDialogs 以 v-if 挂载本弹窗（挂载即 modelValue=true），
+// el-dialog 的 @open 事件在「挂载即 true」下不发出 → 目标版本下拉恒空。
+// onOpen 幂等（planVersions 非空即跳过），两种挂载方式下行为一致。
+onMounted(() => {
+  if (props.modelValue) onOpen();
+});
 
 async function onSubmit() {
   if (!props.strategy) return;

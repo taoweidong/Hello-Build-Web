@@ -15,6 +15,7 @@ const httpMock = vi.hoisted(() => ({
 vi.mock("@/api/http", () => ({ default: httpMock }));
 
 import { adminApi } from "@/api/admin";
+import { getPanoramaTodos } from "@/api/panorama";
 import { getWeekly } from "@/api/weekly";
 import { getMe, loginApi, logoutApi } from "@/api/auth";
 import {
@@ -40,6 +41,17 @@ describe("api/admin 契约（仅模板只读端点）", () => {
   it("模板列表", async () => {
     await adminApi.getTemplates();
     expect(httpMock.get).toHaveBeenCalledWith("/admin/templates");
+  });
+});
+
+describe("api/panorama 契约（R6-F9：待办聚合此前无契约锁定）", () => {
+  it("待办聚合：GET /panorama/todos，透传请求级配置", async () => {
+    await getPanoramaTodos({ silent: true });
+    expect(httpMock.get).toHaveBeenCalledWith("/panorama/todos", {
+      silent: true
+    });
+    await getPanoramaTodos();
+    expect(httpMock.get).toHaveBeenCalledWith("/panorama/todos", undefined);
   });
 });
 

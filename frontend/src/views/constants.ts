@@ -6,8 +6,7 @@ import type { PushMode } from "@/api/types";
 // ---- 时段抢占窗口 ----
 /**
  * 后端未返回 horizon_days 时的默认可抢占窗口（天），与后端 RuntimeConfig 默认值一致。
- * 唯一来源（R4-F13/F-L4）：此前 useScheduleData 与 slot-booking 页各持一份并互相
- * 注释引用「口径一致」，两处一律 import 本常量，禁止再本地复制。
+ * 唯一来源（R4-F13/F-L4）：此前多页面各持一份，现一律 import 本常量，禁止再本地复制。
  */
 export const DEFAULT_HORIZON_DAYS = 60;
 

@@ -157,14 +157,9 @@ const {
   actions,
   loading,
   lastLoadedAt,
-  days,
-  events,
   byDay,
-  kpi,
   versionOptions,
   branchOptions,
-  templates,
-  horizonDays,
   slotTruncated,
   refresh,
   // 查询变更器统一走装配总线（R4-F9：删除本文件逐字复制的处理器副本）
@@ -247,13 +242,15 @@ function barStyle(e: ScheduleEvent, subLane: number) {
 }
 
 async function onBarClick(e: ScheduleEvent) {
-  if (e.past) {
-    ElMessage.info("该日程已过期，仅可查看");
-    return;
-  }
+  // 抢占事件：可抢则进抢占弹窗，否则进详情——过期抢占放行详情（R6-F8，
+  // 与 S4/S5 行内「详情」恒可用口径对齐，历史抢占可溯源）
   if (e.source === "slot") {
     if (e.permissions.canOccupy) actions.openOccupy(e);
     else actions.openDetail(e);
+    return;
+  }
+  if (e.past) {
+    ElMessage.info("该日程已过期，仅可查看");
     return;
   }
   if (e.source === "borrow") {

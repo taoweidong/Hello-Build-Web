@@ -1,4 +1,5 @@
-// 策略表单实时预览：防抖 + 过期响应守卫（strategy 页 / admin 策略 Tab / 周视图策略编辑弹窗三入口共用）
+// 策略表单实时预览：防抖 + 过期响应守卫（strategy 页与 StrategyEditDialog 两入口共用；
+// 2026-10-20 页面精简后 admin 策略 Tab 已随系统管理页下线）
 import { onScopeDispose, shallowRef } from "vue";
 import {
   previewStrategy,

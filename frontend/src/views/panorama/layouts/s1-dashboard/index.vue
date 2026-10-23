@@ -137,7 +137,8 @@
               <li v-for="c in conflicts.slice(0, ALERT_MAX_ROWS)" :key="c.id">
                 <el-icon><WarningFilled /></el-icon>
                 <span
-                  >{{ c.date }} {{ c.time }} {{ c.title }} 与已抢占时段重合</span
+                  >{{ c.date }} {{ c.time }}
+                  {{ c.title }} 与已抢占时段重合</span
                 >
               </li>
             </ul>
@@ -226,12 +227,9 @@ const {
   lastLoadedAt,
   days,
   events,
-  byDay,
   kpi,
   versionOptions,
   branchOptions,
-  templates,
-  horizonDays,
   todos,
   refresh,
   // 查询变更器统一走装配总线（R4-F9：删除本文件逐字复制的处理器副本）
@@ -273,7 +271,11 @@ const HEAT_MAX_ROWS = 12;
 const ALERT_MAX_ROWS = 8;
 const heatPoints = computed(() => collectTimePoints(events.value));
 const heatRows = computed(() =>
-  buildHeatmap(events.value, days.value, heatPoints.value.slice(0, HEAT_MAX_ROWS))
+  buildHeatmap(
+    events.value,
+    days.value,
+    heatPoints.value.slice(0, HEAT_MAX_ROWS)
+  )
 );
 const heatOverflow = computed(() =>
   Math.max(heatPoints.value.length - HEAT_MAX_ROWS, 0)

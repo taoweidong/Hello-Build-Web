@@ -206,6 +206,37 @@ describe("S4 分组看板", () => {
     expect(releaseMock).toHaveBeenCalledTimes(1);
   });
 
+  it("R6-F6：批量释放在途时按钮 loading 且入口短路，串行期间不得开出第二批", async () => {
+    let resolveFn!: (v: unknown) => void;
+    releaseMock.mockReturnValue(
+      new Promise(r => {
+        resolveFn = r;
+      }) as never
+    );
+    ({ wrapper } = await mountLayout(PanoramaBoard, "/panorama/board"));
+    await toggleBatchMode("批量模式");
+    await checkRow(mySlotRow());
+
+    const batchBtn = () =>
+      wrapper.findAll("button").find(b => b.text() === "批量释放")!
+        .element as HTMLButtonElement;
+    batchBtn().dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await flushPromises();
+    // confirm/prompt 桩直接通过，进入串行释放：第一条在途 → 按钮 loading
+    expect(batchBtn().classList.contains("is-loading")).toBe(true);
+
+    // 在途期间再次点击：入口短路，不开第二批（仍只有 1 次请求）
+    batchBtn().dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await flushPromises();
+    expect(releaseMock).toHaveBeenCalledTimes(1);
+
+    resolveFn(undefined);
+    await flushPromises();
+    for (let i = 0; i < 2; i++) await flushPromises();
+    expect(batchBtn().classList.contains("is-loading")).toBe(false);
+    expect(releaseMock).toHaveBeenCalledTimes(1);
+  });
+
   it("翻周期后旧日期条目消失，勾选自动剔除", async () => {
     // 日历夹具按月返回：翻跨月份后原日期的抢占彻底离场
     calendarMock.mockImplementation(async (month: string) =>

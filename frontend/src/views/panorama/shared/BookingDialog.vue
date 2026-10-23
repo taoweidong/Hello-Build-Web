@@ -170,14 +170,16 @@ function resetForm() {
 watch(
   () => props.modelValue,
   async visible => {
-    if (visible) {
-      try {
-        planData.value = await getPlan({ date: props.date });
-      } catch {
-        planData.value = []; // 拦截器已提示
-      }
+    if (!visible) return;
+    try {
+      planData.value = await getPlan({ date: props.date });
+    } catch {
+      planData.value = []; // 拦截器已提示
     }
-  }
+  },
+  // immediate（R6-F16）：ScheduleDialogs 以 v-if 挂载本弹窗（挂载即 modelValue=true），
+  // 无 immediate 时 watch 永不触发 → 版本/分支下拉恒空、抢占无法提交
+  { immediate: true }
 );
 
 async function handleSubmit() {
@@ -197,6 +199,9 @@ async function handleSubmit() {
       branch_id: form.branch_id as number
     });
     emit("booked");
+    // 成功即关闭（R6-F5，对齐 StrategyEditDialog/StrategyBorrowDialog 口径；
+    // 表单经 @closed="resetForm" 复位，父级在 booked 回调里 refresh）
+    emit("update:modelValue", false);
   } catch {
     // 40904 抢占冲突等：拦截器已 ElMessage 提示，弹窗保持打开便于重选
   } finally {

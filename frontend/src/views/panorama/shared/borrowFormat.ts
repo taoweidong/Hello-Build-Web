@@ -11,7 +11,7 @@ import type { BorrowFlowItem } from "@/api/borrowFlow";
  */
 export const formatFlowTime = formatDateTime;
 
-/** 组装电子流纯文本（审批页一键复制，便于粘贴发给审核人员）；传入 detailUrl 时附带可直达该条的链接 */
+/** 组装电子流纯文本（S5 时间轴「复制」入口，便于粘贴发给审核人员）；传入 detailUrl 时附带可直达该条的链接 */
 export function formatBorrowFlowText(
   flow: BorrowFlowItem,
   detailUrl?: string

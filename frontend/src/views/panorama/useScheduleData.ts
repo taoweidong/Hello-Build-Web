@@ -2,7 +2,7 @@
 // 依据：docs/superpowers/specs/2026-10-12-scheduling-panorama-design.md §5.1.2~5.1.3
 //
 // 定位：布局无关。5 个布局页面只消费本 composable 的输出，不直接 import 业务 API。
-// 原 useWeeklyPanorama 保留不动（/weekly-new 回归基线 + 回滚兜底）。
+// （useWeeklyPanorama 随 weekly/weekly-new 页于 2026-10-12 下线、2026-10-20 删除，本中枢为其唯一继任实现）
 //
 // 纪律：
 // - 自增序号守卫：快速切换范围/版本时丢弃过期响应；**最终 events 写入同样
@@ -13,8 +13,8 @@
 // - 版本兜底：weekly 未传 version_id 时返回空策略，自动回填首个版本后二次拉取；
 // - 轮询退避 / document.hidden 暂停 / silent 请求 / 卸载守卫：
 //   设计文档原计划「由展示层各自接入」，实测那会让 5 个布局各复制一份
-//   定时器 + visibilitychange + onBeforeUnmount 逻辑（branch-config 页正是
-//   因漏了卸载守卫出过僵尸轮询 R3-F1）。故收敛到中枢一处实现，布局页不再
+//   定时器 + visibilitychange + onBeforeUnmount 逻辑（历史上 branch-config 页
+//   正是因漏了卸载守卫出过僵尸轮询 R3-F1）。故收敛到中枢一处实现，布局页不再
 //   各自接线（原 `autoRefreshMs` opt-out 选项从无生产调用方，按 YAGNI 删除，R4-F13）。
 import {
   computed,
@@ -34,7 +34,7 @@ import type { Timeline, WeeklyData } from "@/api/types";
 import { getCurrentUser } from "@/utils/business";
 // 周一计算与中文星期数组唯一来源（R4-F6/F9：删除本地 weekMondayOf 与 WEEKDAY_CN_MON 副本）
 import { buildDateRange, mondayOf, WEEKDAY_CN_MON } from "@/utils/week";
-// 默认可抢窗口唯一来源（R4-F13/F-L4：删除本地副本，与 slot-booking 页同源）
+// 默认可抢窗口唯一来源（R4-F13/F-L4：删除本地副本，与后端 SLOT_BOOKING_HORIZON_DAYS 口径一致）
 import { DEFAULT_HORIZON_DAYS } from "@/views/constants";
 import { POLL_BASE_MS, pollDelay } from "@/utils/polling";
 import { useBranchColors } from "@/composables/useBranchColors";
@@ -53,6 +53,9 @@ import type {
  * 范围内涉及的自然月（去重，最多 3 个，避免范围过大导致请求放大）。
  * truncated 标记范围超过 3 个自然月（R4-F13/F-L7）：第 4 个月起抢占矩阵静默
  * 缺失曾让用户误读为「无抢占」，画布层据 slotTruncated 显式提示。
+ * 当前五布局范围上限为单自然月（S2/S5 单日、S1/S4 一周、S3 一月），truncated
+ * 恒为 false——本链路是为未来自定义范围场景预留的防御逻辑（有单测锁定，勿当
+ * 死代码删除，R6-F13）。
  */
 export function monthsOf(
   from: string,

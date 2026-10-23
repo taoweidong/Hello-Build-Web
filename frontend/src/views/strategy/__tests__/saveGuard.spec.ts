@@ -52,11 +52,8 @@ vi.mock("@/utils/business", async importOriginal => {
   };
 });
 
-import {
-  getStrategies,
-  createStrategy,
-  updateStrategy
-} from "@/api/strategy";
+import { ElMessage } from "element-plus";
+import { getStrategies, createStrategy, updateStrategy } from "@/api/strategy";
 import { getPlan } from "@/api/plan";
 import { adminApi } from "@/api/admin";
 import StrategyIndex from "../index.vue";
@@ -68,10 +65,19 @@ let wrapper: VueWrapper;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // restoreMocks 会还原工厂里预设的 resolved 值：每个用例前显式重建默认桩
+  // restoreMocks 会还原工厂里预设的 resolved 值：每个用例前显式重建默认桩。
+  // R6-F7 起保存有前置字段校验，默认桩须提供有效分支/模板让表单可保存
   vi.mocked(getStrategies).mockResolvedValue([]);
-  vi.mocked(getPlan).mockResolvedValue([]);
-  vi.mocked(adminApi.getTemplates).mockResolvedValue([]);
+  vi.mocked(getPlan).mockResolvedValue([
+    {
+      version_id: 1,
+      version_name: "27A",
+      branches: [{ branch_id: 3, branch_name: "TR5" }]
+    }
+  ] as never);
+  vi.mocked(adminApi.getTemplates).mockResolvedValue([
+    { id: 1, name: "晚间全量冒烟", smoke_minutes: 0, analysis_minutes: 0 }
+  ] as never);
 });
 
 afterEach(() => {
@@ -92,11 +98,26 @@ function pending<T>() {
 function saveButton(w: VueWrapper): HTMLButtonElement {
   return w
     .findAll(".form-actions button")
-    .find(b => b.text().includes("保存策略"))!
-    .element as HTMLButtonElement;
+    .find(b => b.text().includes("保存策略"))!.element as HTMLButtonElement;
 }
 
 describe("R5-F3 策略页保存在途守卫", () => {
+  it("R6-F7：/plan 降级空集时保存被前置校验拦截，不发非法 payload", async () => {
+    vi.mocked(getPlan).mockResolvedValue([]);
+    vi.mocked(adminApi.getTemplates).mockResolvedValue([]);
+    const warningSpy = vi.spyOn(ElMessage, "warning");
+    wrapper = mount(StrategyIndex);
+    await flushPromises();
+
+    const save = saveButton(wrapper);
+    save.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await flushPromises();
+    // branch_id=0（无分支可选）被拦：不弹确认框、不发 createStrategy
+    expect(createMock).not.toHaveBeenCalled();
+    expect(warningSpy).toHaveBeenCalled();
+    warningSpy.mockRestore();
+  });
+
   it("新建路径：请求在途时按钮呈 loading，双击仅发一次 createStrategy，完成后复位", async () => {
     const { promise, resolveFn } =
       pending<Awaited<ReturnType<typeof createStrategy>>>();

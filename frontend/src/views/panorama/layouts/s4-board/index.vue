@@ -58,6 +58,7 @@
       <el-button
         size="small"
         type="danger"
+        :loading="actions.ui.batchReleasing"
         :disabled="!selectedEvents.length"
         @click="actions.batchRelease(selectedEvents)"
       >
@@ -157,15 +158,9 @@ const {
   query,
   actions,
   loading,
-  lastLoadedAt,
-  days,
   events,
-  byDay,
-  kpi,
   versionOptions,
   branchOptions,
-  templates,
-  horizonDays,
   refresh,
   // 查询变更器统一走装配总线（R4-F9：删除本文件逐字复制的处理器副本）
   setVersion,

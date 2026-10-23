@@ -1,7 +1,6 @@
-// utils/slotCalendar 单测：月历 42 格装配与统计（slot-booking 页核心纯函数）
+// utils/slotCalendar 单测：月历 42 格装配（S3 月历视图核心纯函数）
 import { describe, expect, it } from "vitest";
-import { buildMonthCells, summarizeCalendar } from "@/utils/slotCalendar";
-import type { CalendarDayCell } from "@/api/slotBooking";
+import { buildMonthCells } from "@/utils/slotCalendar";
 
 describe("buildMonthCells", () => {
   it("2026-10：42 格、周一开头、10-01 为周四（首格补位 09-28）", () => {
@@ -32,33 +31,5 @@ describe("buildMonthCells", () => {
   it("非法 month 返回空数组（不抛异常）", () => {
     expect(buildMonthCells("abc")).toEqual([]);
     expect(buildMonthCells("")).toEqual([]);
-  });
-});
-
-function cell(
-  status: "available" | "reserved",
-  isMine = false
-): CalendarDayCell {
-  return {
-    template_id: 1,
-    status,
-    booking:
-      status === "reserved"
-        ? ({ is_mine: isMine } as CalendarDayCell["booking"])
-        : null
-  };
-}
-
-describe("summarizeCalendar", () => {
-  it("统计总段数/已占/我的", () => {
-    const stats = summarizeCalendar({
-      "2026-10-01": [cell("available"), cell("reserved", true)],
-      "2026-10-02": [cell("reserved", false)]
-    });
-    expect(stats).toEqual({ total: 3, occupied: 2, mine: 1 });
-  });
-
-  it("空日历全零", () => {
-    expect(summarizeCalendar({})).toEqual({ total: 0, occupied: 0, mine: 0 });
   });
 });

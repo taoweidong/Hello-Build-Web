@@ -3,7 +3,7 @@
 // memory router / 全局 stub / 用户注入）收敛在此，避免五个文件各抄一遍。
 //
 // 注意：vi.mock 不放在本文件——各 spec 顶部自行 mock 四个数据源模块，
-// 与 composables/__tests__/useWeeklyPanorama.spec.ts 的既有风格保持一致。
+// 保持「每个 spec 自带依赖桩」的既有风格。
 import { mount, flushPromises } from "@vue/test-utils";
 import { vi } from "vitest";
 import type { Component } from "vue";
@@ -78,8 +78,13 @@ export async function openMoreMenu(
  * 调用方需在 beforeEach 里 setTestUser + 设置四个 API mock 的返回值。
  *
  * @param route 挂载时的当前路由（含 query，如 /panorama/timeline?date=...）
+ * @param stubs 额外/覆盖 stub（如用探针组件替换 ScheduleDialogs 断言弹窗显隐）
  */
-export async function mountLayout(component: Component, route: string) {
+export async function mountLayout(
+  component: Component,
+  route: string,
+  stubs: Record<string, Component> = {}
+) {
   const router = await makePanoramaRouter();
   await router.push(route);
   await router.isReady();
@@ -92,7 +97,8 @@ export async function mountLayout(component: Component, route: string) {
         // ScheduleDialogs 内的子弹窗（WeeklyNewStrategyEditDialog 等）走项目
         // 组件自动导入（unplugin-vue-components），vitest 无该 resolver，挂在前端会
         // 解析失败；本批布局 spec 只测布局自身渲染与筛选，弹窗不作断言，置空 stub
-        ScheduleDialogs: true
+        ScheduleDialogs: true,
+        ...stubs
       }
     }
   });

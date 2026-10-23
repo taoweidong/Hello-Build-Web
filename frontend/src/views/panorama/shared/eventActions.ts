@@ -39,7 +39,10 @@ export function buildEventActions(
       type: "primary",
       run: () => actions.openOccupy(e)
     });
-  if (e.permissions.canRelease)
+  // canRelease（本人）与 canReleaseOthers（admin 释他人）互斥，二者任一即出
+  // 「释放」项（R6-F1：此前 canReleaseOthers 算好了却无 UI 入口，admin 单条
+  // 释放他人只能绕道 S4 批量模式；release() 内部已按 mine/others 分流必填原因）
+  if (e.permissions.canRelease || e.permissions.canReleaseOthers)
     list.push({
       key: "release",
       label: "释放",

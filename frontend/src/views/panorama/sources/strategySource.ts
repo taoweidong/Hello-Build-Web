@@ -6,7 +6,7 @@
 //   其余日期退化为「点事件」（durationMin = 0），**禁止前端按 build_minutes 硬算时长**
 //   （会与 RuntimeConfig 漂移）。
 // - 过期判定走 isPastSlot（惰性，无 expired 枚举）。
-import type { Role, Timeline, WeeklyStrategy } from "@/api/types";
+import type { Timeline, WeeklyStrategy } from "@/api/types";
 // 权限判定唯一来源（R4-F8/F-M6：不再手写 admin || (pm && bound===versionId) 同构逻辑）
 import { canEditPanorama, isPastSlot } from "@/utils/business";
 import { pushModeMeta } from "@/views/constants";
@@ -47,11 +47,14 @@ function permissionsOf(
   user: MapStrategyOptions["user"],
   versionId: number | undefined
 ): SchedulePermissions {
-  // canEditPanorama 与后端策略写路径角色门槛对齐（有独立单测）；过期只读在前置
+  // canEditPanorama 与后端策略写路径角色门槛对齐（有独立单测）；过期只读在前置。
+  // role 收窄（R6-F15）：canEditPanorama 仅认 admin/pm，其余角色字面量显式归入
+  // undefined 而非 as 强转，杜绝非 Role 字符串静默流入
+  const role = user?.role;
   const canEdit =
     !past &&
     canEditPanorama(
-      user?.role as Role | undefined,
+      role === "admin" || role === "pm" ? role : undefined,
       user?.bound_version_id,
       versionId
     );

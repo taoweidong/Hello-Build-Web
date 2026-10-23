@@ -1,6 +1,5 @@
-// 时段月历装配纯函数（自 slot-booking 页抽取，便于单测锁定 42 格与统计逻辑）
+// 时段月历装配纯函数（S3 月历视图的 42 格装配，便于单测锁定）
 import dayjs from "dayjs";
-import type { SlotCalendarResponse } from "@/api/slotBooking";
 
 export interface MonthCell {
   date: string;
@@ -24,25 +23,4 @@ export function buildMonthCells(month: string): MonthCell[] {
     });
   }
   return list;
-}
-
-/** 工具栏统计：本月展示总段数 / 已占 / 我的 */
-export function summarizeCalendar(days: SlotCalendarResponse["days"]): {
-  total: number;
-  occupied: number;
-  mine: number;
-} {
-  let total = 0;
-  let occupied = 0;
-  let mine = 0;
-  for (const entries of Object.values(days ?? {})) {
-    for (const e of entries) {
-      total += 1;
-      if (e.status === "reserved") {
-        occupied += 1;
-        if (e.booking?.is_mine) mine += 1;
-      }
-    }
-  }
-  return { total, occupied, mine };
 }

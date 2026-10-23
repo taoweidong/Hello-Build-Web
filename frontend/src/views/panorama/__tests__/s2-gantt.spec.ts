@@ -1,5 +1,6 @@
 // S2 时空甘特布局组件级测试 /panorama/gantt
 // 重点：锚点日四阶段区间来自服务端 /plan（非前端硬算），翻日后退化为点标记
+import { defineComponent, h } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises } from "@vue/test-utils";
 import type { VueWrapper } from "@vue/test-utils";
@@ -17,6 +18,7 @@ import { listBorrowFlows } from "@/api/borrowFlow";
 import { getPanoramaTodos } from "@/api/panorama";
 import PanoramaGantt from "../layouts/s2-gantt/index.vue";
 import { mountLayout, setTestUser } from "./helpers";
+import { usePanorama } from "../context";
 import {
   makeBorrowFlow,
   makePlanVersions,
@@ -138,5 +140,32 @@ describe("S2 时空甘特", () => {
     expect(wrapper.find(".el-skeleton").exists()).toBe(false);
     expect(wrapper.find(".gantt-scroll").exists()).toBe(true);
     expect(wrapper.find(".el-empty").exists()).toBe(false);
+  });
+
+  it("R6-F8：过期抢占点击放行详情（与 S4/S5「详情」恒可用口径对齐）", async () => {
+    // 探针组件替换 ScheduleDialogs：注入同一上下文，ui.detailVisible 为真时渲染哨兵
+    ({ wrapper } = await mountLayout(PanoramaGantt, "/panorama/gantt", {
+      ScheduleDialogs: defineComponent({
+        setup() {
+          const { actions } = usePanorama();
+          return () =>
+            actions.ui.detailVisible
+              ? h("div", { class: "detail-probe" })
+              : null;
+        }
+      })
+    }));
+    // 翻到 10-12（相对冻结时刻已过期）：空闲时段条 canOccupy=false → 应进详情
+    await wrapper
+      .findAll("button")
+      .find(b => b.attributes("aria-label") === "前一天")!
+      .trigger("click");
+    for (let i = 0; i < 3; i++) await flushPromises();
+    const slotBar = wrapper
+      .findAll(".bar")
+      .find(b => b.text().includes("早间窗口"))!;
+    await slotBar.trigger("click");
+    await flushPromises();
+    expect(wrapper.find(".detail-probe").exists()).toBe(true);
   });
 });

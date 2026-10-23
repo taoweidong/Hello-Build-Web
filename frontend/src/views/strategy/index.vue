@@ -89,23 +89,27 @@ async function load() {
 }
 
 async function loadMeta() {
-  // 分支选项：从 /plan 提取 PM 绑定版本的分支
-  try {
-    const plan = await getPlan({ date: dayjs().format("YYYY-MM-DD") });
-    const v = plan.find(item => item.version_id === boundVersionId);
+  // 分支选项（/plan 提取 PM 绑定版本的分支）与模板列表相互独立，并行拉取
+  // 省一档首屏 RTT（R6-F15）；allSettled 保持两者各自独立的降级口径
+  const [planRes, templatesRes] = await Promise.allSettled([
+    getPlan({ date: dayjs().format("YYYY-MM-DD") }),
+    adminApi.getTemplates()
+  ]);
+  if (planRes.status === "fulfilled") {
+    const v = planRes.value.find(item => item.version_id === boundVersionId);
     if (v) {
       branchOptions.value = v.branches.map(b => ({
         id: b.branch_id,
         name: b.branch_name
       }));
     }
-  } catch {
-    branchOptions.value = [];
+  } else {
+    branchOptions.value = []; // 失败已由拦截器提示
   }
-  // 模板列表：优先 /admin/templates，失败降级从现有策略提取
-  try {
-    templateOptions.value = await adminApi.getTemplates();
-  } catch {
+  if (templatesRes.status === "fulfilled") {
+    templateOptions.value = templatesRes.value;
+  } else {
+    // 模板列表降级：从现有策略提取
     const set = new Map<number, TemplateItem>();
     strategyList.value.forEach(s => {
       if (!set.has(s.template_id)) {
@@ -160,6 +164,24 @@ function startNew() {
 const saving = ref(false);
 async function onSave() {
   if (saving.value) return; // 已有保存在途，忽略重复点击
+  // 前置字段校验（R6-F7，对齐 StrategyEditDialog 范式）：/plan 降级空集时
+  // startNew 落 branch_id=0，此前零校验直接提交非法 payload 靠后端 42201 兜底
+  if (!form.branch_id) {
+    ElMessage.warning("请选择策略分支");
+    return;
+  }
+  if (!form.template_id) {
+    ElMessage.warning("请选择策略模板");
+    return;
+  }
+  if (!form.name.trim()) {
+    ElMessage.warning("请输入策略名称");
+    return;
+  }
+  if (!form.build_start_time) {
+    ElMessage.warning("请选择构建开始时间");
+    return;
+  }
   if (preview.value?.conflict) {
     ElMessageBox.alert(
       preview.value.conflict.message || "存在时间冲突，请调整后重试",
@@ -259,7 +281,13 @@ onMounted(async () => {
     const s = strategyList.value.find(x => x.id === Number(qid));
     if (s) startEdit(s);
   }
-  if (templateOptions.value.length > 0 && !form.branch_id) {
+  // 分支与模板选项任一为空都不自动进新建态（R6-F7：此前只判模板，
+  // 分支降级空集时仍落 branch_id=0 的表单）；深链编辑优先
+  if (
+    branchOptions.value.length > 0 &&
+    templateOptions.value.length > 0 &&
+    !form.branch_id
+  ) {
     startNew();
   }
 });

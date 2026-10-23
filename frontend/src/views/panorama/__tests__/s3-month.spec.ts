@@ -1,5 +1,6 @@
 // S3 月历矩阵布局组件级测试 /panorama/month
 // 重点：首屏加载当前月全量（非默认本周）；单元格事件卡渲染与点击分发
+import { defineComponent, h } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import dayjs from "dayjs";
 import { flushPromises } from "@vue/test-utils";
@@ -20,6 +21,7 @@ import { listBorrowFlows } from "@/api/borrowFlow";
 import { getPanoramaTodos } from "@/api/panorama";
 import PanoramaMonth from "../layouts/s3-month/index.vue";
 import { mountLayout, setTestUser } from "./helpers";
+import { usePanorama } from "../context";
 import {
   makeBorrowFlow,
   makePlanVersions,
@@ -126,6 +128,29 @@ describe("S3 月历矩阵", () => {
     expect(chip.classes()).toContain("chip-past");
     await chip.trigger("click");
     expect(infoSpy).toHaveBeenCalledWith("该日程已过期，仅可查看");
+  });
+
+  it("R6-F8：过期抢占卡片点击放行详情（与 S4/S5「详情」恒可用口径对齐）", async () => {
+    // 探针组件替换 ScheduleDialogs：注入同一上下文，ui.detailVisible 为真时渲染哨兵
+    ({ wrapper } = await mountLayout(PanoramaMonth, "/panorama/month", {
+      ScheduleDialogs: defineComponent({
+        setup() {
+          const { actions } = usePanorama();
+          return () =>
+            actions.ui.detailVisible
+              ? h("div", { class: "detail-probe" })
+              : null;
+        }
+      })
+    }));
+    const cell = cellOf("2026-10-12");
+    // 10-12 的空闲时段卡（早间窗口）：canOccupy=false → 应进详情而非 info toast
+    const chip = cell
+      .findAll(".schedule-chip")
+      .find(c => c.text().includes("早间窗口"))!;
+    await chip.trigger("click");
+    await flushPromises();
+    expect(wrapper.find(".detail-probe").exists()).toBe(true);
   });
 
   it("翻到上一月后查询范围跟随月份", async () => {

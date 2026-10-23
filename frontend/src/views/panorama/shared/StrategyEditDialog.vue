@@ -183,7 +183,10 @@ watch(
       }
     }
     schedule();
-  }
+  },
+  // immediate（R6-F16）：ScheduleDialogs 以 v-if 挂载本弹窗（挂载即 modelValue=true），
+  // 无 immediate 时 watch 永不触发 → 表单不回填、模板列表不加载（保存会以默认值覆盖）
+  { immediate: true }
 );
 
 function fillForm() {
