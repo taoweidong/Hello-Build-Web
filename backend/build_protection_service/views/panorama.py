@@ -6,7 +6,9 @@
 
 口径（与既有权限规则同源，勿在此另立一套）：
 - `pending_approval`：待「我」审批的借用流数。admin 全量；pm 为其绑定版本所属策略
-  的申请；其余角色 0。判定与 `views/borrow_flow._can_approve` 一致。
+  的申请；其余角色 0。判定与 `views/borrow_flow._can_approve` 一致，并按 R5-B10
+  回避规则排除借用人是本人的单（R6-B8：自借单只能由本人撤回，计入待办只会产生
+  不可操作的假待办）。
 - `my_reserved_slots`：我的仍有效抢占（status=reserved 且 date >= 今天），不受页面筛选影响。
 - `my_pending_borrows`：我发起且仍待审批的申请数。
 
@@ -30,8 +32,10 @@ def todos_view(request):
     if resp:
         return resp
 
-    pending = BorrowFlow.objects.filter(status="pending")
+    pending = BorrowFlow.objects.filter(status="pending").exclude(borrower=user)
     if user.role == "admin":
+        # 排除自借单（R6-B8）：回避规则（R5-B10）下本人发起的申请自己永远
+        # 无法审批，计入待办只会产生不可操作的假待办
         pending_approval = pending.count()
     elif user.role == "pm":
         pending_approval = pending.filter(

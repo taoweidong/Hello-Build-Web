@@ -9,7 +9,7 @@ from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
 from ..api import ok
 from ..models import RevokedToken
-from . import authed_user, body_str, fail_resp, json_resp, parse_body, security_log
+from . import authed_user, body_str, client_ip, fail_resp, json_resp, parse_body, security_log
 from ..errors import (
     CODE_BAD_CREDENTIALS,
     CODE_FORBIDDEN,
@@ -26,11 +26,6 @@ User = get_user_model()
 # 联合键防止攻击者用错误密码远程锁死任意账号（如 admin）；同源针对同一账号仍会锁定。
 _LOGIN_MAX_ATTEMPTS = 5
 _LOGIN_LOCK_SECONDS = 15 * 60
-
-
-def _client_ip(request) -> str:
-    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    return request.META.get("REMOTE_ADDR", "") or forwarded.split(",")[0].strip()
 
 
 def _user_payload(user):
@@ -58,7 +53,7 @@ def login_view(request):
     password = body_str(body, "password", strip=False)
     if not username or not password:
         return fail_resp(CODE_UNPROCESSABLE, "用户名与密码不能为空")
-    fail_key = f"login:fail:{username}:{_client_ip(request)}"
+    fail_key = f"login:fail:{username}:{client_ip(request)}"
     if cache.get(fail_key, 0) >= _LOGIN_MAX_ATTEMPTS:
         security_log("login_locked", username=username, request=request)
         return fail_resp(CODE_RATE_LIMITED, "失败次数过多，请 15 分钟后重试")
@@ -109,7 +104,10 @@ def logout_view(request):
     RevokedToken.objects.filter(
         Q(expires_at__lt=datetime.now(tz=dt_timezone.utc)) | Q(expires_at__isnull=True)
     ).delete()
-    security_log("logout", username=username, request=request)
+    # 审计条件化（R6-B9）：仅当 token 有效且解析出用户才落 logout 审计行——
+    # 匿名/垃圾 token 调用此前每次都写 username="" 的噪音行，可被脚本灌审计。
+    if username:
+        security_log("logout", username=username, request=request)
     return json_resp(ok())
 
 

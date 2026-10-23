@@ -139,6 +139,11 @@ def build_slot_calendar(month: str, user) -> tuple[Optional[dict], Optional[dict
     """
     try:
         year_str, mon_str = str(month).strip().split("-")
+        # 全角数字前置硬化（R6-B11，parse_int/valid_hhmm 同款 isascii 口径）：
+        # int("２０２６") 在 Python 合法返回 2026，isdigit/异常捕获拦不住
+        if not (year_str.isascii() and year_str.isdigit()
+                and mon_str.isascii() and mon_str.isdigit()):
+            return None, _err(CODE_UNPROCESSABLE, "月份格式非法，应为 YYYY-MM")
         first = date_cls(int(year_str), int(mon_str), 1)
     except (ValueError, TypeError):
         return None, _err(CODE_UNPROCESSABLE, "月份格式非法，应为 YYYY-MM")
@@ -243,7 +248,13 @@ def create_booking(user, payload: dict) -> tuple[Optional[dict], Optional[dict]]
     if not template_applies_on(template, d):
         return None, _err(CODE_UNPROCESSABLE, "该日期不在此时段的适用范围（星期/生效期）内")
 
-    purpose = str(payload.get("purpose") or "").strip()
+    raw_purpose = payload.get("purpose")
+    # 字段级类型守卫（R6-B4，create 与 reschedule 的 R5-B9 口径统一）：非 str
+    # 一律 42201 拒绝——此前 create 路径 str() 强转会接受 int（API 路径经 CharField
+    # 静默强转同病）并把 dict 存成 "{'a': 1}" repr 串垃圾数据。
+    if not isinstance(raw_purpose, str):
+        return None, _err(CODE_UNPROCESSABLE, "purpose 应为字符串")
+    purpose = raw_purpose.strip()
     if not 2 <= len(purpose) <= 200:
         return None, _err(CODE_UNPROCESSABLE, "用途说明需 2~200 字")
 
@@ -297,7 +308,17 @@ def release_booking(booking: SlotBooking, actor, release_reason: str) -> tuple[O
     is_admin = getattr(actor, "role", "") == "admin"
     if not (is_owner or is_admin):
         return None, _err(CODE_FORBIDDEN, "无权限执行该操作")
-    reason = str(release_reason or "").strip()
+    # 释放原因守卫（R6-B5）：服务层是「双写校验」的最终裁决点，API 路径经
+    # ReleaseBookingSerializer（严格 CharField，R6-B4）提前拦截，直调路径在此
+    # 兜底——非 str 拒绝 + 长度取模型真实 max_length（SQLite 放行超长，迁 PG
+    # 即 DataError）。None 归一为 ""（本人释放原因可选语义不变）。
+    if release_reason is None:
+        release_reason = ""
+    if not isinstance(release_reason, str):
+        return None, _err(CODE_UNPROCESSABLE, "释放原因应为字符串")
+    reason = release_reason.strip()
+    if len(reason) > SlotBooking.release_reason.field.max_length:
+        return None, _err(CODE_UNPROCESSABLE, "释放原因长度不能超过 200 字符")
     if not is_owner and not reason:
         return None, _err(CODE_UNPROCESSABLE, "管理员释放他人抢占需填写释放原因")
     released_at = timezone.now()

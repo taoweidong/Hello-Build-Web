@@ -37,7 +37,6 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "rest_framework_simplejwt",
-    "django_filters",
     "corsheaders",
     "build_protection_service",
 ]
@@ -118,7 +117,6 @@ REST_FRAMEWORK = {
         "build_protection_service.auth.JWTAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
-    "DEFAULT_FILTER_BACKENDS": ("django_filters.rest_framework.DjangoFilterBackend",),
     "DEFAULT_PAGINATION_CLASS": None,
     # 异常也走 {code,message,data} 信封（非法 JSON body 等 DRF 异常默认返回
     # {"detail": ...} 无 code 字段，会破坏前端契约）

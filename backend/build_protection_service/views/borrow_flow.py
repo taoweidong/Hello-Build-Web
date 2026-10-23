@@ -28,6 +28,7 @@ from ..services.strategies import (
 from . import (
     authed_user,
     body_str,
+    check_str_len,
     fail_resp,
     fetch_by_id,
     fmt_dt,
@@ -157,6 +158,12 @@ def borrow_flow_create_view(request):
     new_build_time = body_str(body, "new_build_time")
     if not valid_hhmm(new_build_time):
         return fail_resp(CODE_UNPROCESSABLE, "新构建时间格式应为 HH:MM")
+    # reason 是审批人要看的核心业务内容（TextField，非审计备注类字段）：
+    # 超长 42201 拒绝而非静默截断（R6-B7，check_str_len 范式；500 为既定业务上限）
+    reason = body_str(body, "reason")
+    too_long = check_str_len(reason, "借用原因", 500)
+    if too_long:
+        return too_long
     if BorrowFlow.objects.filter(
         strategy=strategy, borrower=user, status="pending"
     ).exists():
@@ -169,7 +176,7 @@ def borrow_flow_create_view(request):
                 borrower=user,
                 target_branch=target_branch,
                 new_build_time=new_build_time,
-                reason=body_str(body, "reason", max_len=500),
+                reason=reason,
             )
     except IntegrityError:
         return fail_resp(CODE_ASSOCIATION, "该策略已有待审批的借用申请，请勿重复发起")

@@ -181,8 +181,11 @@ class BorrowFlow(models.Model):
     strategy = models.ForeignKey(
         Strategy, on_delete=models.CASCADE,
         related_name="borrow_flows", verbose_name="被借用策略")
+    # borrower 用 PROTECT（R6-B6，对齐 approver/审计表 operator 口径）：删除
+    # 借用人不得级联抹掉电子流——pending 单是审批人的待办、approved 单是执行
+    # 凭证，审计链发起方必须强存活；此前 CASCADE 与全库「审计记录强存活」取向相悖。
     borrower = models.ForeignKey(
-        User, on_delete=models.CASCADE,
+        User, on_delete=models.PROTECT,
         related_name="borrow_flows", verbose_name="借用人")
     target_branch = models.ForeignKey(
         Branch, on_delete=models.PROTECT,

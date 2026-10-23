@@ -6,7 +6,7 @@ from django.http import JsonResponse
 from django.utils import timezone
 
 from ..api import err
-from ..errors import CODE_FORBIDDEN, CODE_NOT_FOUND, CODE_STATUS, CODE_UNAUTHENTICATED, CODE_UNPROCESSABLE
+from ..errors import CODE_NOT_FOUND, CODE_STATUS, CODE_UNAUTHENTICATED, CODE_UNPROCESSABLE
 from ..models import SecurityLog
 from ..parsing import parse_int  # noqa: F401  re-export：视图层沿用 from . import parse_int
 
@@ -37,11 +37,15 @@ def first_error(errors) -> str:
     return "参数校验失败"
 
 
-def require_admin(user, message="仅管理员可操作"):
-    """admin 门槛：非 admin 返回 40301 响应，否则 None。"""
-    if getattr(user, "role", "") != "admin":
-        return fail_resp(CODE_FORBIDDEN, message)
-    return None
+def client_ip(request) -> str:
+    """客户端 IP 取值唯一来源（R6-B10）：REMOTE_ADDR 优先，回退 XFF 首段。
+
+    此前 security_log 取「REMOTE_ADDR or 整条 X-Forwarded-For」（整条直录可被
+    伪造且与登录限流的取值口径不一致），login 取「REMOTE_ADDR or XFF 首段」——
+    同一请求在登录锁定计数与审计日志可能记录不同 IP。统一收敛到本函数。
+    """
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    return request.META.get("REMOTE_ADDR", "") or forwarded.split(",")[0].strip()
 
 
 def fmt_dt(dt):
@@ -98,7 +102,7 @@ def security_log(action, username="", detail="", request=None):
     """
     meta = ""
     if request is not None:
-        ip = request.META.get("REMOTE_ADDR", "") or request.META.get("HTTP_X_FORWARDED_FOR", "")
+        ip = client_ip(request)
         ua = (request.META.get("HTTP_USER_AGENT", "") or "")[:200]
         meta = f"ip={ip} ua={ua}"
         detail = f"{detail}; {meta}" if detail else meta

@@ -176,7 +176,9 @@ def update_strategy(request, sid):
     if perr:
         return perr
     try:
-        svc_update(s, parse_body(request), request.user)
+        # 服务层在事务内重读最新实例再落库（R6-B2），返回值是「重读后的新实例」：
+        # 必须用返回值组装响应，沿用外层旧实例会把陈旧字段回给前端
+        s = svc_update(s, parse_body(request), request.user)
     except StrategyValidationError as exc:
         return validation_error_resp(exc)
     return json_resp(ok(strategy_payload(s)))

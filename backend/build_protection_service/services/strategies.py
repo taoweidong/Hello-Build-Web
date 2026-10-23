@@ -1,4 +1,8 @@
-"""策略领域服务：互斥/冲突校验、创建与更新（PM 与 admin 两入口共用）。
+"""策略领域服务：互斥/冲突校验、创建与更新。
+
+入口面（2026-10-20 页面精简后）：PM API（views/strategies.py）、借用审批建策略
+（views/borrow_flow.py）、django-admin 面板（admin.py save_model/delete_model 复用
+本模块校验与删除）。admin 专用 CRUD 端点已随系统管理页下线。
 
 写路径统一包 transaction.atomic；校验失败抛 StrategyValidationError，
 由视图层转统一响应（code + message + extra 冲突详情）。
@@ -159,7 +163,12 @@ def _change_desc(old: dict, body: dict) -> str:
 @transaction.atomic
 def create_strategy(branch, template, operator, *, name, build_start_time,
                     push_start_time=None, push_mode="normal", enabled=True):
-    """创建策略（含校验），供 PM 与 admin 两入口共用。
+    """创建策略（含校验），供 PM API / 借用审批 / django-admin 共用。
+
+    冲突校验仅在结果态为启用时执行（R6-B3，对齐 update/toggle 的 R5-B1 语义）：
+    停用策略不占时段（唯一约束只覆盖 enabled=True），创建停用归档策略不应被
+    同时段的既有启用策略 40902 误拦——否则「先建停用再处理冲突」的归档路径
+    在 create 入口被堵死。
 
     校验竞态兜底：并发下另一事务可能在校验读之后、本事务写之前提交冲突策略，
     唯一约束 uniq_active_strategy_branch_time 在 DB 层拦截，转 40902。
@@ -167,7 +176,8 @@ def create_strategy(branch, template, operator, *, name, build_start_time,
     name = _validate_name(name)
     if not isinstance(enabled, bool):
         raise StrategyValidationError(CODE_UNPROCESSABLE, "enabled 应为布尔值")
-    validate_strategy(branch, template, build_start_time, push_start_time, push_mode=push_mode)
+    validate_strategy(branch, template, build_start_time, push_start_time,
+                      push_mode=push_mode, check_conflicts=enabled)
     try:
         return Strategy.objects.create(
             branch=branch, template=template, name=name,
@@ -181,7 +191,20 @@ def create_strategy(branch, template, operator, *, name, build_start_time,
 
 @transaction.atomic
 def update_strategy(strategy: Strategy, body: dict, operator):
-    """按请求体增量更新策略并留痕字段差异；校验失败抛 StrategyValidationError。"""
+    """按请求体增量更新策略并留痕字段差异；校验失败抛 StrategyValidationError。
+
+    并发加固（R6-B2）：实例由视图层在事务外读出，快照可能陈旧——直接全字段
+    save() 会把陈旧值写回（PATCH+PATCH 丢更新；PATCH 持陈旧 enabled=False 跳过
+    冲突校验后把停用态写回，静默撤销他人经完整校验的重新启用）。此处事务内
+    select_for_update 重读最新状态再做判定与合并（SQLite 上 FOR UPDATE 为
+    no-op，靠 IMMEDIATE 串行化写；迁 PG 后这层行锁是主要防线），且只写
+    实际变更字段（save(update_fields=…)，对齐 R5-B5 范式）。
+    """
+    strategy = (
+        Strategy.objects.select_for_update()
+        .select_related("branch__version", "branch", "template")
+        .get(pk=strategy.pk)
+    )
     old = strategy_payload(strategy)
     build_start_time = body.get("build_start_time", strategy.build_start_time)
     push_start_time = body.get("push_start_time", strategy.push_start_time)
@@ -194,14 +217,18 @@ def update_strategy(strategy: Strategy, body: dict, operator):
     validate_strategy(strategy.branch, strategy.template, build_start_time, push_start_time,
                       push_mode=push_mode, exclude_id=strategy.id,
                       check_conflicts=enabled)
+    # update_fields：请求体未提供的字段不写列，杜绝陈旧快照回写（R6-B2）；
+    # updated_at 为 auto_now，须显式列入才会随 UPDATE 刷新。
+    update_fields = ["build_start_time", "push_start_time", "push_mode", "enabled", "updated_at"]
     if body.get("name") is not None:
         strategy.name = _validate_name(body["name"])
+        update_fields.append("name")
     strategy.build_start_time = build_start_time
     strategy.push_start_time = push_start_time or None
     strategy.push_mode = push_mode
     strategy.enabled = enabled
     try:
-        strategy.save()
+        strategy.save(update_fields=update_fields)
     except IntegrityError as exc:
         _raise_conflict_or_reraise(exc, strategy.branch, build_start_time)
     desc = _change_desc(old, body)
@@ -216,8 +243,8 @@ def update_strategy(strategy: Strategy, body: dict, operator):
 def toggle_strategy(strategy: Strategy) -> Strategy:
     """启停策略（R3-B4）：启用方向先跑统一校验，落库用条件 UPDATE 防并发。
 
-    审计留痕由调用方负责：PM 入口写 StrategyChangeLog、admin 入口写
-    AdminOpLog（双轨口径不变，见 views 层）。
+    审计留痕由调用方负责：PM 入口写 StrategyChangeLog（admin 端点已随页面
+    精简下线，django-admin 面板启停走 save_model 重校验，不经过本函数）。
 
     此前 toggle 是唯一未套「条件 UPDATE 抢占」范式的写路径（读改写竞态 +
     重新启用绕过互斥/阶段校验，2026-10-13 评估 B-P2-1）：
@@ -253,16 +280,16 @@ def toggle_strategy(strategy: Strategy) -> Strategy:
 
 @transaction.atomic
 def delete_strategy(strategy: Strategy) -> None:
-    """删除策略（R4-B1，PM 与 admin 两入口共用）：事务内拦截 pending 借用流。
+    """删除策略（R4-B1，PM API / django-admin 面板共用）：事务内拦截 pending 借用流。
 
     BorrowFlow.strategy 为 CASCADE，直接删除会静默抹掉进行中的待审批电子流
-    （借用人/审批人无感知）与全部 ExecutionRound 历史；此前仅 PM 入口有拦截
-    （R3-B5），admin 入口反而约束更松（2026-10-15 评估 B4-01）。检查与删除
-    同一事务（SQLite IMMEDIATE 串行化写路径），防检查后插入。
+    （借用人/审批人无感知）与全部 ExecutionRound 历史。检查与删除同一事务
+    （SQLite IMMEDIATE 串行化写路径），防检查后插入。
 
     拦截时抛 StrategyValidationError（40903，复用既有「存在待审批借用流」文案）；
-    审计留痕由调用方负责：PM 入口在同事务内写 AdminOpLog、admin 入口写
-    AdminOpLog（StrategyChangeLog 随策略级联删除，不能承载删除审计，R3-B5）。
+    审计留痕由调用方负责：PM 入口写 AdminOpLog（StrategyChangeLog 随策略级联
+    删除，不能承载删除审计，R3-B5），django-admin 面板删除经 StrategyAdmin.
+    delete_model 路由到本函数（R6-B1），拦截异常转 ValidationError 展示。
     """
     if BorrowFlow.objects.filter(strategy=strategy, status="pending").exists():
         raise StrategyValidationError(

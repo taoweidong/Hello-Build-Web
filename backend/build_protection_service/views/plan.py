@@ -54,7 +54,8 @@ def plan_view(request):
     latest_round = ExecutionRound.objects.filter(
         strategy_id=OuterRef("pk")
     ).order_by("-exec_date", "-id")
-    # 仅对本页会展示的策略（enabled=True）做子查询标注，避免全表 annotate
+    # 仅对本页会展示的策略（enabled=True）做子查询标注（全量启用策略仍需标注，
+    # 因为下方按版本逐条展示其全部启用策略的结论；停用策略不出现在任何分支下，无需标注）
     status_map = {
         s.id: (s.latest_conclusion or "pending")
         for s in Strategy.objects.filter(enabled=True).annotate(

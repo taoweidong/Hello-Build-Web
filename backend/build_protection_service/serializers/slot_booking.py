@@ -7,6 +7,22 @@ from rest_framework import serializers
 from ..models import Branch, Version
 
 
+class StrictCharField(serializers.CharField):
+    """非 str 拒绝（R6-B4）：CharField 默认把 int/float 静默强转为 str
+    （仅拒绝 bool/dict/list），导致同一载荷在 create（经序列化器）与改期
+    （服务层 R5-B9 非 str 拒绝）两条写路径行为相反。本字段对齐服务层口径，
+    字段级类型校验拒绝优于静默转换。"""
+
+    default_error_messages = {
+        "invalid": "该字段应为字符串",
+    }
+
+    def to_internal_value(self, data):
+        if not isinstance(data, str):
+            self.fail("invalid")
+        return super().to_internal_value(data)
+
+
 class SlotBookingCreateSerializer(serializers.Serializer):
     """抢占入参：全字段必填，用途 2~200 字，分支必须归属所选版本。
 
@@ -17,7 +33,7 @@ class SlotBookingCreateSerializer(serializers.Serializer):
 
     date = serializers.DateField()
     template_id = serializers.IntegerField()
-    purpose = serializers.CharField(max_length=200)
+    purpose = StrictCharField(max_length=200, error_messages={"invalid": "purpose 应为字符串"})
     version_id = serializers.IntegerField()
     branch_id = serializers.IntegerField()
 
@@ -40,6 +56,7 @@ class SlotBookingCreateSerializer(serializers.Serializer):
 class ReleaseBookingSerializer(serializers.Serializer):
     """释放入参：admin 释放他人时 reason 必填（服务层按操作人判定）。"""
 
-    release_reason = serializers.CharField(
-        max_length=200, required=False, allow_blank=True, default=""
+    release_reason = StrictCharField(
+        max_length=200, required=False, allow_blank=True, default="",
+        error_messages={"invalid": "释放原因应为字符串"},
     )
