@@ -103,3 +103,9 @@ class Meta:
 - `models/others.py`（+1 约束）、新增 migration
 - `services/strategies.py`（create/update 各 +4 行捕获）
 - 新增测试约 4 例
+
+## 修订记录（2026-10-24 第六轮质量优化）
+
+- **update_strategy 事务内重读 + 精准回写（R6-B2）**：`update_strategy` 在 atomic 内对目标策略 `select_for_update().select_related(...)` 重读最新状态后再做校验与合并，落库只 `save(update_fields=…)` 写实际变更字段（`updated_at` 为 auto_now 显式列入）；PM 视图改用服务层返回值组装响应。双修复：① 视图层在事务外读出的陈旧实例全字段 `save()` 会把表单打开期间他人已改的字段（如 enabled）静默回滚（PATCH+PATCH 丢更新；持陈旧 `enabled=False` 跳过冲突校验后把停用态写回，静默撤销他人经完整校验的重新启用）；② 请求体未提供的字段不再被陈旧快照覆盖。§2 所述「SQLite 上 `select_for_update` 为 no-op」仍然成立——本次重读的重心是消除 ORM 实例陈旧写（SQLite 靠 IMMEDIATE 串行化兜写竞态），迁移 PostgreSQL 后这层行锁同时成为真防线，与 §4「迁 PG 改用 select_for_update」的既定计划一致。
+- **create_strategy 冲突校验按结果态（R6-B3）**：`create_strategy` 同样传 `check_conflicts=enabled`——以停用态归档创建的策略不再被同时段既有启用策略 40902 误拦（对齐 R5-B1 update 口径与 toggle「仅启用方向校验」语义，「先建停用再处理冲突」的归档路径在 create 入口不再被堵死）。
+- **admin 面板删除路由共享服务层（R6-B1）**：django-admin `StrategyAdmin.delete_model`/`delete_queryset` 改调共享 `delete_strategy`（40903 拦截转表单 ValidationError），pending 借用流拦截覆盖 admin 面板——R4-B1 的拦截此前仅覆盖 API 入口。

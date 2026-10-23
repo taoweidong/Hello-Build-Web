@@ -279,7 +279,7 @@ el-tabs 两 Tab：
 - 释放：本人可释；他人释放 40301；admin 释他人必填原因；释放后日历该格回到空闲
 - 日历聚合：42 格数据正确性、is_mine 计算、惰性过期展示、月边界（6 周跨月）
 - 模板管理：重名 40902、删除有记录模板 40902、重叠 warnings 返回
-- 权限矩阵：非 admin 访问模板写接口/记录列表 40301
+- 权限矩阵：非 admin 访问模板写接口/记录列表 40301（模板写接口与 `SlotBookingViewSet.list` 已随 2026-10-20 页面精简删除，见修订六）
 
 **前端**：
 
@@ -315,10 +315,17 @@ el-tabs 两 Tab：
 - **改期端点回填（2026-10-13 随调度全景 P2 上线，此前仅记于调度全景 spec 修订五）**：新增 `PATCH /api/slot-bookings/<id>` 抢占改期——仅本人或 admin、仅 reserved 状态，校验链与抢占同构（目标时段冲突 → 40904）；调度全景「抢占改期」弹窗接线（权限位 `canReschedule`）。
 - **非 dict 载荷归一（R4-B3）**：改期 `partial_update` 改 `request.data if isinstance(request.data, dict) else {}`——此前传 JSON 数组/字符串直塞服务层，`payload.get` 冒 AttributeError 变 500（R3-B2 同款漏网）；归一后与空 body 同语义（缺省字段沿用原值的 no-op 改期）。
 - **IntegrityError 精确匹配（R4-B8）**：create_booking/reschedule_booking 抽公共 `_raise_slot_conflict_or_reraise`——异常消息命中目标约束 `uniq_slot_booking_active`（SQLite 消息只含字段组合，按 `slotbooking.date`+`slotbooking.template_id` 匹配；兼容 Postgres 携带约束名）才转 40904 冲突，否则原样 re-raise 保留堆栈；此前不区分约束一律 40904「被他人抢占」，撞 NOT NULL/外键失效时误导用户（范式对齐 `services.strategies._raise_conflict_or_reraise`）。
-- **模板创建并发重名兜底（R4-B17）**：`SlotTemplateViewSet.create` 与 admin `create_template` 包 savepoint 捕获 IntegrityError → 40902（「时段名称已存在」/「模板名已存在」）——validate_name 的 check-then-create 有竞态窗口，此前未捕获走 DRF 兜底 50000 破坏契约。
+- **模板创建并发重名兜底（R4-B17）**：`SlotTemplateViewSet.create` 与 admin `create_template` 包 savepoint 捕获 IntegrityError → 40902（「时段名称已存在」/「模板名已存在」）——validate_name 的 check-then-create 有竞态窗口，此前未捕获走 DRF 兜底 50000 破坏契约。（2026-10-24 注：两入口均已随页面精简与第六轮运维面收敛删除，模板写入面现为 django-admin `SlotTemplateAdmin`（R6-B1 注册为唯一管理入口）与 seed；若重开 API 写端点须复刻本兜底范式。）
 - **全角数字拒绝（R4-B12）**：`validate_weekdays` 前置 `isascii`（`"２".isdigit()` 为 True 且 `int("２")==2`，此前全角数字放行后 `isoweekday()` 匹配错位）；`services/timeline.valid_hhmm` 同款前置（正则 `\d` 匹配全角，全角时间串入库后 Strategy 按字符串排序错位），与 `parse_int` 硬化口径对齐。
 - **seed master 分支守卫（R4-B15）**：`_seed_extra_strategies` 对 27A master 分支补「缺失即重建」守卫（对齐 tr527a/tr627a 既有写法）——此前 master 被删后以 None 分支 get_or_create → IntegrityError 中断整个 seed。
 
 ## 修订记录（2026-10-18 第五轮质量优化）
 
 - **改期 purpose 字段级类型守卫（R5-B9）**：`services/slot_booking._resolve_target` 对 `raw_purpose` 非 None 且非 str → 42201「purpose 应为字符串」——此前 `str(payload.get("purpose") or "")` 会把数字/布尔 repr 化入库（拒绝优于静默转换，R4-B10 取向的字段级延伸）；None/缺省 → 沿用原值语义不变，str → 原 strip + 2~200 长度校验不变。回归 `tests_quality_round5.py::ReschedulePurposeGuardTests`。
+
+## 修订记录（2026-10-20 页面精简 + 2026-10-24 第六轮质量优化）
+
+- **模板写端点与记录列表下线（2026-10-20 页面精简，commit b37bab6）**：`SlotTemplateViewSet`（模板 CRUD）与 `SlotBookingViewSet.list`（全量记录列表，原仅 admin）删除，时段配置页同步下线；对外仅存 `GET /admin/templates`（只读，供策略页模板下拉）、`GET /slot-calendar`、`POST /slot-bookings`、`GET /slot-bookings/mine`、`PATCH /slot-bookings/<id>`、`POST /slot-bookings/<id>/release` 六条消费端点；模板写入面收敛为 django-admin `SlotTemplateAdmin`（R6-B1 注册为唯一管理入口，此前从未注册导致生产无法新增/修改/停用模板）与 seed 命令。§9「权限矩阵」与修订四 R4-B17 中涉及模板写接口/记录列表的条目转为历史记录。
+- **抢占 purpose 双路径口径统一（R6-B4）**：创建路径序列化器 `purpose`/`release_reason` 改严格 `StrictCharField`（DRF `CharField` 默认把 int/float 静默强转为 str，仅拒 bool/dict/list，与改期路径 R5-B9「非 str 拒绝」行为相反）；服务层 `create_booking` 补同款字段级守卫（非 str → 42201，杜绝 dict 被 `str()` 存成 repr 串垃圾数据）。两写路径口径对齐。
+- **释放原因服务层硬化（R6-B5）**：`release_booking` 对 `release_reason` 非 str → 42201、超模型 `max_length`(200) → 42201（None 归一为 ""，本人释放原因可选语义不变）——API 路径经严格序列化器提前拦截，直调路径由服务层兜底（SQLite 放行超长、迁 PG 即 DataError）。
+- **slot_calendar 月份参数全角数字硬化（R6-B11）**：`build_slot_calendar` 对年/月串前置 `isascii` + `isdigit` 校验（`int("２０２６")` 在 Python 合法，`isdigit`/异常捕获拦不住），与 `parse_int`/`valid_hhmm` 的 R4-B12 口径对齐。

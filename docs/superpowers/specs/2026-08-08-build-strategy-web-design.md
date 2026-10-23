@@ -477,3 +477,12 @@ Hello-Build-Web/
 - **update_template 时长变更告警（R5-B12）**：smoke/analysis_minutes 变更时对引用该模板的**启用策略**按分支分组做两两阶段重叠检测（复用 mutex 区间逻辑），响应 `data.warnings` 返回冲突策略对清单（无冲突为空数组）；**仅告警不拦截**——冲突处置走「先停用归档」逃生通道（R5-B1 口径）。create_template 不做（尚无引用）。回归 `TemplateDurationWarningTests`。
 - **列表过滤 0 值 fail-closed（R5-B13）**：`filter_strategies_qs` 的 `version_id`/`branch_id` 由 truthy 判定改 `is not None`（`parse_int` 失败返回 None 即「未提供」，0 则真过滤 → 空集），与 executions 的 `strategy_id` 语义统一。回归 `FilterZeroSemanticsTests`。
 - **R5-B6/B8 与第四轮 R4-B5/B11 回填**：见上方 admin 段「2026-10-18 补」引言；admin 删除策略入口收敛共享 `delete_strategy`（R4-B1）记于 borrow-flow spec 修订四。
+
+## 修订记录（2026-10-20 页面精简 + 2026-10-24 第六轮质量优化）
+
+> 本 spec 成文于「全功能多页」时代，2026-10-20 页面精简（commit b37bab6）后以下章节**仅为历史记录**：§8.6 系统管理页 / §8.7 日志中心、执行与结论域（`/api/executions*`）、日志域（`/api/logs/execution|changes`、`/api/admin/logs/operations|security`）、`GET/POST/PATCH/DELETE /api/admin/templates`（模板写端点）、`GET/PUT /api/admin/config`（set_config 写入口）及 §3 中「日志 4 类查询界面」等均已随页面整体删除；现行对外端点以 `backend/build_protection_service/views/urls.py`（20 条，调度全景 + 策略配置两页消费面）与根 README 为准。策略/认证/借用/时段域的现行契约以本节及各域专属 spec（strategy-concurrency / borrow-flow / slot-booking / scheduling-panorama）为准。
+
+- **策略写路径第六轮收敛**：`update_strategy` 事务内 `select_for_update` 重读 + `save(update_fields=…)`、视图用返回值组装响应（R6-B2）；`create_strategy` 按结果态传 `check_conflicts=enabled`（R6-B3）；django-admin `StrategyAdmin.delete_model` 路由共享 `delete_strategy`（R6-B1）。详见 strategy-concurrency spec 修订记录。
+- **admin 运维面收敛（R6-B1/B12）**：`SlotTemplateAdmin` 注册为时段模板唯一管理入口（此前从未注册，生产无法维护模板）；`SlotBooking`/`BorrowFlow`/审计三表（StrategyChangeLog/AdminOpLog/SecurityLog）注册只读 ModelAdmin 禁增删改；上文「2026-10-18 补」中 R5-B12 模板时长变更告警（update_template `data.warnings`）随模板写端点下线转为历史记录，R4-B11 save_model 重校验仍现行有效。
+- **logout 审计条件化（R6-B9）**：`/auth/logout` 仅当 Bearer token 有效且解析出用户才写 `logout` 审计行（匿名/垃圾 token 不再产生 `username=""` 噪音审计，堵住脚本灌审计入口）；token 吊销（黑名单写入）与历史过期行清理行为不变。
+- **客户端 IP 唯一来源（R6-B10）**：登录失败限流与安全审计取 IP 统一走 `views/client_ip`（REMOTE_ADDR 优先、回退 XFF 首段）——此前 `security_log` 直录整条 `X-Forwarded-For`（可伪造，且与 login 限流「XFF 首段」口径不一致，同一请求在限流计数与审计日志可能记不同 IP）。
