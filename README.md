@@ -26,7 +26,7 @@
 | 前端 | Vue 3 · Vite · TypeScript · Element Plus（基于 pure-admin-thin v6.2.0）· Pinia · Vue Router |
 | 后端 | Django 5 · Django REST Framework · SimpleJWT · django-cors-headers |
 | 数据库 | SQLite（开发 / 演示），可平滑迁移 PostgreSQL |
-| 测试 | 后端 Django TestCase（325 例）· 前端 Vitest（264 例） |
+| 测试 | 后端 Django TestCase（351 例）· 前端 Vitest（284 例） |
 
 统一响应契约 `{ code, message, data }`；时区 `Asia/Shanghai`；策略写路径经服务层统一校验（时间冲突 / 资源互斥）。
 
