@@ -19,12 +19,14 @@ def _template_payload(t):
 
 def templates_view(request):
     """策略模板：列表（admin+pm 只读）。"""
+    # 方法守卫（R7-B12，对齐全站「方法守卫先行」）：读端点仅 GET；此前排在
+    # 认证+角色之后，builder 发 POST 会得到 40301「无权限」而非 42201「方法不支持」
+    if request.method != "GET":
+        return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
     user, resp = authed_user(request)
     if resp:
         return resp
     if user.role not in ("admin", "pm"):
         return fail_resp(CODE_FORBIDDEN, "无权限操作模板")
-    if request.method != "GET":
-        return fail_resp(CODE_UNPROCESSABLE, "不支持的请求方法")
     qs = StrategyTemplate.objects.all()
     return json_resp(ok([_template_payload(t) for t in qs]))

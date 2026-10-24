@@ -10,11 +10,13 @@ from django.http import Http404, JsonResponse
 from rest_framework.exceptions import (
     APIException,
     MethodNotAllowed,
+    NotAcceptable,
     NotAuthenticated,
     NotFound,
     ParseError,
     PermissionDenied,
     Throttled,
+    UnsupportedMediaType,
     ValidationError,
 )
 from rest_framework.views import exception_handler as drf_exception_handler
@@ -57,7 +59,9 @@ def contract_exception_handler(exc, context):
         code = CODE_FORBIDDEN
     elif isinstance(exc, (NotFound, Http404)):
         code = CODE_NOT_FOUND
-    elif isinstance(exc, (ParseError, ValidationError)):
+    elif isinstance(exc, (ParseError, ValidationError, UnsupportedMediaType, NotAcceptable)):
+        # 415/406 一并归入参数非法（R7-B8）：此前落入 else 兜底被误标 50000/500，
+        # 客户端错误（如 text/plain Content-Type）混入服务端错误监控口径
         code = CODE_UNPROCESSABLE
     elif isinstance(exc, MethodNotAllowed):
         # 契约无 405 语义，归入「不支持的请求方法」的 42201（与函数视图口径一致）
@@ -68,9 +72,9 @@ def contract_exception_handler(exc, context):
         code = CODE_RATE_LIMITED
     else:
         # 走到这里 response 必非 None，即 exc 必为 APIException（Http404 已被
-        # DRF handler 归一为 NotFound 并在上方分支命中），其余子类统一按内部
-        # 错误处理（R3-B11：原 else 内不可达的 Http404 再判分支已删除）。
-        code = CODE_INTERNAL
+        # DRF handler 归一为 NotFound 并在上方分支命中）。未枚举的 4xx APIException
+        # 归参数非法、5xx 归内部错误（R7-B8：此前一律 CODE_INTERNAL）。
+        code = CODE_UNPROCESSABLE if response.status_code < 500 else CODE_INTERNAL
     return JsonResponse(
         err(code, _message_of(response.data)),
         status=CODE_STATUS.get(code, response.status_code),

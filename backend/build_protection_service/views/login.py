@@ -71,6 +71,10 @@ def login_view(request):
         security_log("login_failed", username=username, request=request)
         return fail_resp(CODE_BAD_CREDENTIALS, "用户名或密码错误")
     if not user.is_active:
+        # 凭据正确但账号停用：补审计行（R7-B7）——login_failed/locked/success
+        # 均有留痕，唯独这一探测型事件此前零记录。不计入失败限流：密码已验证
+        # 正确，锁定语义针对口令爆破而非停用账号的可达性探测。
+        security_log("login_disabled", username=username, request=request)
         return fail_resp(CODE_FORBIDDEN, "账号已停用")
     cache.delete(fail_key)
     refresh = RefreshToken.for_user(user)

@@ -5,11 +5,16 @@
 - date+template 在 reserved 状态下数据库层唯一，根绝并发双抢。
 """
 from django.db import models
-from django.db.models import Q
+from django.db.models import F, Q
 
 
 class SlotTemplate(models.Model):
-    """时间段模板：每日循环的可抢占时段（不支持跨天，强制 start < end）。"""
+    """时间段模板：每日循环的可抢占时段（不支持跨天，强制 start < end）。
+
+    start < end 经 CheckConstraint 在 DB 层强制（R7-B11）：此前仅存在于
+    docstring 无任何实现，admin 面板可建逆序/跨天模板并正常抢占，
+    start_snapshot/end_snapshot 与月历排序随之漂移。
+    """
 
     name = models.CharField("时段名称", max_length=50, unique=True)
     start_time = models.TimeField("开始时间")
@@ -30,6 +35,13 @@ class SlotTemplate(models.Model):
         verbose_name = "时间段模板"
         verbose_name_plural = "时间段模板"
         ordering = ["sort_order", "id"]
+        constraints = [
+            # R7-B11：start < end 不变量（admin save_model 有同款可读校验，此处 DB 兜底）
+            models.CheckConstraint(
+                condition=Q(start_time__lt=F("end_time")),
+                name="slot_template_start_lt_end",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.name} {self.start_time:%H:%M}-{self.end_time:%H:%M}"

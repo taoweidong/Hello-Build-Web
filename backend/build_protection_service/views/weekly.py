@@ -32,8 +32,9 @@ def weekly_view(request):
     week_start = request.GET.get("week_start", _default_monday())
     raw_version_id = request.GET.get("version_id")
     version = None
-    # 版本下拉仅取 id/name，pm_user 无消费方（R3-B11 清理无用 select_related）
-    versions = list(Version.objects.all())
+    # 版本下拉仅取 id/name，pm_user 无消费方（R3-B11 清理无用 select_related）；
+    # id 显式排序（R7-B9）：模型无 Meta ordering，顺序不能依赖 DB 返回序
+    versions = list(Version.objects.order_by("id"))
     if raw_version_id:
         # 非数字 version_id 直接 422，避免 filter(id="abc") 抛 ValueError 变成 500
         version_id = parse_int(raw_version_id)

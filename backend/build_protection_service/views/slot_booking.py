@@ -1,13 +1,12 @@
 """时段抢占视图：日历聚合 / 抢占 / 释放 / 改期 / 我的抢占。
 
-认证与错误码约定同 reports 模块：ViewSet 置 AllowAny，authed_user 手动校验；
-统一响应 {code, message, data}；抢占冲突 40904。
+认证与错误码约定同 views/__init__（统一响应契约 {code, message, data}）：
+ViewSet 置 AllowAny，authed_user 手动校验；抢占冲突 40904。
 
 2026-10-20 页面精简：时段模板 CRUD（原 SlotTemplateViewSet，时段配置页消费）与
 admin 全量记录列表（原 SlotBookingViewSet.list，时段配置记录面板消费）随页面下线
 删除；模板数据仅经月历聚合只读曝光，写入面收敛到 seed / django-admin。
 """
-from django.core.exceptions import ValidationError
 from django.utils import timezone
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action

@@ -1,6 +1,7 @@
 """策略 views：列表/预览/创建/更新/启停/删除。
 
-校验与写路径统一在 services.strategies（PM 与 admin 两入口共用），
+校验与写路径统一在 services.strategies（PM API 与借用审批建策略共用，
+admin 专用端点已随系统管理页下线，面板写路径走 admin.py save_model），
 本模块只负责认证、角色门槛、请求体解析与统一响应组装。
 """
 import logging
@@ -202,13 +203,14 @@ def toggle_strategy(request, sid):
     # 互斥/阶段校验 + 条件 UPDATE 防并发 + IntegrityError 兜底），
     # 与 update 路径同款"校验抛 StrategyValidationError → validation_error_resp"。
     # R3-B5：翻转与审计留痕同一事务（PM 侧此前零留痕，admin 侧有 AdminOpLog 双轨不一致）。
-    old_enabled = s.enabled
+    # R7-B2：服务层事务内重读最新实例再翻转，返回值是重读后的实例（外层 s 可能
+    # 是陈旧快照）——响应与审计均从返回值组装，旧态按「not 新态」反推。
     try:
         with transaction.atomic():
-            svc_toggle(s)
+            s = svc_toggle(s)
             StrategyChangeLog.objects.create(
                 strategy=s, operator=request.user,
-                change_desc=f"启停策略: {s.name}（启用: {old_enabled}→{not old_enabled}）"[:255],
+                change_desc=f"启停策略: {s.name}（启用: {not s.enabled}→{s.enabled}）"[:255],
             )
     except StrategyValidationError as exc:
         return validation_error_resp(exc)

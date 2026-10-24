@@ -147,16 +147,31 @@ _CHANGE_LABELS = {
 
 
 def _change_desc(old: dict, body: dict) -> str:
-    """按请求体实际改动字段生成变更描述，如「构建开始时间: 22:00→23:00」。"""
+    """按请求体实际改动字段生成变更描述，如「构建开始时间: 22:00→23:00」。
+
+    按「键是否出现在 body」判定参与留痕（R7-B6）：显式传 null 是真实变更
+    （update_strategy 会按 `or None` 清空 push_start_time），此前按
+    `body.get(field) is None` 跳过，清空动作在变更日志里只剩「更新策略: X」，
+    审计差异不完整。push_start_time 的 falsy 值（null/空串）比对统一归一
+    None、展示统一为「（清空）」。
+    """
     parts = []
     for field, label in _CHANGE_LABELS.items():
-        if body.get(field) is None:
+        if field not in body:
             continue
-        new_val = body[field]
-        if field == "push_start_time" and not new_val:
-            new_val = None
-        if old.get(field) != new_val:
-            parts.append(f"{label}: {old.get(field)}→{new_val}")
+        raw = body[field]
+        if field == "push_start_time":
+            new_val = raw or None
+            old_val = old.get(field) or None
+            if new_val == old_val:
+                continue
+            # 旧值为 None 显示「（未设置）」、新值为空显示「（清空）」——
+            # 两个方向的语义不同（从未设置 vs 清空既有值）
+            new_disp = new_val or "（清空）"
+            old_disp = old_val or "（未设置）"
+            parts.append(f"{label}: {old_disp}→{new_disp}")
+        elif old.get(field) != raw:
+            parts.append(f"{label}: {old.get(field)}→{raw}")
     return "；".join(parts)
 
 
@@ -217,8 +232,11 @@ def update_strategy(strategy: Strategy, body: dict, operator):
     validate_strategy(strategy.branch, strategy.template, build_start_time, push_start_time,
                       push_mode=push_mode, exclude_id=strategy.id,
                       check_conflicts=enabled)
-    # update_fields：请求体未提供的字段不写列，杜绝陈旧快照回写（R6-B2）；
-    # updated_at 为 auto_now，须显式列入才会随 UPDATE 刷新。
+    # update_fields 收窄写集（updated_at 为 auto_now，须显式列入才会随 UPDATE 刷新）。
+    # 注意：防丢更新的机制是上方事务内 select_for_update 重读（拿到的恒是最新
+    # 值，写什么都不会丢他人提交），而非 update_fields 本身——build_start_time/
+    # push_start_time/push_mode/enabled 四列即使 body 未提供也会以重读值原样写回。
+    # 若据「未提供的字段不写列」注释删掉重读，R6-B2 的丢更新缺陷会原样复活。
     update_fields = ["build_start_time", "push_start_time", "push_mode", "enabled", "updated_at"]
     if body.get("name") is not None:
         strategy.name = _validate_name(body["name"])
@@ -251,11 +269,23 @@ def toggle_strategy(strategy: Strategy) -> Strategy:
     - 启用方向（False→True）：先跑 validate_strategy（资源互斥 40902 /
       阶段冲突 40901 / 参数非法 42201），杜绝"停用 A → 他分支建同刻 B →
       重新启用 A"静默生效；
-    - 条件 UPDATE filter(id, enabled=旧值)：rowcount=0 说明并发已被他人翻转
-      或字段被并发修改 → 抛 40902，消除丢翻转与旧快照覆盖；
+    - 条件 UPDATE filter(id, enabled=旧值)：rowcount=0 仅说明 enabled 已被
+      并发翻转 → 抛 40902，消除丢翻转（其余字段被并发修改不影响 rowcount，
+      防字段陈旧靠下方事务内重读而非 UPDATE 条件）；
     - IntegrityError → 40902 兜底保留（校验读与 UPDATE 之间的真并发窗口撞
       uniq_active_strategy_branch_time 约束）。
+
+    并发加固（R7-B2，对齐 update_strategy 的 R6-B2 范式）：入参实例由视图层
+    在事务外读出，快照可能陈旧——并发 PATCH 改时间且结果态停用（跳过冲突
+    校验）后，按陈旧时间跑校验会放行从未经过启用口径校验的新时间。此处事务内
+    select_for_update 重读最新状态再做校验与翻转，返回重读实例（调用方须用
+    返回值组装响应/审计，勿沿用外层旧实例）。
     """
+    strategy = (
+        Strategy.objects.select_for_update()
+        .select_related("branch__version", "branch", "template")
+        .get(pk=strategy.pk)
+    )
     old_enabled = strategy.enabled
     new_enabled = not old_enabled
     if new_enabled:

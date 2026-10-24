@@ -291,20 +291,31 @@ class ShanghaiTimeSerializationTests(Round3Fixture):
 # ---------- R3-B4 toggle 条件 UPDATE + 启用方向跑校验 ----------
 
 class ToggleAtomicGuardTests(Round3Fixture):
-    """B-P2-1：toggle 读改写竞态消除 + 重新启用不再绕过互斥/阶段校验。"""
+    """B-P2-1：重新启用不再绕过互斥/阶段校验；翻转基于事务内最新状态。
 
-    def test_stale_snapshot_second_toggle_40902(self):
-        """并发双 toggle：两份旧快照先后翻转，第二次条件 UPDATE 命中 0 行 → 40902。"""
+    R7-B2 范式升级：toggle 在事务内 select_for_update 重读最新实例后再校验
+    与翻转，调用方传入的陈旧快照不再决定翻转方向——「并发双 toggle」从
+    旧的第二次 40902 变为按序各自生效（每次都基于重读状态翻转，启用方向
+    均跑完整校验，无丢更新、无绕过校验的启用），旧 40902 分支仅剩 DB 层
+    防御语义。
+    """
+
+    def test_stale_snapshots_toggle_sequentially_by_fresh_state(self):
+        """并发双 toggle（两份旧快照）：各自基于重读状态翻转，最终回到启用。
+
+        旧实现按快照 enabled 做 UPDATE 条件，第二次撞 rowcount=0 → 40902；
+        R7-B2 后翻转方向以重读状态为准，两次点击即两次翻转（无 40902）。
+        """
         s = self._make_strategy()
         snap1 = Strategy.objects.get(id=s.id)
         snap2 = Strategy.objects.get(id=s.id)
-        svc_toggle(snap1)
+        result1 = svc_toggle(snap1)
+        self.assertFalse(result1.enabled)
         self.assertFalse(Strategy.objects.get(id=s.id).enabled)
-        with self.assertRaises(StrategyValidationError) as ctx:
-            svc_toggle(snap2)
-        self.assertEqual(ctx.exception.code, 40902)
-        # 仅第一次翻转生效，第二次未把状态翻回去
-        self.assertFalse(Strategy.objects.get(id=s.id).enabled)
+        result2 = svc_toggle(snap2)
+        # 第二次基于重读（已停用）翻转回启用：启用方向校验通过（无冲突策略）
+        self.assertTrue(result2.enabled)
+        self.assertTrue(Strategy.objects.get(id=s.id).enabled)
 
     def test_reenable_cross_branch_mutex_blocked(self):
         """停用 A(22:00) → 他分支建同刻 B → 重新启用 A → 互斥拦截 40902。
@@ -348,17 +359,22 @@ class ToggleAtomicGuardTests(Round3Fixture):
         self.assertFalse(a.enabled)
 
     def test_admin_toggle_uses_same_guard(self):
-        """admin 入口共用服务层：旧快照并发翻转同样 40902。"""
+        """admin 服务层直调持陈旧快照：R7-B2 后按重读状态翻转（响应即真实态）。
+
+        旧实现按快照 enabled 做 UPDATE 条件、并发窗口内翻转撞 rowcount=0
+        → 40902；R7-B2 后服务层重读最新状态决定方向，陈旧快照不再产生
+        40902，翻转结果与 DB 真实态一致。
+        """
         s = self._make_strategy()
-        snap = Strategy.objects.get(id=s.id)
+        snap = Strategy.objects.get(id=s.id)  # enabled=True 的陈旧快照
         self._auth("pm27a")
         resp = self.client.patch(f"/api/strategies/{s.id}/toggle")  # 先经 PM 路由翻转
         self.assertEqual(resp.status_code, 200)
         self._auth("admin1")
-        # admin 用服务层直调旧快照（等价并发窗口）
-        with self.assertRaises(StrategyValidationError) as ctx:
-            svc_toggle(snap)
-        self.assertEqual(ctx.exception.code, 40902)
+        # admin 用服务层直调旧快照（等价并发窗口）：重读到已停用 → 翻回启用
+        result = svc_toggle(snap)
+        self.assertTrue(result.enabled)
+        self.assertTrue(Strategy.objects.get(id=s.id).enabled)
 
 
 # ---------- R3-B5 PM toggle/delete 审计 + delete 拦截 pending 借用流 ----------

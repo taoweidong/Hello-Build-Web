@@ -169,7 +169,12 @@ def borrow_flow_create_view(request):
     ).exists():
         return fail_resp(CODE_ASSOCIATION, "该策略已有待审批的借用申请，请勿重复发起")
     try:
-        # 并发重复发起兜底：uniq_pending_borrow_flow 部分唯一约束（DB 层）
+        # 并发重复发起兜底：uniq_pending_borrow_flow 部分唯一约束（DB 层）。
+        # IntegrityError 按消息双格式匹配（R7-B5，对齐 strategies/slot_booking
+        # 版 R4-B8/R5-B2）：SQLite 命名部分唯一索引消息含约束名 uniq_pending_
+        # borrow_flow，字段组合（borrower_id+strategy_id）作兜底；非本约束的
+        # IntegrityError（如校验后 create 前被并发删除的关联）原样抛出，
+        # 不再误导为「重复申请」。
         with transaction.atomic():
             flow = BorrowFlow.objects.create(
                 strategy=strategy,
@@ -178,8 +183,12 @@ def borrow_flow_create_view(request):
                 new_build_time=new_build_time,
                 reason=reason,
             )
-    except IntegrityError:
-        return fail_resp(CODE_ASSOCIATION, "该策略已有待审批的借用申请，请勿重复发起")
+    except IntegrityError as exc:
+        if "uniq_pending_borrow_flow" in str(exc) or (
+            "borrower_id" in str(exc) and "strategy_id" in str(exc)
+        ):
+            return fail_resp(CODE_ASSOCIATION, "该策略已有待审批的借用申请，请勿重复发起")
+        raise
     # 单条响应经 select_related 重取（R4-B14）：create 返回的实例无关联缓存，
     # 直接 _payload 会逐关联点查 6+ 次
     flow = _flow_qs().get(pk=flow.pk)
@@ -297,6 +306,9 @@ def borrow_flow_cancel_view(request, fid):
     ).update(status="cancelled", cancelled_at=timezone.now())
     if not cancelled:
         return fail_resp(CODE_ASSOCIATION, "该电子流已处理，无法撤销")
-    flow.refresh_from_db()
+    # 条件 UPDATE 改写了 status/cancelled_at，经 _flow_qs 重取一次即同时刷新
+    # 标量与关联缓存（R4-B14 范式；R7-B5 前用 refresh_from_db 会清空关联缓存，
+    # _payload 逐关联点查 5+ 次）
+    flow = _flow_qs().get(pk=flow.id)
     logger.info("[borrow-flow] cancel id=%s actor=%s", flow.id, user.username)
     return json_resp(ok(_payload(flow)))

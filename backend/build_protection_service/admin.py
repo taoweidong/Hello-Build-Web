@@ -1,10 +1,12 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError
 
 from .models import (
-    AdminOpLog, BorrowFlow, Branch, ExecutionRound, SecurityLog, SlotBooking,
-    SlotTemplate, Strategy, StrategyChangeLog, StrategyTemplate, User, Version,
+    AdminOpLog, BorrowFlow, Branch, ExecutionRound, RuntimeConfig, SecurityLog,
+    SlotBooking, SlotTemplate, Strategy, StrategyChangeLog, StrategyTemplate,
+    User, Version,
 )
 from .services.strategies import (
     StrategyValidationError, delete_strategy, validate_strategy,
@@ -24,7 +26,47 @@ class UserAdmin(DjangoUserAdmin):
 
 @admin.register(Version)
 class VersionAdmin(admin.ModelAdmin):
+    """版本根实体：可管理但删除受限（R7-B3）。
+
+    Version 级联 Branch→Strategy→BorrowFlow（均 CASCADE），删除版本会静默抹掉
+    其下全部策略、进行中借用流与执行历史——delete_strategy 的 pending 拦截
+    （R4-B1/R6-B1）只覆盖策略单删入口，级联路径不受保护。存在分支时先清空
+    分支才允许删版本。
+    """
+
     list_display = ("name", "pm_user", "status")
+
+    def delete_model(self, request, obj):
+        if Branch.objects.filter(version=obj).exists():
+            raise ValidationError("版本下存在分支，请先删除分支后再删除版本")
+        super().delete_model(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        for obj in queryset:
+            self.delete_model(request, obj)
+
+
+@admin.register(Branch)
+class BranchAdmin(admin.ModelAdmin):
+    """分支：可管理但删除受限（R7-B3）。
+
+    Branch 级联 Strategy→BorrowFlow（CASCADE），删除分支会静默抹掉其下策略
+    与借用流；SlotBooking.branch 为 PROTECT，裸删会冒不可读的数据库错误页，
+    一并前置拦截给可读文案。
+    """
+
+    list_display = ("name", "version", "repository_url")
+
+    def delete_model(self, request, obj):
+        if Strategy.objects.filter(branch=obj).exists():
+            raise ValidationError("分支下存在策略，请先删除策略后再删除分支")
+        if SlotBooking.objects.filter(branch=obj).exists():
+            raise ValidationError("分支下存在抢占记录，禁止删除")
+        super().delete_model(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        for obj in queryset:
+            self.delete_model(request, obj)
 
 
 @admin.register(Strategy)
@@ -81,6 +123,44 @@ class SlotTemplateAdmin(admin.ModelAdmin):
     list_display = ("name", "weekdays", "effective_from", "effective_to", "sort_order", "enabled")
     list_editable = ("sort_order", "enabled")
 
+    def save_model(self, request, obj, form, change):
+        """start < end 不变量的表单面校验（R7-B11）：模型 docstring 声称
+        「不支持跨天，强制 start < end」，此前无任何实现——逆序/跨天模板
+        可入库并被正常抢占，快照与月历排序随之漂移。DB 层有 CheckConstraint
+        兜底（migration 0017），此处前置给可读表单报错。"""
+        if obj.start_time and obj.end_time and obj.start_time >= obj.end_time:
+            raise ValidationError("开始时间必须早于结束时间（不支持跨天时段）")
+        super().save_model(request, obj, form, change)
+
+    def delete_model(self, request, obj):
+        """SlotBooking.template 为 PROTECT：裸删撞约束会冒不可读错误页，
+        转可读提示（停用而非删除，保留历史抢占的模板引用语义）。"""
+        try:
+            super().delete_model(request, obj)
+        except IntegrityError:
+            raise ValidationError("该时段已存在抢占记录，禁止删除（可改为停用）")
+
+    def delete_queryset(self, request, queryset):
+        for obj in queryset:
+            self.delete_model(request, obj)
+
+
+@admin.register(StrategyTemplate)
+class StrategyTemplateAdmin(admin.ModelAdmin):
+    """策略模板：被策略引用时禁止删除（R7-B3）——Strategy.template 为
+    PROTECT，裸删会冒不可读的数据库错误页，前置拦截给可读文案。"""
+
+    list_display = ("name", "smoke_minutes", "analysis_minutes")
+
+    def delete_model(self, request, obj):
+        if Strategy.objects.filter(template=obj).exists():
+            raise ValidationError("模板已被策略引用，禁止删除")
+        super().delete_model(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        for obj in queryset:
+            self.delete_model(request, obj)
+
 
 class _ReadOnlyAdmin(admin.ModelAdmin):
     """只读 ModelAdmin（R6-B12）：抢占记录 / 借用电子流 / 审计三表禁增删改。
@@ -99,8 +179,26 @@ class _ReadOnlyAdmin(admin.ModelAdmin):
         return False
 
 
-admin.site.register(Branch)
-admin.site.register(StrategyTemplate)
+@admin.register(RuntimeConfig)
+class RuntimeConfigAdmin(admin.ModelAdmin):
+    """运行期配置覆盖层只读展示（R7-B12）：services/config.get_config 的取值
+    来源（表行覆盖 settings 默认）。只读开放便于运维核对手工插入的覆盖行与
+    进程内缓存边界；写入口按精简后约定不开放（恢复配置页/注册可写 admin
+    须同步评估多进程缓存一致性）。"""
+
+    list_display = ("key", "value", "updated_at")
+    list_display_links = None
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
 admin.site.register(ExecutionRound)
 admin.site.register(StrategyChangeLog, _ReadOnlyAdmin)
 admin.site.register(AdminOpLog, _ReadOnlyAdmin)

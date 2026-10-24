@@ -12,8 +12,11 @@ def parse_int(value):
     Django 对 ``filter(id="abc")`` 会抛 ValueError（未捕获即 500，破坏统一响应契约），
     因此所有来自 query/body 的 ID 参数必须先经本函数转换。
 
-    仅接受 ASCII 十进制数字：``int()`` 会接受全角数字（"０"）与 Unicode 数字，
-    这些值不该进入 ID 过滤，故先用 str.isascii() 拦掉。
+    仅接受 ASCII 十进制数字（可选单个前导负号）：``int()`` 会接受全角数字
+    （"０"）与 Unicode 数字，这些值不该进入 ID 过滤，故先用 str.isascii()
+    拦掉。负号只允许一个——``lstrip("-")`` 会剥掉全部前导负号（``"--5"`` 剥成
+    ``"5"`` 通过 isdigit，随后 ``int("--5")`` 抛 ValueError），R7-B1 改为
+    startswith 判定只消费一个负号，``--5``/``+5``/``- 5`` 一律 None。
     """
     if value is None or isinstance(value, bool):
         return None
@@ -21,7 +24,9 @@ def parse_int(value):
         return value
     if isinstance(value, str):
         text = value.strip()
-        if not text or not text.isascii() or not text.lstrip("-").isdigit():
+        negative = text.startswith("-")
+        digits = text[1:] if negative else text
+        if not digits or not digits.isascii() or not digits.isdigit():
             return None
-        return int(text)
+        return -int(digits) if negative else int(digits)
     return None

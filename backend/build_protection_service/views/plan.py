@@ -1,11 +1,11 @@
 """版本计划：版本→分支→策略→时间线。"""
 from django.conf import settings
-from django.db.models import OuterRef, Prefetch, Subquery
+from django.db.models import Prefetch
 from django.utils import timezone
 
 from ..api import ok
 from ..errors import CODE_UNPROCESSABLE
-from ..models import Branch, ExecutionRound, Strategy, Version
+from ..models import Branch, Strategy, Version
 from ..services.config import get_config
 from ..services.conflict import detect_conflicts
 from ..services.timeline import build_timeline, parse_cd
@@ -38,7 +38,8 @@ def plan_view(request):
         parse_cd(ds)
     except ValueError:
         return fail_resp(CODE_UNPROCESSABLE, "date 格式应为 YYYY-MM-DD")
-    versions = Version.objects.select_related("pm_user").prefetch_related(
+    # 版本 id 显式排序（R7-B9）：模型无 Meta ordering，顺序不能依赖 DB 返回序
+    versions = Version.objects.order_by("id").select_related("pm_user").prefetch_related(
         Prefetch("branches", queryset=Branch.objects.all().order_by("name")),
         Prefetch(
             "branches__strategies",
@@ -46,22 +47,6 @@ def plan_view(request):
             to_attr="enabled_strategies",
         ),
     ).all()
-
-    # 批量取每个策略最近一个执行轮次的结论（按 exec_date 最新），避免逐策略 N+1。
-    # 在 Strategy 上 annotate：外层即 Strategy，OuterRef("pk") 关联其主键，
-    # 内层 ExecutionRound.strategy_id == 该 Strategy.id（此前误在 ExecutionRound 外层
-    # 用 OuterRef("pk") 关联轮次 id，导致 status 恒为空）。
-    latest_round = ExecutionRound.objects.filter(
-        strategy_id=OuterRef("pk")
-    ).order_by("-exec_date", "-id")
-    # 仅对本页会展示的策略（enabled=True）做子查询标注（全量启用策略仍需标注，
-    # 因为下方按版本逐条展示其全部启用策略的结论；停用策略不出现在任何分支下，无需标注）
-    status_map = {
-        s.id: (s.latest_conclusion or "pending")
-        for s in Strategy.objects.filter(enabled=True).annotate(
-            latest_conclusion=Subquery(latest_round.values("conclusion")[:1])
-        )
-    }
 
     build_minutes = get_config("build_minutes", settings.BUILD_MINUTES)
     push_minutes = get_config("push_minutes", settings.PUSH_MINUTES)
@@ -98,7 +83,6 @@ def plan_view(request):
                     "enabled": s.enabled,
                     "conflict": s.id in conflicted,
                     "timeline": tl,
-                    "status": status_map.get(s.id),
                 })
             branches.append({
                 "branch_id": b.id,
