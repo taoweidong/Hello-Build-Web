@@ -92,7 +92,7 @@
 1. 基座 `utils/http` PureHttp 401 刷新链路（handRefreshToken/refreshTokenApi 调用后端不存在的 /refresh-token，属死链路但整体随基座保留，与 R7-F11 记录同批；后端无刷新端点是设计事实）。
 2. `directives` 按钮级权限链（v-perms/v-auth 等五个指令 + ReAuth/RePerms 组件）业务零使用、登录写死 `permissions:["*:*:*"]` 使 hasPerms 恒 true——互为死重但属基座机制，本轮记录在案不删（删除涉及基座结构性收敛，待基座专项）。
 3. LayoutSwitcher `?layout=` 深链 replace + localStorage 写入（R6 遗留，记录在案）。
-4. settings 的 ALLOWED_HOSTS 缺省 `*` 与 FIRST_SUPERUSER_PASSWORD 缺省 "123456"——生产漏配 env 时防护强度与「安全默认值」注释承诺不对齐（SECRET_KEY 已强校验）。属部署清单项（第四轮已记录），本轮在 .env.example 注释补充提醒，不改运行时行为（改默认值会破坏本地零配置启动）。
+4. settings 的 ALLOWED_HOSTS 缺省 `*` 与 FIRST_SUPERUSER_PASSWORD 缺省 "123456"——生产漏配 env 时防护强度与「安全默认值」注释承诺不对齐（SECRET_KEY 已强校验）。属部署清单项（第四轮已记录）；核实 `.env.example` 既有注释已覆盖提醒（ALLOWED_HOSTS 行注「生产必须配置实际域名，默认 * 仅用于本地开发」、超管行注「生产部署后立即改密」，均自初版 4a94043 即存在，本轮无需补充），不改运行时行为（改默认值会破坏本地零配置启动）。
 5. stylelint 插件为幻影依赖（stylelint-scss/stylelint-order 等未显式声明，靠传递依赖解析）——需 npm install 更新 lock，随 R7-F12 记录，待依赖专项一并处理。
 
 ---

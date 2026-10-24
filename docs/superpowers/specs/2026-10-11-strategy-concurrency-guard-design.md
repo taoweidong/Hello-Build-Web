@@ -109,3 +109,8 @@ class Meta:
 - **update_strategy 事务内重读 + 精准回写（R6-B2）**：`update_strategy` 在 atomic 内对目标策略 `select_for_update().select_related(...)` 重读最新状态后再做校验与合并，落库只 `save(update_fields=…)` 写实际变更字段（`updated_at` 为 auto_now 显式列入）；PM 视图改用服务层返回值组装响应。双修复：① 视图层在事务外读出的陈旧实例全字段 `save()` 会把表单打开期间他人已改的字段（如 enabled）静默回滚（PATCH+PATCH 丢更新；持陈旧 `enabled=False` 跳过冲突校验后把停用态写回，静默撤销他人经完整校验的重新启用）；② 请求体未提供的字段不再被陈旧快照覆盖。§2 所述「SQLite 上 `select_for_update` 为 no-op」仍然成立——本次重读的重心是消除 ORM 实例陈旧写（SQLite 靠 IMMEDIATE 串行化兜写竞态），迁移 PostgreSQL 后这层行锁同时成为真防线，与 §4「迁 PG 改用 select_for_update」的既定计划一致。
 - **create_strategy 冲突校验按结果态（R6-B3）**：`create_strategy` 同样传 `check_conflicts=enabled`——以停用态归档创建的策略不再被同时段既有启用策略 40902 误拦（对齐 R5-B1 update 口径与 toggle「仅启用方向校验」语义，「先建停用再处理冲突」的归档路径在 create 入口不再被堵死）。
 - **admin 面板删除路由共享服务层（R6-B1）**：django-admin `StrategyAdmin.delete_model`/`delete_queryset` 改调共享 `delete_strategy`（40903 拦截转表单 ValidationError），pending 借用流拦截覆盖 admin 面板——R4-B1 的拦截此前仅覆盖 API 入口。
+
+## 修订记录（2026-10-25 第七轮质量优化）
+
+- **toggle_strategy 事务内重读后再校验与翻转（R7-B2，对齐 R6-B2 范式）**：`toggle_strategy` 此前用视图层在事务外读出的陈旧实例跑启用方向校验——并发 PATCH 把停用策略时间改到冲突点（停用态 `check_conflicts=False` 放行）后，toggle 按旧时间校验通过并条件 UPDATE 启用，新时间从未经过启用口径校验入库。现于 atomic 内 `select_for_update().select_related(...)` 重读最新实例后再校验与翻转，返回重读实例（调用方须用返回值组装响应/审计）。条件 UPDATE 语义同步澄清：`rowcount=0` 仅说明 `enabled` 已被并发翻转（防非 enabled 字段陈旧靠事务内重读而非 UPDATE 条件），IntegrityError → 40902 兜底保留。§2「SQLite 上 select_for_update 为 no-op」的裁定同样适用于本处：重读重心是消除 ORM 实例陈旧写（SQLite 靠 IMMEDIATE 串行化兜写竞态），迁 PG 后行锁成为真防线。回归 `tests_quality_round7.py::ToggleFreshReadTests`（PATCH+toggle 交错）。
+- **历史条目失效注记**：§3「后续补齐（2026-10-11/12）」所述 admin 路由策略启停（系统管理页 `_toggle_admin_strategy`）已随 2026-10-20 页面精简整体下线——PM 入口唯一，django-admin 面板启停走 `save_model` 重校验、不经过 `toggle_strategy`。

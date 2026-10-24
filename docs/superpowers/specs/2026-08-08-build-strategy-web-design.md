@@ -249,7 +249,7 @@ PM 仅配置两个时间节点：
 ```
 统一响应：{ "code": 0, "message": "ok", "data": {...} }
 错误码（初版列举，2026-10 已常量化扩充，全集与语义以 backend/build_protection_service/errors.py 为准）：
-        0 成功 · 40100/40101 未认证 · 40301 无权限 · 40401 不存在 ·
+        0 成功 · 40100 未认证 · 40101 凭据错误（登录失败） · 40301 无权限 · 40401 不存在 ·
         40901 策略时间冲突（附冲突详情）· 40902 重名/互斥/结论重复录入 ·
         40903 重复关联/授权 · 40904 时段抢占冲突 · 42201 参数校验失败 ·
         42901 登录尝试过频
@@ -486,3 +486,8 @@ Hello-Build-Web/
 - **admin 运维面收敛（R6-B1/B12）**：`SlotTemplateAdmin` 注册为时段模板唯一管理入口（此前从未注册，生产无法维护模板）；`SlotBooking`/`BorrowFlow`/审计三表（StrategyChangeLog/AdminOpLog/SecurityLog）注册只读 ModelAdmin 禁增删改；上文「2026-10-18 补」中 R5-B12 模板时长变更告警（update_template `data.warnings`）随模板写端点下线转为历史记录，R4-B11 save_model 重校验仍现行有效。
 - **logout 审计条件化（R6-B9）**：`/auth/logout` 仅当 Bearer token 有效且解析出用户才写 `logout` 审计行（匿名/垃圾 token 不再产生 `username=""` 噪音审计，堵住脚本灌审计入口）；token 吊销（黑名单写入）与历史过期行清理行为不变。
 - **客户端 IP 唯一来源（R6-B10）**：登录失败限流与安全审计取 IP 统一走 `views/client_ip`（REMOTE_ADDR 优先、回退 XFF 首段）——此前 `security_log` 直录整条 `X-Forwarded-For`（可伪造，且与 login 限流「XFF 首段」口径不一致，同一请求在限流计数与审计日志可能记不同 IP）。
+
+## 修订记录（2026-10-25 第七轮质量优化）
+
+- **40101 语义与前端处理拆分（R7-F2）**：§7.1 错误码表中 40101 原并列于「未认证」失实，已修正——`errors.py` 中 40100=未认证（`CODE_UNAUTHENTICATED`）、40101=凭据错误（`CODE_BAD_CREDENTIALS`，登录失败）；前端 `api/http.ts` 拦截器此前把 40101 折叠进 40100 的「清 token + 跳登录」分支，登录页输错密码零反馈且表单被整页重载清空，现仅 40100 走清理跳转、40101 归入常规错误分支弹真实 message（不跳转、不清 token）。回归 `api/__tests__/http.spec.ts` 40101 分支断言。表中 40902/40903 括注的「结论重复录入/授权」属已下线的报告/日志域历史口径，现行语义以 `errors.py` 为准。
+- **同轮后端契约回填**：`toggle_strategy` 事务内 `select_for_update` 重读后再校验与翻转（R7-B2，详见 strategy-concurrency spec 修订记录 2026-10-25 第七轮）；`update_strategy` 显式 `null` 清空字段补 StrategyChangeLog 差异留痕（R7-B6）；`parse_int` 仅接受可选单个前导负号（R7-B1，`?version_id=--5` 由 500 归「参数未提供」）；django-admin 根实体（Version/Branch/StrategyTemplate）删除前置拦截（R7-B3）；停用账号登录尝试补 `login_disabled` 审计（R7-B7）。回归集中 `tests_quality_round7.py`（26 例，全量 351 例）。

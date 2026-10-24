@@ -92,7 +92,7 @@ Hello-Build-Web/
 | 借用电子流 | [设计](./docs/superpowers/specs/2026-10-11-borrow-flow-design.md) |
 | 时段抢占 | [设计](./docs/superpowers/specs/2026-10-10-slot-booking-design.md) |
 | 策略并发防护 / 界面一致性 | [并发](./docs/superpowers/specs/2026-10-11-strategy-concurrency-guard-design.md) · [界面](./docs/superpowers/specs/2026-10-11-ui-visual-consistency-optimization.md) |
-| 代码质量优化（第一~六轮） | [R1](./docs/superpowers/specs/2026-10-11-code-quality-optimization-design.md) · [R2](./docs/superpowers/specs/2026-10-12-code-quality-optimization-round2-design.md) · [R3](./docs/superpowers/specs/2026-10-13-code-quality-optimization-round3-design.md) · [R4](./docs/superpowers/specs/2026-10-15-code-quality-optimization-round4-design.md) · [R5](./docs/superpowers/specs/2026-10-18-code-quality-optimization-round5-design.md) · [R6](./docs/superpowers/specs/2026-10-24-code-quality-optimization-round6-design.md) |
+| 代码质量优化（第一~七轮） | [R1](./docs/superpowers/specs/2026-10-11-code-quality-optimization-design.md) · [R2](./docs/superpowers/specs/2026-10-12-code-quality-optimization-round2-design.md) · [R3](./docs/superpowers/specs/2026-10-13-code-quality-optimization-round3-design.md) · [R4](./docs/superpowers/specs/2026-10-15-code-quality-optimization-round4-design.md) · [R5](./docs/superpowers/specs/2026-10-18-code-quality-optimization-round5-design.md) · [R6](./docs/superpowers/specs/2026-10-24-code-quality-optimization-round6-design.md) · [R7](./docs/superpowers/specs/2026-10-25-code-quality-optimization-round7-design.md) |
 
 开发约定、目录规范与易踩坑点见仓库根目录 [`AGENTS.md`](./AGENTS.md)。
 

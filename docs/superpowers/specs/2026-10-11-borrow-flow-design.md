@@ -84,3 +84,10 @@
 - **发起 reason 超长改拒绝（R6-B7）**：`views/borrow_flow.py` 发起借用的 `reason` 由 `body_str(max_len=500)` 截断改为 `check_str_len` 42201 拒绝（reason 是审批人决策的核心内容，拒绝优于静默截断）；审批意见 `comment` 属审计备注类，维持 255 截断口径。回归 `tests_quality_round6.py`。
 - **borrower 外键改 PROTECT（R6-B6，migration 0016）**：`BorrowFlow.borrower` 由 CASCADE 改 PROTECT，删除借用人被数据库层拦截（`ProtectedError`）——pending 单是审批人待办、approved 单是执行凭证，审计链发起方必须强存活，与 `approver` 及审计表 `operator` 口径对齐。回归 `tests_quality_round6.py::BorrowerProtectTests`。
 - **panorama 待办排除自借单（R6-B8）**：`GET /api/panorama/todos` 的 `pending_approval` 在角色过滤前先 `.exclude(borrower=user)`——R5-B10 回避规则下本人发起的申请自己永远不可审批，计入待办只会产生不可操作的假待办。
+
+## 修订记录（2026-10-25 第七轮质量优化）
+
+- **审批回避规则前端对齐（R7-F4）**：§2 审批权限行所述「前端隐藏按钮」自本轮起才真实成立——`canApproveBorrowFlow`（`utils/business.ts`）此前仅判角色/绑定版本，缺 `flow.borrower_id === user.id → false` 回避分支，PM/admin 查看自己发起的 pending 单时审批按钮可点、点击必 40301；本轮补齐与后端 `_can_approve` 同口径（admin 亦回避），s4/s5 组件 spec 以双借用流（他人单走审批、本人单走撤销）分测两路。回归 `utils/__tests__/business.spec.ts` 回避用例。
+- **admin 根实体删除拦截（R7-B3）**：django-admin `VersionAdmin`/`BranchAdmin` 注册删除受限 ModelAdmin——版本有分支、分支有策略时 `delete_model` 转 ValidationError 可读报错，删除版本/分支不再经 CASCADE 静默抹掉其下策略与进行中借用流（pending 借用流保护面由 Strategy 扩展到根实体，堵住 R4-B1/R6-B1 拦截换 admin 入口的旁路）。回归 `tests_quality_round7.py::AdminRootEntityDeleteGuardTests`。
+- **cancel 与借用发起健壮性收敛（R7-B5）**：cancel 响应改 `_flow_qs().get(pk)` 一次重取标量与关联（对齐 R4-B14 范式，替代清空关联缓存的 `refresh_from_db` 逐关联点查）；create 的 `except IntegrityError` 补 SQLite/PG 双格式消息匹配（`uniq_pending_borrow_flow` + borrower/strategy 组合），非目标约束异常原样抛出，不再误报「已有待审批的借用申请」。回归 `tests_quality_round7.py::BorrowFlowPolishTests`。
+- **formatFlowTime 别名删除（R7-F11）**：修订六所述随页面迁移的 `formatFlowTime` 别名导出删除（借用独立页下线后全仓无页面消费），时间格式化唯一实现收敛 `utils/business.formatDateTime`，`borrowFormat.ts` 仅导出 `formatBorrowFlowText`。

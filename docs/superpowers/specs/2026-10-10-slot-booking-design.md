@@ -20,7 +20,7 @@
 
 | 决策点 | 结论 |
 |--------|------|
-| 跨午夜时段 | **不支持**：模板强制 `start_time < end_time`（同日内），模型层约束 + 应用层 42201 双保险 |
+| 跨午夜时段 | **不支持**：模板强制 `start_time < end_time`（同日内），模型层 CheckConstraint + 管理入口校验双保险（R7-B11 落地；模板写端点时代的「应用层 42201」已随页面精简下线，应用层防线为 `SlotTemplateAdmin` 表单校验） |
 | 版本/分支关联 | **必填**：抢占弹窗版本→分支级联必选；后端校验 `branch.version == version`（不匹配 42201） |
 | 时段配置入口 | **独立一级菜单**（与抢占页分离，不收进系统管理） |
 | 批量抢占 | **明确不做**：一次只能操作一个时段，不设批量端点、不实现圈选 |
@@ -329,3 +329,8 @@ el-tabs 两 Tab：
 - **抢占 purpose 双路径口径统一（R6-B4）**：创建路径序列化器 `purpose`/`release_reason` 改严格 `StrictCharField`（DRF `CharField` 默认把 int/float 静默强转为 str，仅拒 bool/dict/list，与改期路径 R5-B9「非 str 拒绝」行为相反）；服务层 `create_booking` 补同款字段级守卫（非 str → 42201，杜绝 dict 被 `str()` 存成 repr 串垃圾数据）。两写路径口径对齐。
 - **释放原因服务层硬化（R6-B5）**：`release_booking` 对 `release_reason` 非 str → 42201、超模型 `max_length`(200) → 42201（None 归一为 ""，本人释放原因可选语义不变）——API 路径经严格序列化器提前拦截，直调路径由服务层兜底（SQLite 放行超长、迁 PG 即 DataError）。
 - **slot_calendar 月份参数全角数字硬化（R6-B11）**：`build_slot_calendar` 对年/月串前置 `isascii` + `isdigit` 校验（`int("２０２６")` 在 Python 合法，`isdigit`/异常捕获拦不住），与 `parse_int`/`valid_hhmm` 的 R4-B12 口径对齐。
+
+## 修订记录（2026-10-25 第七轮质量优化）
+
+- **SlotTemplate 起止约束补实现（R7-B11，migration 0017）**：§2「不支持跨午夜」行所承诺的「模型层约束」此前并无实现——模型无 CheckConstraint/clean，唯一写入口 `SlotTemplateAdmin` 与 seed 均不校验，admin 可建 22:00-06:00 逆序模板并正常抢占，`start_snapshot`/`end_snapshot` 与月历排序随之漂移。本轮模型补 `CheckConstraint(start_time < end_time)`（migration 0017）+ `SlotTemplateAdmin.save_model` 前置校验（逆序转可读表单报错）；§2 决策点「跨午夜时段」行已同步修正。另：§2 决策点「时段配置入口：独立一级菜单」行随 2026-10-20 页面精简转为历史记录（入口收敛为策略页模板下拉 + django-admin，见修订六）。回归 `tests_quality_round7.py::SlotTemplateInvariantTests`。
+- **parse_int 单前导负号（R7-B1）**：共享解析层 `parsing.parse_int` 的 `lstrip("-")` 会剥掉全部前导负号（`"--5"` 经 isdigit 守卫后 `int()` 抛 ValueError → 500），现仅接受可选单个前导负号，`--5`/`+5`/负零一律归 None（走「参数未提供」分支）；波及本域 `GET /slot-bookings/mine?page=` 与 `GET /slot-calendar` 等所有 query 数字参数入口。回归 `tests_quality_round7.py::ParseIntMatrixTests`。
