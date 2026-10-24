@@ -33,7 +33,8 @@ export function mapBorrowEvents(opts: MapBorrowOptions): ScheduleEvent[] {
     const time = created.slice(11, 16);
     const mine = !!opts.user?.id && flow.borrower_id === opts.user.id;
     const canApprove = canApproveBorrowFlow(opts.user, {
-      source_version_id: flow.source_version_id
+      source_version_id: flow.source_version_id,
+      borrower_id: flow.borrower_id
     });
     return {
       id: `borrow:${flow.id}`,

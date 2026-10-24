@@ -134,8 +134,9 @@ describe("S2 时空甘特", () => {
   });
 
   it("空数据时展示 el-empty 占位", async () => {
-    // 翻到一个日历与策略都不覆盖的日期：策略每日循环仍有点事件，
-    // 故用「仅看有任务分支」永远非空——此用例锁定骨架/空态二选一渲染不双出
+    // 翻到一个日历与策略都不覆盖的日期：策略每日循环仍有点事件（泳道恒非空，
+    // R7-F9 已删除暗示可看空泳道的「仅看有任务分支」无效开关）——
+    // 此用例锁定骨架/空态二选一渲染不双出
     ({ wrapper } = await mountLayout(PanoramaGantt, "/panorama/gantt"));
     expect(wrapper.find(".el-skeleton").exists()).toBe(false);
     expect(wrapper.find(".gantt-scroll").exists()).toBe(true);

@@ -11,7 +11,8 @@ import type { WeeklyData } from "@/api/types";
  */
 export function getWeekly(
   params: {
-    week_start?: string; // "YYYY-MM-DD"（该周任一天，后端取默认周一）
+    week_start?: string; // "YYYY-MM-DD" 须传该周周一（mondayOf）；后端把传入
+    // 日期直接作周首日连排 7 天、不归一化，仅缺省时才取默认周一（R7-F15 注释修正）
     version_id?: number;
   },
   config?: AxiosRequestConfig

@@ -6,12 +6,13 @@ import {
   buildKpi,
   collectTimePoints,
   detectCrossSourceConflicts,
-  durationOf,
   groupByBranch,
   groupByDay,
   lanePack,
   sortEvents
 } from "@/views/panorama/selectors";
+// durationOf 唯一实现在 strategySource（R7-F11：selectors 再导出已删，测试直连）
+import { durationOf } from "@/views/panorama/sources/strategySource";
 import { makeEvent } from "./fixtures";
 import type { ScheduleEvent } from "@/views/panorama/types";
 

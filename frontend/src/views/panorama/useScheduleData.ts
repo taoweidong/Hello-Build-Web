@@ -129,7 +129,10 @@ export function useScheduleData(query: Ref<ScheduleQuery>): ScheduleData {
    */
   async function refresh(silent = false): Promise<boolean> {
     const current = ++seq;
-    loading.value = true;
+    // loading 仅由前台刷新驱动（R7-F3）：silent 轮询不动 loading——此前每轮
+    // 轮询都把 S2~S5 的 el-skeleton 拉起来再复原，画面周期性闪烁、S4 分组卡
+    // 整块卸载重建丢滚动位。数据更新路径不受影响。
+    if (!silent) loading.value = true;
     const q = query.value;
     const today = dayjs().format("YYYY-MM-DD");
     const rangeDays = buildDateRange(q.dateFrom, q.dateTo);
@@ -195,7 +198,10 @@ export function useScheduleData(query: Ref<ScheduleQuery>): ScheduleData {
         planMap,
         branchColor,
         user,
-        versionId: q.versionId
+        versionId: q.versionId,
+        // S4 按版本分组的组名来源（R7-F7）：weekly 契约不含 version_name，
+        // 此前策略事件恒写空串，同版本被拆成「5|未关联版本」与「5|V5.0」两组
+        versionName: weeklyData.version?.version_name ?? ""
       });
 
       const slotEvents = Object.values(calendarMap).flatMap(c =>
@@ -224,7 +230,8 @@ export function useScheduleData(query: Ref<ScheduleQuery>): ScheduleData {
       // 失败已由 http 拦截器统一提示（silent 请求除外）
       return false;
     } finally {
-      if (current === seq) loading.value = false;
+      // 复位与置位同口径：仅前台刷新操作 loading（silent 轮询不触碰）
+      if (!silent && current === seq) loading.value = false;
     }
   }
 

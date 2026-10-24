@@ -52,6 +52,10 @@ function httpErrorAdapter(status: number, body: unknown): Adapter {
 describe("api/http 拦截器", () => {
   beforeEach(() => {
     localStorage.clear();
+    // vi.fn() 计数跨用例累计（restoreMocks 只还原 spyOn），显式清零隔离
+    removeTokenMock.mockClear();
+    elMessageError.mockClear();
+    elMessageBoxAlert.mockClear();
   });
 
   it("成功响应解包 data 字段", async () => {
@@ -96,16 +100,62 @@ describe("api/http 拦截器", () => {
     expect(window.location.href).toBe(`${origin}${pathname}#/login`);
   });
 
-  it("40101 登录态过期 → 同样清理并跳登录（与 40100 同路径）", async () => {
+  it("40101 凭据错误 → 弹真实文案，不清理 token、不跳转（R7-F2：与 40100 拆分）", async () => {
     localStorage.setItem(
       "build-user-info",
       JSON.stringify({ username: "old" })
     );
-    useAdapter(httpErrorAdapter(401, { code: 40101, message: "登录已过期" }));
+    window.location.hash = "#/strategy"; // 预置非登录页锚点，若误跳转会被改写
+    useAdapter(
+      httpErrorAdapter(401, { code: 40101, message: "用户名或密码错误" })
+    );
     await expect(service.get("/demo")).rejects.toMatchObject({ code: 40101 });
+    // 登录失败不是登录态失效：不清 token（登录页本就未持有有效会话）、不跳转
+    expect(removeTokenMock).not.toHaveBeenCalled();
+    expect(elMessageError).toHaveBeenCalledWith("用户名或密码错误");
+    expect(window.location.hash).toBe("#/strategy");
+  });
+
+  it("40100 已指向登录页时跳过重复赋值（R7-F13：并发 401 不重复导航）", async () => {
+    window.location.hash = "#/login"; // 预置已在登录页
+    useAdapter(httpErrorAdapter(401, { code: 40100, message: "未认证" }));
+    await expect(service.get("/demo")).rejects.toMatchObject({ code: 40100 });
     expect(removeTokenMock).toHaveBeenCalled();
     expect(localStorage.getItem("build-user-info")).toBeNull();
-    expect(window.location.hash).toContain("login");
+    // href 已是登录页：不重复赋值（无重载排队），保持登录页
+    const { origin, pathname } = window.location;
+    expect(window.location.href).toBe(`${origin}${pathname}#/login`);
+  });
+
+  it("非信封 200 响应（裸数组）→ 原样透传，不误判业务失败（R7-F13）", async () => {
+    useAdapter(async () => ({ data: [1, 2, 3] }));
+    const data = await service.get("/demo");
+    expect(data).toEqual([1, 2, 3]);
+    expect(elMessageError).not.toHaveBeenCalled();
+  });
+
+  it("非信封 200 响应（HTML 网关错误页字符串）→ 原样透传（R7-F13）", async () => {
+    useAdapter(async () => ({ data: "<html>Gateway Error</html>" }));
+    const data = await service.get("/demo");
+    expect(data).toBe("<html>Gateway Error</html>");
+    expect(elMessageError).not.toHaveBeenCalled();
+  });
+
+  it("请求取消 → 静默 reject BizError(-1)，不弹 toast（R7-F13）", async () => {
+    elMessageError.mockClear();
+    (service.defaults as any).adapter = async (config: any) => {
+      // 与 axios.CanceledError 同构：isCancel 按 __CANCEL__ 标记判定
+      const error = new Error("canceled") as any;
+      error.__CANCEL__ = true;
+      error.code = "ERR_CANCELED";
+      error.config = config;
+      throw error;
+    };
+    await expect(service.get("/demo")).rejects.toMatchObject({
+      code: -1,
+      message: "请求已取消"
+    });
+    expect(elMessageError).not.toHaveBeenCalled();
   });
 
   it("silent + 401 组合：静默请求也必须跳登录，但不弹 toast", async () => {

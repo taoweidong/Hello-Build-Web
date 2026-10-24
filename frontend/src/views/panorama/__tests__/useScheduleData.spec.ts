@@ -174,6 +174,33 @@ describe("useScheduleData 三源编排", () => {
     wrapper.unmount();
   });
 
+  it("silent 轮询不驱动 loading（R7-F3：骨架屏不再随轮询闪烁）", async () => {
+    const { api, wrapper } = mountData();
+    await flushPromises();
+    expect(api.loading.value).toBe(false);
+    // 挂起一轮 silent 轮询响应，全程 loading 恒 false
+    let resolvePoll!: (v: WeeklyData) => void;
+    weeklyMock.mockImplementationOnce(
+      () => new Promise(res => (resolvePoll = res))
+    );
+    const polling = api.refresh(true);
+    await flushPromises();
+    expect(api.loading.value).toBe(false);
+    resolvePoll(makeWeeklyData());
+    await polling;
+    await flushPromises();
+    expect(api.loading.value).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("策略事件携带版本名（R7-F7：S4 按版本分组不再把同版本拆两组）", async () => {
+    const { api, wrapper } = mountData();
+    await flushPromises();
+    const strategy = api.events.value.find(e => e.source === "strategy")!;
+    expect(strategy.versionName).toBe("27A");
+    wrapper.unmount();
+  });
+
   it("查询变更（范围/分支）立即重拉，仍不带 silent", async () => {
     const { wrapper, query } = mountData();
     await flushPromises();

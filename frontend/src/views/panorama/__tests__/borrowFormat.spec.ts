@@ -4,11 +4,9 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/api/http", () => ({ default: { get: vi.fn(), post: vi.fn() } }));
 
 import type { BorrowFlowItem } from "@/api/borrowFlow";
-import {
-  formatBorrowFlowText,
-  formatFlowTime
-} from "@/views/panorama/shared/borrowFormat";
-import { formatTime } from "@/utils/business";
+import { formatBorrowFlowText } from "@/views/panorama/shared/borrowFormat";
+// formatDateTime 唯一实现在 utils/business（R7-F11：formatFlowTime 别名已删）
+import { formatDateTime, formatTime } from "@/utils/business";
 
 function makeFlow(overrides: Partial<BorrowFlowItem> = {}): BorrowFlowItem {
   return {
@@ -165,15 +163,15 @@ describe("formatBorrowFlowText 借用电子流复制文案", () => {
   });
 });
 
-describe("formatFlowTime 电子流时间格式化（替代手写 replace，输出逐字节等价）", () => {
+describe("formatDateTime 电子流时间格式化（R7-F11 后直连 utils/business，输出不变）", () => {
   it("合法时间串：T 分隔转空格，保留秒", () => {
-    expect(formatFlowTime("2026-10-11T16:30:00")).toBe("2026-10-11 16:30:00");
+    expect(formatDateTime("2026-10-11T16:30:00")).toBe("2026-10-11 16:30:00");
   });
 
   it("空值（null/undefined/空串）保持空串，不输出 Invalid Date", () => {
-    expect(formatFlowTime(null)).toBe("");
-    expect(formatFlowTime(undefined)).toBe("");
-    expect(formatFlowTime("")).toBe("");
+    expect(formatDateTime(null)).toBe("");
+    expect(formatDateTime(undefined)).toBe("");
+    expect(formatDateTime("")).toBe("");
   });
 
   it("R4-F7 等价性锁定：与 utils/business.formatTime 秒级格式逐字节一致（统一前置验证）", () => {
@@ -183,7 +181,7 @@ describe("formatFlowTime 电子流时间格式化（替代手写 replace，输�
       "2026-01-01T00:00:00",
       "2026-12-31T23:59:59"
     ]) {
-      expect(formatFlowTime(v)).toBe(formatTime(v, "YYYY-MM-DD HH:mm:ss"));
+      expect(formatDateTime(v)).toBe(formatTime(v, "YYYY-MM-DD HH:mm:ss"));
     }
   });
 });

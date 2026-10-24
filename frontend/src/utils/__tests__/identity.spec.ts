@@ -4,7 +4,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/api/auth", () => ({ getMe: vi.fn() }));
-vi.mock("@/utils/auth", () => ({ getToken: vi.fn() }));
+vi.mock("@/utils/auth", () => ({
+  getToken: vi.fn(),
+  // 基座副本键名与真实模块一致（R7-F5：基座 user-info roles 同步）
+  userKey: "user-info"
+}));
 // user store 桩：三个 SET_* 动作由断言检查（真实模块依赖 pinia 实例，单测不拉起）
 const storeStub = {
   SET_USERNAME: vi.fn(),
@@ -80,5 +84,34 @@ describe("refreshBusinessUser 启动身份快照刷新", () => {
     expect(storeStub.SET_USERNAME).toHaveBeenCalledWith("pm27a");
     expect(storeStub.SET_NICKNAME).toHaveBeenCalledWith("27A负责人");
     expect(storeStub.SET_ROLES).toHaveBeenCalledWith(["pm"]);
+  });
+
+  it("成功且基座 user-info 存在：同步其 roles 字段并保留其余字段（R7-F5）", async () => {
+    getTokenMock.mockReturnValue({ accessToken: "t" } as never);
+    getMeMock.mockResolvedValue(ME);
+    // 登录时写入的基座副本：旧角色 admin，含 expires 等登录字段
+    localStorage.setItem(
+      "user-info",
+      JSON.stringify({
+        username: "pm27a",
+        expires: 1790000000000,
+        roles: ["admin"],
+        permissions: ["*:*:*"]
+      })
+    );
+    await refreshBusinessUser();
+    const base = JSON.parse(localStorage.getItem("user-info")!);
+    expect(base.roles).toEqual(["pm"]);
+    expect(base.username).toBe("pm27a");
+    expect(base.expires).toBe(1790000000000);
+    expect(base.permissions).toEqual(["*:*:*"]);
+  });
+
+  it("成功但基座 user-info 不存在（登录流程未完成）：跳过同步不构造", async () => {
+    getTokenMock.mockReturnValue({ accessToken: "t" } as never);
+    getMeMock.mockResolvedValue(ME);
+    await expect(refreshBusinessUser()).resolves.toBeUndefined();
+    expect(localStorage.getItem("user-info")).toBeNull();
+    expect(JSON.parse(localStorage.getItem(businessUserKey)!)).toEqual(ME);
   });
 });

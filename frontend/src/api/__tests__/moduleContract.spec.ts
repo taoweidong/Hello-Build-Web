@@ -62,6 +62,14 @@ describe("api/weekly 契约", () => {
       params: { week_start: "2026-10-12", version_id: 3 }
     });
   });
+
+  it("请求级配置透传（轮询静默依赖 {params, ...config} 展开，R7-F15）", async () => {
+    await getWeekly({ week_start: "2026-10-12" }, { silent: true });
+    expect(httpMock.get).toHaveBeenCalledWith("/weekly", {
+      params: { week_start: "2026-10-12" },
+      silent: true
+    });
+  });
 });
 
 describe("api/auth 契约", () => {
@@ -98,6 +106,14 @@ describe("api/borrowFlow 契约", () => {
     });
   });
 
+  it("列表请求级配置透传（轮询静默用，R7-F15）", async () => {
+    await listBorrowFlows("pending", { silent: true });
+    expect(httpMock.get).toHaveBeenCalledWith("/borrow-flows", {
+      params: { status: "pending" },
+      silent: true
+    });
+  });
+
   it("发起/审批/驳回/撤销", async () => {
     const form = {
       strategy_id: 1,
@@ -123,6 +139,14 @@ describe("api/slotBooking 契约", () => {
     await getSlotCalendar("2026-10");
     expect(httpMock.get).toHaveBeenCalledWith("/slot-calendar", {
       params: { month: "2026-10" }
+    });
+  });
+
+  it("日历请求级配置透传（轮询静默用，R7-F15）", async () => {
+    await getSlotCalendar("2026-10", { silent: true });
+    expect(httpMock.get).toHaveBeenCalledWith("/slot-calendar", {
+      params: { month: "2026-10" },
+      silent: true
     });
   });
 

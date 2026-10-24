@@ -26,13 +26,6 @@
           <el-button size="small" text type="primary" @click="goToday"
             >今天</el-button
           >
-          <!-- 文案常显于开关右侧：inline-prompt 会把文案塞进滑块内，
-               两种状态宽度不一导致工具条跳动，故不启用 -->
-          <el-switch
-            v-model="onlyBusy"
-            size="small"
-            active-text="仅看有任务分支"
-          />
         </div>
         <div class="biz-toolbar-right">
           <el-tooltip placement="bottom">
@@ -130,7 +123,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed } from "vue";
 import dayjs from "dayjs";
 import { ElMessage } from "element-plus";
 import ArrowLeft from "~icons/ep/arrow-left";
@@ -177,7 +170,6 @@ const STAGE_LEGEND = [
   { key: "push", label: "推送" }
 ];
 
-const onlyBusy = ref(true);
 const ticks = ["00:00", "04:00", "08:00", "12:00", "16:00", "20:00", "24:00"];
 
 const anchor = computed(() => query.value.dateFrom);
@@ -198,7 +190,6 @@ const lanes = computed(() => {
       events: g.events,
       lanes: lanePack(g.events).lanes
     }))
-    .filter(l => !onlyBusy.value || l.count > 0)
     .sort((a, b) => b.count - a.count);
 });
 

@@ -21,7 +21,8 @@ export const BRANCH_PALETTE = [
  * 按分支列表构建 branch_id → 颜色 的稳定映射。
  *
  * @param branches 响应式分支列表（至少含 branch_id 字段）
- * @returns branchColorMap 一次计算的映射；branchColor 取色函数（未知分支回退色板首位）
+ * @returns branchColor 取色函数（未知分支回退色板首位）；映射为内部实现
+ * 不再导出（R7-F11：生产仅消费 branchColor，映射本身无外部消费者）
  */
 export function useBranchColors(branches: Ref<Array<{ branch_id: number }>>) {
   // 分支配色映射：一次计算，避免模板内重复 O(n) 查找
@@ -37,5 +38,5 @@ export function useBranchColors(branches: Ref<Array<{ branch_id: number }>>) {
     return branchColorMap.value.get(branchId) ?? BRANCH_PALETTE[0];
   }
 
-  return { branchColorMap, branchColor };
+  return { branchColor };
 }

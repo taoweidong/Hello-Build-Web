@@ -33,7 +33,8 @@ import { getPlan } from "@/api/plan";
 import { listBorrowFlows } from "@/api/borrowFlow";
 import { getPanoramaTodos } from "@/api/panorama";
 import PanoramaBoard from "../layouts/s4-board/index.vue";
-import { mountLayout, openMoreMenu, setTestUser } from "./helpers";
+import { mountLayout, setTestUser } from "./helpers";
+import { bookingStatusMeta } from "@/views/constants";
 import {
   makeBorrowFlow,
   makePlanVersions,
@@ -123,6 +124,12 @@ async function checkRow(row: DOMWrapper<Element>) {
 
 describe("S4 分组看板", () => {
   it("按版本分组渲染，策略/时段/借用同入口可操作", async () => {
+    // R7-F4 回避规则后同一借用行不再同时具备审批+撤销入口：
+    // 他人单（李四）走「通过/驳回」，本人单（id=7）走「撤销申请」，双流各测一路
+    borrowMock.mockResolvedValue([
+      makeBorrowFlow({ borrower_id: 999 }), // 他人单：走审批路径
+      makeBorrowFlow({ id: 501, borrower_id: 7, borrower_name: "本人" }) // 本人单：走撤销路径
+    ]);
     ({ wrapper } = await mountLayout(PanoramaBoard, "/panorama/board"));
     // 版本分组：未关联版本（策略 + 空闲时段）/ v3.2（本人抢占）/ v4.0（借用）
     // 卡片标题为「组名 + 计数 el-tag」，断言改用前缀匹配避免被计数干扰
@@ -132,21 +139,27 @@ describe("S4 分组看板", () => {
     expect(titles.some(t => t.startsWith("未关联版本"))).toBe(true);
     expect(titles.some(t => t.startsWith("v3.2"))).toBe(true);
     expect(titles.some(t => t.startsWith("v4.0"))).toBe(true);
-    // 操作按钮按 permissions 渲染：借用有「通过/驳回」，抢占有「释放」；
+    // 操作按钮按 permissions 渲染：他人借用有「通过/驳回」，抢占有「释放」；
     // 本人 reserved 带「改期」(canReschedule) —— 均在前两个，常驻行内
     const boardText = wrapper.text();
     expect(boardText).toContain("通过");
     expect(boardText).toContain("驳回");
     expect(boardText).toContain("释放");
     expect(boardText).toContain("改期");
-    // 本人借用带「撤销申请」(canCancel)：超出「行内最多 2 个」上限，
-    // 收进「更多」下拉（teleport 到 body，行内不再直排）
-    const borrowRow = wrapper
+    // 他人借用行：通过/驳回常驻行内，无撤销入口（回避规则 R5-B10/R7-F4）
+    const otherBorrowRow = wrapper
       .findAll(".row")
       .find(r => r.text().includes("李四 借用"))!;
-    expect(borrowRow.text()).not.toContain("撤销申请");
-    const menu = await openMoreMenu(borrowRow);
-    expect(menu.textContent).toContain("撤销申请");
+    expect(otherBorrowRow.text()).not.toContain("撤销申请");
+    // 本人借用带「撤销申请」(canCancel)：回避规则下无审批入口，撤销申请
+    // 常驻行内（S4 看板行内操作不含复制，与 S5 时间轴口径不同）
+    const mineBorrowRow = wrapper
+      .findAll(".row")
+      .find(r => r.text().includes("本人 借用"))!;
+    expect(mineBorrowRow.text()).not.toContain("通过");
+    expect(mineBorrowRow.findAll("button").map(b => b.text())).toEqual([
+      "撤销申请"
+    ]);
   });
 
   it("批量模式：勾选后计数正确，退出批量清空勾选", async () => {
@@ -262,6 +275,20 @@ describe("S4 分组看板", () => {
     expect(
       wrapper.findAll(".row").some(r => r.text().includes("我的抢占"))
     ).toBe(false);
+  });
+
+  it("R7-F6：按状态分组组名为 statusText 文案而非英文枚举", async () => {
+    ({ wrapper } = await mountLayout(PanoramaBoard, "/panorama/board"));
+    // 工具条第一个 el-select 即分组维度（FilterBar 的版本下拉在其后），
+    // jsdom 下拉交互不稳定，直接发 update:modelValue
+    await wrapper
+      .findComponent({ name: "ElSelect" })
+      .vm.$emit("update:modelValue", "status");
+    await flushPromises();
+    const titles = wrapper.findAll(".biz-card-title").map(t => t.text());
+    // 本人抢占 reserved → 「已抢占」；借用 pending → 「待审批」
+    expect(titles.join("|")).toContain(bookingStatusMeta("reserved").text);
+    expect(titles.join("|")).not.toMatch(/reserved|pending/);
   });
 
   it("刷新按钮保留仍存在的勾选（按 id 而非对象引用）", async () => {

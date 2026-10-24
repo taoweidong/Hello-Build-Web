@@ -1,7 +1,6 @@
 // 布局无关的纯投影：所有布局共用，禁止页面自行聚合
 // 依据：docs/superpowers/specs/2026-10-12-scheduling-panorama-design.md §5.1（selectors 纯投影）
 import type { ScheduleDay, ScheduleEvent, ScheduleKpi } from "./types";
-import { durationOf } from "./sources/strategySource";
 
 /** 按「日期 + 起止」升序排序（同日按 start，start 相同按 duration 降序） */
 export function sortEvents(events: ScheduleEvent[]): ScheduleEvent[] {
@@ -155,5 +154,3 @@ export function buildHeatmap(
 export function collectTimePoints(events: ScheduleEvent[]): string[] {
   return [...new Set(events.map(e => e.time))].sort();
 }
-
-export { durationOf };

@@ -2,7 +2,7 @@
 // 策略配置页（仅 PM，仅本版本分支）
 // 设计文档 8.5：表单 + 时间线实时预览 preview 接口 + 冲突不可保存
 import { ref, reactive, computed, watch, onMounted } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { adminApi } from "@/api/admin";
 import {
@@ -23,7 +23,6 @@ import { STAGE_COLORS } from "@/components/gantt/types";
 defineOptions({ name: "StrategyIndex" });
 
 const route = useRoute();
-const router = useRouter();
 const currentUser = getCurrentUser();
 
 // ---- 本版本信息（PM 绑定版本）----
@@ -47,7 +46,7 @@ const form = reactive<StrategyForm>({
   template_id: 0,
   name: "",
   build_start_time: "22:00",
-  push_start_time: "" as string,
+  push_start_time: "",
   push_mode: "normal",
   enabled: true
 });
@@ -275,7 +274,8 @@ function fmtPreview(t: string) {
 onMounted(async () => {
   await load();
   await loadMeta();
-  // 从 URL query 读取编辑 id（F2 甘特跳转）
+  // 从 URL query 读取编辑 id（深链编辑入口；原甘特页跳转源已随页面精简下线，
+  // 现仅支持手工构造 /strategy?id= 的场景）
   const qid = route.query.id;
   if (qid) {
     const s = strategyList.value.find(x => x.id === Number(qid));

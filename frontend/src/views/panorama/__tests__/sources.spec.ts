@@ -19,6 +19,21 @@ const BRANCH_COLOR = () => "#123456";
 describe("mapStrategyEvents", () => {
   const days = ["2026-10-13", "2026-10-14"];
 
+  it("R7-F7：versionName 由数据中枢透传（S4 按版本分组不再把同版本拆两组）", () => {
+    const events = mapStrategyEvents({
+      strategies: [makeStrategy()],
+      days,
+      planMap: new Map(),
+      branchColor: BRANCH_COLOR,
+      user: { role: "admin" },
+      versionId: 3,
+      versionName: "27A",
+      now: NOW
+    });
+    expect(events.length).toBeGreaterThan(0);
+    expect(events.every(e => e.versionName === "27A")).toBe(true);
+  });
+
   it("锚点日（days[0]）按 planMap 展开四阶段，时长取服务端区间", () => {
     const events = mapStrategyEvents({
       strategies: [makeStrategy()],

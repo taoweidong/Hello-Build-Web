@@ -1,7 +1,9 @@
 <template>
   <el-dialog
     :model-value="modelValue"
-    :title="isMine ? '我的抢占详情' : '时段已被抢占'"
+    :title="
+      entry?.booking ? (isMine ? '我的抢占详情' : '时段已被抢占') : '时段详情'
+    "
     width="440px"
     @update:model-value="value => emit('update:modelValue', value)"
   >
@@ -42,6 +44,14 @@
         show-icon
       />
     </div>
+    <!-- 空闲时段空态（R7-F8）：过期/超出可抢窗口的空闲 slot 事件也会走详情入口，
+         此前正文 v-if 全不渲染只剩标题+关闭钮的空壳 -->
+    <el-empty v-else description="该时段暂无抢占记录" :image-size="80">
+      <p v-if="template" class="biz-sub">
+        {{ dateLabel }}（{{ weekLabel }}）{{ template.start_time }} –
+        {{ template.end_time }} · {{ template.name }}
+      </p>
+    </el-empty>
     <template #footer>
       <el-button @click="emit('update:modelValue', false)">关闭</el-button>
       <el-button
@@ -120,7 +130,10 @@ async function handleRelease() {
   releasing.value = true;
   try {
     await releaseBooking(props.entry.booking.id);
-    emit("released"); // 成功提示由父组件统一弹出，避免重复 toast
+    // 成功即关（R7-F8，对齐动作总线 release() 路径）：此前只 emit 不关闭，
+    // 已释放记录以旧数据滞留屏上直到手动关闭；成功提示由父组件统一弹出
+    emit("update:modelValue", false);
+    emit("released");
   } catch {
     // 拦截器已提示
   } finally {

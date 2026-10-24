@@ -105,6 +105,37 @@ describe("SlotDetailDialog 抢占详情弹窗", () => {
     ).toBeUndefined();
   });
 
+  it("自释放成功后关闭弹窗（R7-F8：对齐动作总线 release 路径，旧数据不滞留屏上）", async () => {
+    mountDialog({ entryBookingMine: true });
+    await flushPromises();
+    await wrapper
+      .findAll("button")
+      .find(b => b.text().includes("释放该时段"))!
+      .trigger("click");
+    await flushPromises();
+    expect(wrapper.emitted("released")).toHaveLength(1);
+    expect(wrapper.emitted("update:modelValue")).toEqual([[false]]);
+  });
+
+  it("空闲时段（无 booking）展示空态而非空壳（R7-F8）", async () => {
+    wrapper = mount(SlotDetailDialog, {
+      props: {
+        modelValue: true,
+        date: "2026-10-13",
+        entry: makeCell({ status: "available", booking: null }),
+        template: makeTemplate()
+      },
+      global: { stubs: { IconifyIconOffline: true } }
+    });
+    await flushPromises();
+    expect(wrapper.text()).toContain("该时段暂无抢占记录");
+    // 空态仍给出时段上下文（模板名与起止时间）
+    expect(wrapper.text()).toContain("早间窗口");
+    expect(wrapper.text()).toContain("09:00");
+    const texts = wrapper.findAll("button").map(b => b.text());
+    expect(texts).not.toContain("释放该时段");
+  });
+
   it("释放失败：不 emit released，弹窗状态保留（拦截器已提示）", async () => {
     releaseMock.mockRejectedValue(new Error("40904") as never);
     mountDialog({ entryBookingMine: true });

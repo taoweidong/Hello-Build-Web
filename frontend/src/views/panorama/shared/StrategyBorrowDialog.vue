@@ -103,7 +103,7 @@
 // 版本策略全景页 - 无修改权限用户的策略详情 + 借用申请弹窗
 // 借用 = 发起电子流（借用至自己的版本/分支 + 新时间），由来源版本负责人在「借用审批」页审批
 import { computed, onMounted, reactive, ref } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessage } from "element-plus";
 import dayjs from "dayjs";
 import { getPlan, type PlanVersion } from "@/api/plan";
 import { createBorrowFlow } from "@/api/borrowFlow";

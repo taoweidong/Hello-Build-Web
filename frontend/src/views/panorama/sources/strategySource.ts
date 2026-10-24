@@ -37,6 +37,9 @@ export interface MapStrategyOptions {
   user: { role?: string; bound_version_id?: number } | null;
   /** 策略所属版本 id（版本筛选已由 weekly 入参完成，此处用于权限判定） */
   versionId: number | undefined;
+  /** 当前版本名（S4 按版本分组用，R7-F7）：weekly 契约不含 version_name，
+   * 由数据中枢从 weeklyData.version 透传，缺省回落空串走「未关联版本」兜底 */
+  versionName?: string;
   now?: Date;
 }
 
@@ -107,7 +110,7 @@ function phaseEvents(
         branchId: strategy.branch_id,
         branchName: strategy.branch_name,
         versionId: opts.versionId ?? null,
-        versionName: "",
+        versionName: opts.versionName ?? "",
         color: STAGE_COLORS[p.key] ?? color,
         status: strategy.push_mode,
         statusText: p.label,
@@ -168,7 +171,7 @@ export function mapStrategyEvents(opts: MapStrategyOptions): ScheduleEvent[] {
         branchId: s.branch_id,
         branchName: s.branch_name,
         versionId: opts.versionId ?? null,
-        versionName: "",
+        versionName: opts.versionName ?? "",
         color: opts.branchColor(s.branch_id),
         status: s.push_mode,
         statusText: "构建",
@@ -191,7 +194,7 @@ export function mapStrategyEvents(opts: MapStrategyOptions): ScheduleEvent[] {
           branchId: s.branch_id,
           branchName: s.branch_name,
           versionId: opts.versionId ?? null,
-          versionName: "",
+          versionName: opts.versionName ?? "",
           color: opts.branchColor(s.branch_id),
           status: s.push_mode,
           statusText: "推送",

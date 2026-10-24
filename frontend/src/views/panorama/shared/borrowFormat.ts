@@ -4,12 +4,9 @@ import { borrowStatusMeta } from "@/views/constants";
 import { formatDateTime } from "@/utils/business";
 import type { BorrowFlowItem } from "@/api/borrowFlow";
 
-/**
- * 电子流时间展示：实现已上移 utils/business.formatDateTime（R4-F7 统一唯一实现，
- * 输出与原实现逐字节等价，等价性由 borrowFlow.spec 锁定）；此处保留别名导出，
- * 借用域页面继续按 formatFlowTime 语义调用。
- */
-export const formatFlowTime = formatDateTime;
+// 电子流时间展示直连 utils/business.formatDateTime（R4-F7 唯一实现）；
+// 原 formatFlowTime 别名导出已删除（R7-F11：借用域独立页下线后全仓无页面消费）
+const formatFlowTime = formatDateTime;
 
 /** 组装电子流纯文本（S5 时间轴「复制」入口，便于粘贴发给审核人员）；传入 detailUrl 时附带可直达该条的链接 */
 export function formatBorrowFlowText(

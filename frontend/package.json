@@ -15,11 +15,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "svgo": "svgo -f . -r",
-    "clean:cache": "rimraf .eslintcache && rimraf pnpm-lock.yaml && rimraf node_modules && npm install",
+    "clean:cache": "rimraf .eslintcache && rimraf node_modules && npm install",
     "lint:eslint": "eslint --cache --max-warnings 0  \"{src,build}/**/*.{vue,js,ts,tsx}\" --fix",
     "lint:prettier": "prettier --write  \"src/**/*.{js,ts,json,tsx,css,scss,vue,html,md}\"",
     "lint:stylelint": "stylelint --cache --fix \"**/*.{html,vue,css,scss}\" --cache-location node_modules/.cache/stylelint/",
-    "lint": "pnpm lint:eslint && pnpm lint:prettier && pnpm lint:stylelint",
+    "lint": "npm run lint:eslint && npm run lint:prettier && npm run lint:stylelint",
     "prepare": "husky"
   },
   "keywords": [
@@ -49,7 +49,6 @@
     "url": "https://github.com/xiaoxian521"
   },
   "dependencies": {
-    "@pureadmin/descriptions": "^1.2.1",
     "@pureadmin/table": "^3.3.0",
     "@pureadmin/utils": "^2.6.2",
     "@vueuse/core": "^14.0.0",
@@ -57,11 +56,8 @@
     "animate.css": "^4.1.1",
     "axios": "^1.12.2",
     "dayjs": "^1.11.18",
-    "echarts": "^6.0.0",
     "element-plus": "^2.11.5",
-    "html2canvas-pro": "^2.3.8",
     "js-cookie": "^3.0.5",
-    "localforage": "^1.10.0",
     "mitt": "^3.0.1",
     "nprogress": "^0.2.0",
     "path-browserify": "^1.0.1",
@@ -73,8 +69,7 @@
     "vue": "^3.5.22",
     "vue-demi": "^0.14.10",
     "vue-router": "^4.6.3",
-    "vue-tippy": "^6.7.1",
-    "vue-types": "^6.0.0"
+    "vue-tippy": "^6.7.1"
   },
   "devDependencies": {
     "@commitlint/cli": "^20.1.0",

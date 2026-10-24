@@ -130,7 +130,12 @@ describe("S5 时间轴流水", () => {
     expect(rows()[0].find(".body-title").text()).toBe("分析 · 主链路策略");
   });
 
-  it("筛选口径互斥：只看我的 2 条，只看借用 1 条且带审批/复制入口", async () => {
+  it("筛选口径互斥：只看我的 2 条；只看借用按回避规则分两行（R7-F4）", async () => {
+    // 他人单走审批路径、本人单走撤销路径（R5-B10/R7-F4 后同一行不可兼得）
+    borrowMock.mockResolvedValue([
+      makeBorrowFlow({ borrower_id: 999 }), // 他人单：走审批路径
+      makeBorrowFlow({ id: 501, borrower_id: 7, borrower_name: "本人" }) // 本人单：走撤销路径
+    ]);
     ({ wrapper } = await mountLayout(
       PanoramaTimeline,
       "/panorama/timeline?date=2026-10-13"
@@ -139,7 +144,7 @@ describe("S5 时间轴流水", () => {
     expect(rows()).toHaveLength(2);
     expect(rows().map(r => r.find(".body-title").text())).toEqual([
       "早间窗口",
-      "李四 借用 主链路策略"
+      "本人 借用 主链路策略"
     ]);
     // 本人抢占有释放 + 改期入口（reserved && mine，P2-R2），借用行无时段操作；
     // 行内最多常驻 2 个操作，「详情」收进「更多」下拉
@@ -153,20 +158,23 @@ describe("S5 时间轴流水", () => {
     expect(slotMenu.textContent).toContain("详情");
 
     await selectFilter("只看借用");
-    expect(rows()).toHaveLength(1);
-    const borrow = rows()[0];
-    expect(borrow.find(".body-title").text()).toBe("李四 借用 主链路策略");
-    // 借用事件：通过/驳回（canApprove）常驻行内；撤销申请（本人 + 待审批，
-    // P2-R1）+ 复制收进「更多」
-    expect(borrow.text()).toContain("待审批");
-    expect(borrow.findAll("button").map(b => b.text())).toEqual([
+    expect(rows()).toHaveLength(2);
+    // 他人借用（李四）：通过/驳回（canApprove）常驻行内，无撤销入口
+    const otherBorrow = rowOf("李四 借用 主链路策略");
+    expect(otherBorrow.text()).toContain("待审批");
+    expect(otherBorrow.findAll("button").map(b => b.text())).toEqual([
       "通过",
       "驳回",
       "更多"
     ]);
-    const borrowMenu = await openMoreMenu(borrow);
-    expect(borrowMenu.textContent).toContain("撤销申请");
-    expect(borrowMenu.textContent).toContain("复制");
+    const otherMenu = await openMoreMenu(otherBorrow);
+    expect(otherMenu.textContent).toContain("复制");
+    // 本人借用：撤销申请（canCancel）+ 复制常驻行内（无审批入口，回避规则）
+    const mineBorrow = rowOf("本人 借用 主链路策略");
+    expect(mineBorrow.findAll("button").map(b => b.text())).toEqual([
+      "撤销申请",
+      "复制"
+    ]);
   });
 
   it("「折叠空闲时段」只隐藏未占用的时段行，占用行不受影响", async () => {

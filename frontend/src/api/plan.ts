@@ -37,12 +37,11 @@ export interface PlanVersion {
  * 获取甘特看板聚合数据
  * @param config 请求级配置；轮询场景传 `{ silent: true }`
  */
+// 后端 /plan 只消费 date（views/plan.py）：version_id/branch_id 曾在此声明
+// 但后端从不读取，传入即被静默忽略（R7-F15 删除幽灵参数，版本/分支筛选由
+// 消费方拿到全量后自行过滤）
 export function getPlan(
-  params: {
-    date: string;
-    version_id?: number;
-    branch_id?: number;
-  },
+  params: { date: string },
   config?: AxiosRequestConfig
 ): Promise<PlanVersion[]> {
   return http.get("/plan", { params, ...config });

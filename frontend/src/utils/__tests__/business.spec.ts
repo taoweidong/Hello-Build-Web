@@ -137,7 +137,7 @@ describe("utils/business", () => {
 });
 
 describe("canApproveBorrowFlow", () => {
-  const flow = { source_version_id: 7 };
+  const flow = { source_version_id: 7, borrower_id: 100 };
 
   it("admin 可审批任意电子流", () => {
     expect(canApproveBorrowFlow({ role: "admin" }, flow)).toBe(true);
@@ -157,5 +157,27 @@ describe("canApproveBorrowFlow", () => {
     expect(canApproveBorrowFlow({ role: "builder" }, flow)).toBe(false);
     expect(canApproveBorrowFlow({ role: "tester" }, flow)).toBe(false);
     expect(canApproveBorrowFlow(null, flow)).toBe(false);
+  });
+
+  it("回避规则（R5-B10/R7-F4）：借用人本人不可审批，admin 亦不例外", () => {
+    expect(
+      canApproveBorrowFlow(
+        { role: "admin", id: 100 },
+        { source_version_id: 7, borrower_id: 100 }
+      )
+    ).toBe(false);
+    expect(
+      canApproveBorrowFlow(
+        { role: "pm", bound_version_id: 7, id: 100 },
+        { source_version_id: 7, borrower_id: 100 }
+      )
+    ).toBe(false);
+    // 他人单不受回避影响
+    expect(
+      canApproveBorrowFlow(
+        { role: "admin", id: 100 },
+        { source_version_id: 7, borrower_id: 101 }
+      )
+    ).toBe(true);
   });
 });

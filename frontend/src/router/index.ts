@@ -1,4 +1,3 @@
-// import "@/utils/sso";
 import Cookies from "js-cookie";
 import { getConfig } from "@/config";
 import NProgress from "@/utils/progress";
@@ -153,13 +152,16 @@ router.beforeEach((to: ToRouteType, _from, next) => {
     whiteList.includes(to.fullPath) ? next(_from.fullPath) : next();
   }
   if (Cookies.get(multipleTabsKey) && userInfo) {
-    // 无权限跳转403页面
+    // 无权限跳转403页面（R7-F12：补 return，此前缺 return 双 next 触发
+    // vue-router 告警且 403 判定后仍继续落入下方分支）
     if (to.meta?.roles && !isOneOfArray(to.meta?.roles, userInfo?.roles)) {
       next({ path: "/error/403" });
+      return;
     }
     // 开启隐藏首页后在浏览器地址栏手动输入首页welcome路由则跳转到404页面
     if (VITE_HIDE_HOME === "true" && to.fullPath === "/welcome") {
       next({ path: "/error/404" });
+      return;
     }
     if (_from?.name) {
       // name为超链接

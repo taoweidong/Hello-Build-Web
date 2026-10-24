@@ -68,7 +68,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import dayjs from "dayjs";
 import {
@@ -87,7 +87,7 @@ defineOptions({ name: "MyBookingsDrawer" });
 /** 分页大小（列表/加载更多共用，避免魔法数字散落） */
 const PAGE_SIZE = 20;
 
-defineProps<{
+const props = defineProps<{
   modelValue: boolean;
 }>();
 
@@ -115,6 +115,15 @@ async function load() {
     loading.value = false;
   }
 }
+
+// 挂载即开初始化（R7-F1，对齐 R6-F16 弹窗范式）：ScheduleDialogs 以 v-if
+// 挂载本抽屉（挂载即 modelValue=true），而 element-plus useDialog 的 @open
+// 只在非 immediate 的 modelValue watcher 里发出——挂载即开时永不触发，
+// 此前 load() 不执行、抽屉恒空态。onMounted 判 modelValue 补挂载态，
+// @open 保留兜底常规打开路径。
+onMounted(() => {
+  if (props.modelValue) load();
+});
 
 const loadingMore = ref(false);
 async function loadMore() {

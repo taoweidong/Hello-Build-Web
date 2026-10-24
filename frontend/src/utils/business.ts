@@ -36,16 +36,19 @@ export function isPastSlot(
 }
 
 /**
- * 借用电子流审批权限：admin 全部；pm 仅来源版本为自己的电子流。
- * 与后端 views/borrow_flow._can_approve 同口径；从 borrow-flow 页抽出便于单测。
+ * 借用电子流审批权限：admin 全部；pm 仅来源版本为自己的电子流；
+ * 借用人本人一律不可审批（回避规则，与后端 views/borrow_flow._can_approve
+ * 的 R5-B10 口径一致——R7-F4 前缺该分支，自借单按钮可点、点击必 40301）。
  */
 export function canApproveBorrowFlow(
-  user: Pick<UserInfo, "role" | "bound_version_id"> | null,
-  flow: { source_version_id: number }
+  user: (Pick<UserInfo, "role" | "bound_version_id"> & { id?: number }) | null,
+  flow: { source_version_id: number; borrower_id: number }
 ): boolean {
-  if (user?.role === "admin") return true;
+  if (!user) return false;
+  if (user.id != null && flow.borrower_id === user.id) return false;
+  if (user.role === "admin") return true;
   return (
-    user?.role === "pm" && user?.bound_version_id === flow.source_version_id
+    user.role === "pm" && user?.bound_version_id === flow.source_version_id
   );
 }
 

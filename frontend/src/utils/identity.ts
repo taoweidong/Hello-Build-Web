@@ -4,10 +4,13 @@
 // 前端到下次重新登录前无感知（canEditPanorama、审批权限、admin 判定全部基于旧快照）。
 // 处理：应用启动时若已登录，静默拉一次 /auth/me 刷新快照与 user store；失败静默忽略
 //（token 失效返回 40100/40101 时由 http 拦截器统一清理并跳登录，此处无需干预）。
+// R7-F5：角色同步扩展到基座 user-info——路由守卫与菜单过滤读的是基座副本而非
+// pinia store，只写 store 时服务端角色变更后菜单/路由仍按旧角色渲染到重登。
 import { getMe } from "@/api/auth";
 import { businessUserKey } from "@/store/constants";
 import { useUserStoreHook } from "@/store/modules/user";
-import { getToken } from "@/utils/auth";
+import { getToken, userKey, type DataInfo } from "@/utils/auth";
+import { storageLocal } from "@pureadmin/utils";
 
 /** 已登录则静默刷新业务身份快照（localStorage + user store），永不 reject */
 export async function refreshBusinessUser(): Promise<void> {
@@ -20,6 +23,13 @@ export async function refreshBusinessUser(): Promise<void> {
     userStore.SET_NICKNAME(user.display_name);
     // 角色用于菜单/路由权限过滤，与登录时写入口径一致
     userStore.SET_ROLES([user.role]);
+    // 同步基座 user-info 的 roles（R7-F5）：守卫与菜单过滤的数据源。合并写
+    // 保留登录时落下的 username/expires 等字段；基座副本不存在（登录流程
+    // 未完成）时跳过，不代为构造
+    const baseInfo = storageLocal().getItem<DataInfo<number>>(userKey);
+    if (baseInfo) {
+      storageLocal().setItem(userKey, { ...baseInfo, roles: [user.role] });
+    }
   } catch {
     // 静默失败：网络异常等不打扰用户；登录态失效由拦截器处理
   }

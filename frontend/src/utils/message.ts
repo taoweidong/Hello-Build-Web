@@ -84,6 +84,4 @@ const message = (
 /**
  * 关闭所有 `Message` 消息提示函数
  */
-const closeAllMessage = (): void => ElMessage.closeAll();
-
-export { message, closeAllMessage };
+export { message };

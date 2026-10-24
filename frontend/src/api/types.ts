@@ -17,11 +17,9 @@ export interface UserInfo {
   display_name: string;
   /** 角色：admin / pm / builder / tester / integrator */
   role: Role;
-  /** 是否启用（停用后不可登录） */
-  is_active?: boolean;
-  /** PM 绑定版本（仅 PM 角色存在） */
-  bound_version_id?: number;
-  bound_version_name?: string;
+  /** PM 绑定版本（仅 PM 角色存在；未绑定为 null——R7-F14 前类型未含 null） */
+  bound_version_id?: number | null;
+  bound_version_name?: string | null;
 }
 
 /** 登录结果 */
@@ -59,7 +57,8 @@ export interface StrategyItem {
   push_mode: PushMode;
   push_start_time?: string | null; // 推送固定时间 HH:MM（可空，空则结论后动态推导）
   enabled: boolean;
-  /** 时间线计算结果（preview / strategies 返回） */
+  /** 时间线计算结果（仅 preview / plan 返回；/strategies 列表不含此字段，
+   * R7-F14 前注释失实误导直取得 undefined） */
   timeline?: Timeline;
   /** 冲突详情（preview 返回时存在） */
   conflict?: ConflictInfo | null;

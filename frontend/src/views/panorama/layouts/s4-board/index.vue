@@ -208,7 +208,9 @@ const groups = computed(() => {
       return `${e.versionId ?? "none"}|${e.versionName || "未关联版本"}`;
     if (groupBy.value === "branch")
       return `${e.branchId ?? "none"}|${e.branchName || "未关联分支"}`;
-    return `${e.source}|${e.status}|${e.statusText}`;
+    // 按状态分组以 statusText（展示映射唯一来源）命名（R7-F6）：此前 key
+    // 拼 e.status，组名 split 后直出英文枚举
+    return `${e.source}|${e.statusText}`;
   };
   const map = new Map<string, ScheduleEvent[]>();
   for (const e of events.value) {

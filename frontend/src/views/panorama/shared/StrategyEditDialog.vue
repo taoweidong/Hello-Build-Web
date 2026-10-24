@@ -233,8 +233,14 @@ async function onSave() {
     ElMessage.warning("请选择策略模板");
     return;
   }
-  if (!form.name) {
+  // 名称 trim 与构建时间必填（R7-F10）：对齐 strategy 页三连校验——此前
+  // 纯空格名放行、el-time-picker 清空后 payload 带 null 靠后端 42201 兜底
+  if (!form.name.trim()) {
     ElMessage.warning("请输入策略名称");
+    return;
+  }
+  if (!form.build_start_time) {
+    ElMessage.warning("请选择构建开始时间");
     return;
   }
   if (preview.value?.conflict) {
@@ -251,7 +257,7 @@ async function onSave() {
     const payload: StrategyForm = {
       branch_id: form.branch_id,
       template_id: form.template_id,
-      name: form.name,
+      name: form.name.trim(),
       build_start_time: form.build_start_time,
       push_mode: form.push_mode,
       push_start_time: form.push_start_time || null,

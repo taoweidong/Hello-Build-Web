@@ -15,11 +15,9 @@ import { useMultiTagsStoreHook } from "./multiTags";
 import { type DataInfo, setToken, removeToken, userKey } from "@/utils/auth";
 // JWT 过期时间解析（纯函数已抽到 utils/token 便于单测，此处 re-export 保持既有引用路径可用）
 import { tokenExpiresAt } from "@/utils/token";
-export { tokenExpiresAt } from "@/utils/token";
 
 /** 登录用户信息存储 key（含绑定版本等业务元数据） */
 // 业务存储键常量收敛到 store/constants（此处 re-export 保持既有导入兼容）
-export { businessUserKey } from "../constants";
 import { businessUserKey as _businessUserKey } from "../constants";
 
 export const useUserStore = defineStore("pure-user", {

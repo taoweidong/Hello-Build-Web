@@ -93,8 +93,12 @@ function clearBusinessUser() {
 service.interceptors.response.use(
   (res: AxiosResponse<ApiEnvelope>) => {
     const d = res.data;
+    // 信封判定（R7-F13）：仅当响应体是 {code,...} 形态才走契约分支——
+    // blob/HTML 网关错误页/裸数组等非信封 200 响应原样透传，此前 `d.code`
+    // 为 undefined 会误入业务失败分支 reject BizError(-1)
+    const isEnvelope = typeof d === "object" && d !== null && "code" in d;
     // 契约约定成功时 code === 0
-    if (d && d.code !== 0) {
+    if (isEnvelope && d.code !== 0) {
       if (!res.config?.silent) {
         ElMessage.error(d.message || "请求失败");
       }
@@ -104,22 +108,32 @@ service.interceptors.response.use(
     }
     // 成功直接返回 data 字段，方便业务层使用（各 API 模块以声明的返回类型收窄语义；
     // axios 类型签名要求拦截器返回 AxiosResponse，此处为契约解包点的唯一豁免 cast）
-    return d?.data as unknown as AxiosResponse<ApiEnvelope>;
+    return (isEnvelope ? d.data : d) as unknown as AxiosResponse<ApiEnvelope>;
   },
   (err: unknown) => {
     const e = asAxiosLike(err);
     const silent = e.config?.silent === true;
+    // 请求取消（R7-F13）：预期行为（组件卸载 AbortController 等），静默 reject，
+    // 不当网络故障弹「请求失败」toast
+    if (axios.isCancel(err)) {
+      return Promise.reject(new BizError(-1, "请求已取消"));
+    }
     // 兼容后端两种错误结构：{ detail: { code, message } } 或 { code, message }
     const body = e.response?.data ?? {};
     const detail = body.detail ?? body;
     const code = detail.code;
     const message = detail.message;
-    if (code === 40100 || code === 40101) {
-      // 未认证/登录态失效：清理并跳登录（静默请求同样跳转，登录态失效必须感知）
+    if (code === 40100) {
+      // 未认证（40100）：清理并跳登录（静默请求同样跳转，登录态失效必须感知）。
+      // 已指向登录页则跳过赋值（R7-F13）：并发多请求同时 401 时不重复导航排队；
+      // 40101（凭据错误）不在此分支——语义见下
       removeToken();
       clearBusinessUser();
       // appHashUrl 唯一来源：保留 origin + 部署子路径，子路径部署不断链（R4-F12）
-      window.location.href = appHashUrl("/login");
+      const loginUrl = appHashUrl("/login");
+      if (window.location.href !== loginUrl) {
+        window.location.href = loginUrl;
+      }
       return Promise.reject(
         new BizError(code, message || "未认证", body.data, e.response?.status)
       );
@@ -139,6 +153,8 @@ service.interceptors.response.use(
     }
     return Promise.reject(
       // 网络层错误（断网/超时）无业务 code，兜底 -1；不用 0（信封契约中 0=成功）
+      // 40101（凭据错误，R7-F2）也走本分支弹真实 message：此前折叠进 40100
+      // 跳转分支，登录页输错密码零反馈且表单被整页重载清空
       new BizError(
         code ?? -1,
         message || "请求失败",

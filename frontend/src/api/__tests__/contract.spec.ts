@@ -69,10 +69,10 @@ describe("api/plan 契约", () => {
     vi.clearAllMocks();
   });
 
-  it("getPlan 传递 date 与 version_id", async () => {
-    await getPlan({ date: "2026-10-11", version_id: 5 });
+  it("getPlan 仅传 date（R7-F15：version_id/branch_id 为幽灵参数已删，后端只消费 date）", async () => {
+    await getPlan({ date: "2026-10-11" });
     expect(httpMock.get).toHaveBeenCalledWith("/plan", {
-      params: { date: "2026-10-11", version_id: 5 }
+      params: { date: "2026-10-11" }
     });
   });
 });
