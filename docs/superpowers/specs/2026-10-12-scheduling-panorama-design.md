@@ -210,7 +210,7 @@ graph LR
 **5）渲染技术**：**CSS Grid + 百分比绝对定位**（`left=(start-dayStart)/跨度`、`width=时长比`），row = 分支泳道 —— 延续 `2026-10-10-slot-booking-design.md` §3「自绘、不引入重型表格库」的既有决策。**不引入新依赖**。**配色约束**：4 个阶段色块**只取** `STAGE_COLORS`（build/smoke/analysis/push），推送沿用既有「虚线描边」区分；分支泳道标签与图例取 `useBranchColors` 的 `BRANCH_PALETTE`；冲突标记走 `danger` 语义色与既有斜纹 —— **本布局不引入任何新色值或主题作用域**，详见 §4.1。**关键约束**：阶段时长必须来自服务端 → 默认取 `GET /api/plan?date=<锚点日>` 的 `timeline`，**禁止前端按 `build_minutes=30` 硬算**（会与 `RuntimeConfig` 漂移）；周模式并发 7 次 `/plan`，首屏只拉锚点日，其余懒加载。
 **6）优劣权衡**
 - 优：①冲突与空档**肉眼可读**，唯一能回答「这段被谁占了」的布局；②与既有阶段色标对齐（`components/gantt/types.ts::STAGE_COLORS`）；③借用前后变化可级联演示；④row hover 便于同分支纵向对比。
-- 劣：①**首屏信息密度最低**，一行一分支且横向成本高；②无虚拟滚动（`@pureadmin/table` 不支持），> 60 行有 DOM 压力 → 须加「仅看有任务分支」开关；③窗口较小（< 1280px）时走横向滚动，容器 `min-width` 建议 ≥ 960px（**既定取舍，非缺陷**）；④依赖单日接口，周模式请求放大 7 倍。
+- 劣：①**首屏信息密度最低**，一行一分支且横向成本高；②无虚拟滚动（`@pureadmin/table` 不支持），> 60 行有 DOM 压力 → 曾实现「仅看有任务分支」开关、已随 R7-F9 删除（泳道本就仅源自含事件的分支，开关永真无效；DOM 压力为既定取舍，见修订九⑥）；③窗口较小（< 1280px）时走横向滚动，容器 `min-width` 建议 ≥ 960px（**既定取舍，非缺陷**）；④依赖单日接口，周模式请求放大 7 倍。
 **7）选型建议**：推荐 **pm（互斥排查）/ integrator（集成窗口）**。**不要选它**：分支数 > 30、以抢占为主（去 S3）、或希望一屏看完当天全部时点（去 S5）。
 **8）组件清单**：新增 `layouts/s2-gantt/{index.vue,LaneRow.vue,TimeAxisRuler.vue,PhaseBar.vue,GanttLegend.vue}`；复用 `STAGE_COLORS`、`useBranchColors.ts`、`useStrategyPreview.ts`。
 ### S3 月历时段矩阵视图 — `/panorama/month`

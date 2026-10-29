@@ -44,7 +44,7 @@
 | `#f0f9eb` / `#fef0f0` / `#fdf6ec` 结论底色 | `var(--el-color-*-light-9)` |
 | `#3b82f6` 品牌蓝（徽章/标题强调） | `var(--el-color-primary)` 系 |
 
-**保留的业务语义色**：阶段色板 `STAGE_COLORS`（构建/冒烟/分析/推送）、分支配色 `useBranchColors`、模板颜色调色板、甘特库 theme 配置、色块上的白色文字、报告导出截图的白色背景参数（`html2canvas` 需要）。
+**保留的业务语义色**：阶段色板 `STAGE_COLORS`（构建/冒烟/分析/推送）、分支配色 `useBranchColors`、模板颜色调色板、甘特库 theme 配置、色块上的白色文字、报告导出截图的白色背景参数（`html2canvas` 需要）——末项转历史记录：验证报告页已随 2026-10-20 页面精简删除，`html2canvas-pro` 依赖亦于 R7-F11 卸载（其余各项现行有效）。
 
 ### 3. 逐页改造清单（16 个文件）
 
