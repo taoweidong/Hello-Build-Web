@@ -273,7 +273,7 @@ PM 仅配置两个时间节点：
 
 | 方法 | 路径 | 说明 | 角色 |
 |---|---|---|---|
-| GET | /api/plan?date= | 甘特看板聚合：版本→分支→策略→各阶段时间区间+冲突标记；date 非法（非 YYYY-MM-DD）→ 42201；status 经关联子查询取当日轮次结论 | 全部 |
+| GET | /api/plan?date= | 甘特看板聚合：版本→分支→策略→各阶段时间区间+冲突标记；date 非法（非 YYYY-MM-DD）→ 42201；响应**不含 status 字段**（曾经关联子查询取当日轮次结论，因前端零消费于 2026-10-25 R7-B4 删除，见修订记录；版本列表显式按 id 排序，R7-B9） | 全部 |
 | GET | /api/strategies?version_id=&branch_id= | 策略列表（含时间线计算结果）；可见性为设计决策（2026-10-13 定案）：全员可见、PM 过滤是「默认只看绑定版本」视图语义而非安全边界；无绑定版本的 PM → 空集（fail-closed，2026-10-12）；`version_id`/`branch_id` 过滤为 `is not None` 判定，**0 值真过滤 → 空集（fail-closed，2026-10-18，与 executions 的 strategy_id 语义一致）** | 全部 |
 | POST | /api/strategies/preview | 保存前预览：时间线排布+冲突检测（不落库） | PM |
 | POST | /api/strategies | 新建策略（name 必填缺失 → 42201、push_mode ∈ normal/sync、enabled 布尔，校验版本归属+冲突，冲突 40901） | PM |
@@ -491,3 +491,4 @@ Hello-Build-Web/
 
 - **40101 语义与前端处理拆分（R7-F2）**：§7.1 错误码表中 40101 原并列于「未认证」失实，已修正——`errors.py` 中 40100=未认证（`CODE_UNAUTHENTICATED`）、40101=凭据错误（`CODE_BAD_CREDENTIALS`，登录失败）；前端 `api/http.ts` 拦截器此前把 40101 折叠进 40100 的「清 token + 跳登录」分支，登录页输错密码零反馈且表单被整页重载清空，现仅 40100 走清理跳转、40101 归入常规错误分支弹真实 message（不跳转、不清 token）。回归 `api/__tests__/http.spec.ts` 40101 分支断言。表中 40902/40903 括注的「结论重复录入/授权」属已下线的报告/日志域历史口径，现行语义以 `errors.py` 为准。
 - **同轮后端契约回填**：`toggle_strategy` 事务内 `select_for_update` 重读后再校验与翻转（R7-B2，详见 strategy-concurrency spec 修订记录 2026-10-25 第七轮）；`update_strategy` 显式 `null` 清空字段补 StrategyChangeLog 差异留痕（R7-B6）；`parse_int` 仅接受可选单个前导负号（R7-B1，`?version_id=--5` 由 500 归「参数未提供」）；django-admin 根实体（Version/Branch/StrategyTemplate）删除前置拦截（R7-B3）；停用账号登录尝试补 `login_disabled` 审计（R7-B7）。回归集中 `tests_quality_round7.py`（26 例，全量 351 例）。
+- **/plan 死字段删除（R7-B4，2026-10-30 复核补记）**：上表 `/api/plan` 行原描述「status 经关联子查询取当日轮次结论」已失实——页面精简删除结论/报告域后该字段无任何前端消费方（`api/plan.ts` 未声明、panorama/strategy 两页均不读），而 panorama 数据中枢每次 refresh（含 30s 轮询）都拉 /plan，子查询成为轮询热路径死计算；78b372f 删除 `status_map` 子查询与响应 `status` 键（向后兼容裁剪），响应仅含版本/分支/策略/时间线+冲突标记，版本列表显式 `order_by(id)`（R7-B9）。同步修订见本表与 `scheduling-panorama` spec 修订九。
